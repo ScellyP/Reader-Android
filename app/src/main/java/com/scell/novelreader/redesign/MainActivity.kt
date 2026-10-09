@@ -1000,6 +1000,41 @@ class MainActivity : ComponentActivity() {
                 mediaController?.playbackParameters = PlaybackParameters(speed.toFloat())
             }
         }
+
+        // ---- Native equalizer / replay-gain boost (see NativeAudioEffects.kt) ----
+
+        /** bandsJson: JSON array of 10 dB values, one per UI band. */
+        @JavascriptInterface
+        fun nativeAudioSetEqualizer(bandsJson: String, preampDb: Double) {
+            runOnUiThread {
+                try {
+                    val arr = JSONArray(bandsJson)
+                    val bands = FloatArray(arr.length()) { i -> arr.optDouble(i, 0.0).toFloat() }
+                    PlaybackService.effects?.setEqualizer(bands, preampDb.toFloat())
+                } catch (e: Exception) {
+                    // Malformed input from the page: ignore rather than crash playback.
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun nativeAudioSetBoostDb(db: Double) {
+            runOnUiThread {
+                PlaybackService.effects?.setBoostDb(db.toFloat())
+            }
+        }
+
+        /** Answers asynchronously through window.onNativeAudioEffectsInfo(json). */
+        @JavascriptInterface
+        fun nativeAudioEffectsRequestInfo() {
+            runOnUiThread {
+                val json = PlaybackService.effects?.describe() ?: "{\"available\":false}"
+                webView.evaluateJavascript(
+                    "window.onNativeAudioEffectsInfo && window.onNativeAudioEffectsInfo(${JSONObject.quote(json)});",
+                    null
+                )
+            }
+        }
     }
 
     private fun hasStoragePermission(): Boolean {

@@ -80,7 +80,12 @@ window.NovelAudio = (function () {
     const b = window.AndroidBridge;
     return (b && b.setSystemVolume && b.getSystemVolume) ? b : null;
   }
-  function gain() { return sysVolBridge() ? 1 : state.volume; }
+  function gain() {
+    const base = sysVolBridge() ? 1 : state.volume;
+    // Features (replay gain) may scale the level down. try/catch: gain() can
+    // run before AudioFeatures exists, and a feature must never silence audio.
+    try { return base * AudioFeatures.outputGain(); } catch (e) { return base; }
+  }
   function applySystemVolume(v) {
     const b = sysVolBridge();
     if (b) { try { b.setSystemVolume(v); } catch (e) { /* ignore */ } }
@@ -141,6 +146,10 @@ window.NovelAudio = (function () {
     // separate play() of the same id. Every track always starts at 0.
     handoffPositionSec: null,
     duckedForBreak: false,   // true while a reading-break overlay paused us
+
+    // Per-feature state for the optional features (see 7b. AUDIO FEATURES
+    // FRAMEWORK) — keyed by module id, filled in by AudioFeatures.register().
+    features: {},
   };
 
   const PREFS_KEY = 'novelReader_audioPrefs';
@@ -192,6 +201,7 @@ window.NovelAudio = (function () {
     onScanned(tracks) {
       state.tracks = Array.isArray(tracks) ? tracks : [];
       state.scanning = false;
+      AudioFeatures.emit('libraryChanged');
       AudioUI.setNote(state.tracks.length ? '' : 'No audio files found in /storage/emulated/0/Novel/Audio.');
       AudioUI.renderPlaylistOptions();
 
@@ -237,6 +247,8 @@ window.NovelAudio = (function () {
      * downstream needs to know playlists exist. */
     currentSelectionIds() {
       const sel = state.activePlaylist;
+      const virtual = AudioFeatures.selectionFor(sel);   // '@recent' / '@liked' / '@list:<id>'
+      if (virtual) return virtual;
       if (!sel || sel === 'all') return state.tracks.map(t => t.id);
       return this.tracksInPlaylist(sel).map(t => t.id);
     },
@@ -385,6 +397,7 @@ window.NovelAudio = (function () {
   ======================================================================= */
 
   function handleTrackEnded(engine) {
+    AudioFeatures.emit('trackEnd', MediaLibrary.getTrack(state.currentTrackId));
     if (state.sleepTimerMinutes === -1) {
       // "Stop at end of track" sleep mode — this was that track.
       AudioUI.setSleepTimer(0);
@@ -479,6 +492,7 @@ window.NovelAudio = (function () {
         state.positionSec = this._el.currentTime || 0;
         AudioUI.updateProgressOnly();
         this._applySleepFadeIfDue();
+        AudioFeatures.emit('progress', { positionSec: state.positionSec, durationSec: state.durationSec });
       });
 
       this._el.addEventListener('ended', () => this.onTrackEnded());
@@ -524,6 +538,7 @@ window.NovelAudio = (function () {
         state.positionSec = 0;
         // Always starts from the beginning — no resume-from-last-position.
         this._pendingSeek = null;
+        AudioFeatures.emit('trackStart', track);
       }
 
       this._el.volume = gain();
@@ -805,6 +820,7 @@ window.NovelAudio = (function () {
         state.handoffPositionSec = null;
         bridge.nativeAudioLoad(track.path, track.title || '', track.artist || '', track.album || '');
         this._loadedTrackId = id;
+        AudioFeatures.emit('trackStart', track);
       }
 
       bridge.nativeAudioPlay();
@@ -867,29 +883,24 @@ window.NovelAudio = (function () {
       AudioUI.render();
     },
 
-    /* TO IMPLEMENT — native equalizer.
-     * The Web Audio graph built for LocalAudioEngine doesn't reach audio
-     * played through ExoPlayer — it never passes through the page's
-     * AudioContext at all. The native equivalent is
-     * android.media.audiofx.Equalizer, attached via ExoPlayer's audio
-     * session id: PlaybackService would expose player.audioSessionId
-     * across the bridge, and MainActivity would create the Equalizer
-     * against it. Its band count/frequencies are device-defined
-     * (commonly 5 bands, not our fixed 10), so the bridge would need to
-     * query Equalizer.getNumberOfBands()/getBandFreqRange() at runtime
-     * and interpolate the UI's 10 sliders onto however many the device
-     * actually has. Until that exists, EQ changes made while the native
-     * engine is active are stored (state.eqBands persists regardless of
-     * which engine is playing) but not audible until playback is next
-     * handled by LocalAudioEngine. */
+    /* Native equalizer. The Web Audio graph built for LocalAudioEngine never
+     * sees audio played through ExoPlayer, so the curve is handed to
+     * android.media.audiofx.Equalizer on ExoPlayer's audio session instead
+     * (AudioFeatures → nativeEffects → AndroidBridge.nativeAudioSetEqualizer
+     * → NativeAudioEffects.kt). Device bands (commonly 5) are interpolated
+     * from our 10 on the native side. If the bridge method is missing, fall
+     * back to the old behaviour: the curve is stored and applies the next
+     * time the WebView engine plays. */
     setEqualizer(bandsDb) {
       state.eqBands = bandsDb.slice(0, EQ_BAND_HZ.length);
       Prefs.save();
+      if (AudioFeatures.nativeEffects.apply()) return;
       AudioUI.setNote('The equalizer only affects playback while the app is open. It isn\u2019t applied to background playback yet.');
     },
     setPreamp(db) {
       state.eqPreampDb = db;
       Prefs.save();
+      AudioFeatures.nativeEffects.apply();
     },
 
     // Called by window.onNativeAudioLoaded once the native side reaches
@@ -924,6 +935,7 @@ window.NovelAudio = (function () {
       if (durationSec) state.durationSec = durationSec;
       AudioUI.updateProgressOnly();
       this._applySleepFadeIfDue();
+      AudioFeatures.emit('progress', { positionSec: state.positionSec, durationSec: state.durationSec });
     },
 
     // Called by window.onNativeAudioSkipNext/Previous — the
@@ -995,6 +1007,7 @@ window.NovelAudio = (function () {
           state.eqBands = saved.eqBands.slice();
         }
         if (typeof saved.eqPreampDb === 'number') state.eqPreampDb = saved.eqPreampDb;
+        AudioFeatures.restore(saved.features);
       } catch (e) { /* corrupt prefs are not worth crashing over */ }
     },
 
@@ -1008,10 +1021,425 @@ window.NovelAudio = (function () {
           activePlaylist: state.activePlaylist,
           eqBands: state.eqBands,
           eqPreampDb: state.eqPreampDb,
+          features: AudioFeatures.serialize(),
         }));
       } catch (e) { /* storage full — non-fatal */ }
     },
   };
+
+  /* =======================================================================
+     7b. AUDIO FEATURES FRAMEWORK
+     =======================================================================
+     One place for the optional audio features (see README → "Audio feature
+     framework"). The core engines/queue stay feature-agnostic: they only
+     announce what happened, and feature modules react.
+
+     A MODULE is a plain object registered with AudioFeatures.register():
+
+       {
+         id: 'abRepeat',                 // unique; also the key in state.features
+         label: 'A-B repeat',
+         status: 'working' | 'logic-ready' | 'framework' | 'stub' | 'planned',
+         defaults: { ... },              // initial per-feature state
+         persistKeys: ['a', 'b'],        // optional: only these keys are saved
+                                         //   (omit = save everything, [] = save nothing)
+         // Any of these hooks, all optional, all wrapped in try/catch so a
+         // broken feature can never stall playback:
+         trackStart(track)  trackEnd(track)  progress({positionSec, durationSec})
+         engineChanged(engine)  libraryChanged()
+         outputGain(track)  -> linear multiplier (<= 1) folded into gain()
+       }
+
+     Per-feature state lives in state.features[id], is saved inside the
+     existing audio prefs blob (so settings.txt mirrors it for free), and is
+     restored through the same Prefs.load() path. Modules are also reachable
+     as NovelAudio.features.<id> for the UI and for debugging.
+
+     "status" is honest bookkeeping, not marketing:
+       working      — behaviour and UI both exist
+       logic-ready  — behaviour works through the JS API, no UI control yet
+       framework    — plumbing exists; needs data or native support to do anything
+       stub         — stores a value; nothing consumes it yet
+       planned      — hook points exist; the behaviour itself isn't written
+  ======================================================================= */
+
+  const AudioFeatures = {
+    _modules: {},
+    _order: [],
+
+    register(mod) {
+      this._modules[mod.id] = mod;
+      this._order.push(mod.id);
+      this[mod.id] = mod;                      // NovelAudio.features.<id>
+      state.features[mod.id] = JSON.parse(JSON.stringify(mod.defaults || {}));   // deep copy: arrays must not be shared with the defaults
+      return mod;
+    },
+
+    // Per-feature state object (shared by reference with state.features).
+    st(id) { return state.features[id]; },
+
+    emit(name, payload) {
+      for (const id of this._order) {
+        const mod = this._modules[id];
+        if (!mod || typeof mod[name] !== 'function') continue;
+        try { mod[name](payload); } catch (e) { console.error('[audio feature ' + id + '] ' + name + ' failed', e); }
+      }
+    },
+
+    // Product of every module's outputGain(); always a finite number in (0, 1].
+    outputGain() {
+      let g = 1;
+      let track;                                 // looked up lazily: gain() runs several times a second
+      for (const id of this._order) {
+        const mod = this._modules[id];
+        if (!mod || typeof mod.outputGain !== 'function') continue;
+        try {
+          if (track === undefined) track = MediaLibrary.getTrack(state.currentTrackId);
+          const v = mod.outputGain(track);
+          if (typeof v === 'number' && isFinite(v) && v > 0) g *= Math.min(1, v);
+        } catch (e) { /* a bad module must not silence playback */ }
+      }
+      return g;
+    },
+
+    // Re-apply the current output level to whichever engine is live — for
+    // when a feature changes the gain without the user touching the slider.
+    refreshGain() {
+      try {
+        if (AudioEngine === LocalAudioEngine) {
+          if (LocalAudioEngine._el) LocalAudioEngine._el.volume = gain();
+        } else {
+          const b = window.AndroidBridge;
+          if (b && b.nativeAudioSetVolume) b.nativeAudioSetVolume(gain());
+          this.nativeEffects.pushBoost();
+        }
+      } catch (e) { console.error('refreshGain failed', e); }
+    },
+
+    // Called from Prefs.load(): merge saved values over the defaults, but
+    // only keys the module declares and only if the type still matches, so
+    // an old or hand-edited settings file can't inject junk.
+    restore(saved) {
+      if (!saved || typeof saved !== 'object') return;
+      for (const id of this._order) {
+        const mod = this._modules[id];
+        const src = saved[id];
+        if (!mod || !src || typeof src !== 'object') continue;
+        const target = state.features[id];
+        Object.keys(mod.defaults || {}).forEach(k => {
+          if (!(k in src)) return;
+          const want = mod.defaults[k];
+          const ok = Array.isArray(want) ? Array.isArray(src[k])
+                   : want === null ? true
+                   : typeof src[k] === typeof want;
+          if (ok) target[k] = src[k];
+        });
+      }
+    },
+
+    // Called from Prefs.save().
+    serialize() {
+      const out = {};
+      for (const id of this._order) {
+        const mod = this._modules[id];
+        const st = state.features[id];
+        const keys = mod.persistKeys || Object.keys(st);
+        if (!keys.length) continue;
+        out[id] = {};
+        keys.forEach(k => { out[id][k] = st[k]; });
+      }
+      return out;
+    },
+
+    // Who is who and how finished — for the README, a future "about audio"
+    // screen, or the console: NovelAudio.features.describe()
+    describe() {
+      return this._order.map(id => ({ id, label: this._modules[id].label, status: this._modules[id].status }));
+    },
+
+    /* Virtual playlists: state.activePlaylist may be '@recent', '@liked' or
+     * '@list:<id>' as well as 'all' / a folder name. Returns the track ids
+     * for such a name, or null when `name` isn't virtual. Ids that are no
+     * longer in the library are dropped, so a deleted file never ends up
+     * in a queue. */
+    selectionFor(name) {
+      if (typeof name !== 'string' || name.charAt(0) !== '@') return null;
+      let ids = null;
+      if (name === '@recent') ids = this.history.getIds();
+      else if (name === '@liked') ids = this.likes.getIds();
+      else if (name.indexOf('@list:') === 0) ids = this.customPlaylists.getIds(name.slice(6));
+      if (!ids) return null;
+      const known = new Set(state.tracks.map(t => t.id));
+      return ids.filter(id => known.has(id));
+    },
+
+    // For a future playlist picker: every virtual playlist worth listing.
+    listVirtualPlaylists() {
+      const out = [];
+      const add = (id, label) => out.push({ id, label, count: (this.selectionFor(id) || []).length });
+      add('@recent', 'Recently played');
+      add('@liked', 'Liked');
+      this.customPlaylists.list().forEach(p => add('@list:' + p.id, p.name));
+      return out.filter(p => p.count > 0 || p.id.indexOf('@list:') === 0);
+    },
+  };
+
+  /* ---- A-B repeat -------------------------------------------------------
+     Loops the section between two points of the current track. Works on
+     both engines through AudioEngine.seek(). Resolution is the engine's
+     progress rate (~4 Hz local, ~2 Hz native), so the loop can overshoot B
+     by up to half a second; a frame-accurate loop would need a native
+     ClippingMediaSource. Cleared whenever a new track starts. No UI yet. */
+  AudioFeatures.register({
+    id: 'abRepeat', label: 'A-B repeat', status: 'logic-ready',
+    defaults: { a: null, b: null },
+    persistKeys: [],
+    trackStart() { const s = state.features.abRepeat; s.a = null; s.b = null; },
+    progress(p) {
+      const s = state.features.abRepeat;
+      if (s.a === null || s.b === null) return;
+      if (p.positionSec >= s.b) AudioEngine.seek(s.a);
+    },
+    setA() {
+      const s = state.features.abRepeat;
+      s.a = state.positionSec;
+      if (s.b !== null && s.b <= s.a + 0.5) s.b = null;
+      return s.a;
+    },
+    setB() {
+      const s = state.features.abRepeat;
+      if (s.a === null || state.positionSec < s.a + 0.5) return null; // B must come after A
+      s.b = state.positionSec;
+      return s.b;
+    },
+    clear() { const s = state.features.abRepeat; s.a = null; s.b = null; },
+    isActive() { const s = state.features.abRepeat; return s.a !== null && s.b !== null; },
+    get() { const s = state.features.abRepeat; return { a: s.a, b: s.b }; },
+  });
+
+  /* ---- Replay gain (volume normalisation) -------------------------------
+     Reads `replayGainTrackDb` / `replayGainAlbumDb` (and optional
+     `replayGainPeak`) off the track object. THE SCANNER DOESN'T FILL THOSE
+     IN YET — MediaMetadataRetriever can't read ReplayGain tags — so until
+     MainActivity.listAudioFiles() parses them (ID3 TXXX / Vorbis comments)
+     this is inert: no tag, no change. Cuts (negative dB) are applied in JS
+     through gain(); boosts (positive dB) are passed to the native
+     LoudnessEnhancer, since a WebView <audio> element can't exceed 1.0. */
+  AudioFeatures.register({
+    id: 'replayGain', label: 'Volume normalisation (replay gain)', status: 'framework',
+    defaults: { mode: 'off', preventClipping: true },     // mode: 'off' | 'track' | 'album'
+    _db(track) {
+      const s = state.features.replayGain;
+      if (!track || s.mode === 'off') return 0;
+      let db = s.mode === 'album' && typeof track.replayGainAlbumDb === 'number'
+        ? track.replayGainAlbumDb : track.replayGainTrackDb;
+      if (typeof db !== 'number' || !isFinite(db)) return 0;
+      if (s.preventClipping && typeof track.replayGainPeak === 'number' && track.replayGainPeak > 0) {
+        db = Math.min(db, -20 * Math.log10(track.replayGainPeak)); // never push the peak past full scale
+      }
+      return Math.max(-24, Math.min(12, db));
+    },
+    outputGain(track) { const db = this._db(track); return db < 0 ? Math.pow(10, db / 20) : 1; },
+    boostDb(track) { const db = this._db(track); return db > 0 ? db : 0; },
+    trackStart() { AudioFeatures.refreshGain(); },
+    setMode(mode) {
+      if (mode !== 'off' && mode !== 'track' && mode !== 'album') return;
+      state.features.replayGain.mode = mode;
+      Prefs.save();
+      AudioFeatures.refreshGain();
+    },
+  });
+
+  /* ---- Audio delay / sync -------------------------------------------------
+     STUB. Stores a signed offset in ms (e.g. to compensate Bluetooth
+     latency). Nothing consumes it yet: an audio-only player has no second
+     stream to sync against. It exists so the preference, its persistence
+     and the settings.txt entry are settled before a consumer (lyrics,
+     video, or a latency-compensated progress display) is built. */
+  AudioFeatures.register({
+    id: 'audioDelay', label: 'Audio delay / sync', status: 'stub',
+    defaults: { offsetMs: 0 },
+    setOffsetMs(ms) {
+      const v = Math.round(Number(ms));
+      if (!isFinite(v)) return;
+      state.features.audioDelay.offsetMs = Math.max(-2000, Math.min(2000, v));
+      Prefs.save();
+    },
+    getOffsetMs() { return state.features.audioDelay.offsetMs; },
+  });
+
+  /* ---- Crossfade ----------------------------------------------------------
+     PLANNED. The trigger is in place: when `seconds` > 0 and the track is
+     within that window of its end, the live engine's optional
+     beginCrossfade(nextTrackId, seconds) is called once. Neither engine
+     implements it yet — that is the real work: LocalAudioEngine needs a
+     second <audio> element and two gain ramps; the native side needs a
+     second ExoPlayer (QueueAwarePlayer only ever holds one item). With no
+     beginCrossfade the hook does nothing, so enabling the setting is safe. */
+  AudioFeatures.register({
+    id: 'crossfade', label: 'Crossfade', status: 'planned',
+    defaults: { seconds: 0 },
+    _armedFor: null,
+    trackStart() { this._armedFor = null; },
+    progress(p) {
+      const s = state.features.crossfade;
+      if (!s.seconds || this._armedFor === state.currentTrackId) return;
+      if (typeof AudioEngine.beginCrossfade !== 'function') return;
+      const remaining = p.durationSec - p.positionSec;
+      if (!(p.durationSec > 0) || remaining <= 0 || remaining > s.seconds) return;
+      if (state.repeat === 'one' || state.sleepTimerMinutes === -1) return;
+      const next = PlaybackQueue.peekNext();
+      if (!next) return;
+      this._armedFor = state.currentTrackId;
+      AudioEngine.beginCrossfade(next, s.seconds);
+    },
+    setSeconds(sec) {
+      const v = Number(sec);
+      if (!isFinite(v)) return;
+      state.features.crossfade.seconds = Math.max(0, Math.min(12, v));
+      Prefs.save();
+    },
+  });
+
+  /* ---- Recently played ----------------------------------------------------
+     Newest-first list of track ids, capped. Recorded when a track starts.
+     Selectable as the virtual playlist '@recent'. */
+  AudioFeatures.register({
+    id: 'history', label: 'Recently played', status: 'logic-ready',
+    defaults: { ids: [] },
+    MAX: 100,
+    trackStart(track) {
+      if (!track) return;
+      const s = state.features.history;
+      s.ids = [track.id].concat(s.ids.filter(id => id !== track.id)).slice(0, this.MAX);
+      Prefs.save();
+    },
+    getIds() { return state.features.history.ids.slice(); },
+    clear() { state.features.history.ids = []; Prefs.save(); },
+  });
+
+  /* ---- Liked tracks ---------------------------------------------------------
+     A set of track ids (stored as an array). Virtual playlist '@liked'.
+     toggle() with no argument acts on the track that is playing. */
+  AudioFeatures.register({
+    id: 'likes', label: 'Liked tracks', status: 'logic-ready',
+    defaults: { ids: [] },
+    getIds() { return state.features.likes.ids.slice(); },
+    isLiked(id) { return state.features.likes.ids.indexOf(id || state.currentTrackId) !== -1; },
+    toggle(id) {
+      const target = id || state.currentTrackId;
+      if (!target) return false;
+      const s = state.features.likes;
+      const i = s.ids.indexOf(target);
+      if (i === -1) s.ids.push(target); else s.ids.splice(i, 1);
+      Prefs.save();
+      return i === -1;               // true = now liked
+    },
+  });
+
+  /* ---- Curated playlists --------------------------------------------------
+     Hand-picked lists that don't depend on folders. Each is { id, name,
+     ids[] }. Selectable as '@list:<id>'. Pure data + CRUD; there is no
+     picker/editor UI yet. */
+  AudioFeatures.register({
+    id: 'customPlaylists', label: 'Curated playlists', status: 'logic-ready',
+    defaults: { lists: [], nextId: 1 },
+    list() { return state.features.customPlaylists.lists.map(p => ({ id: p.id, name: p.name, count: p.ids.length })); },
+    getIds(id) { const p = this._find(id); return p ? p.ids.slice() : null; },
+    _find(id) { return state.features.customPlaylists.lists.find(p => String(p.id) === String(id)) || null; },
+    create(name, ids) {
+      const s = state.features.customPlaylists;
+      const clean = String(name || '').trim().slice(0, 60);
+      if (!clean) return null;
+      const p = { id: s.nextId++, name: clean, ids: Array.isArray(ids) ? ids.slice() : [] };
+      s.lists.push(p);
+      Prefs.save();
+      return p.id;
+    },
+    rename(id, name) {
+      const p = this._find(id), clean = String(name || '').trim().slice(0, 60);
+      if (!p || !clean) return false;
+      p.name = clean; Prefs.save(); return true;
+    },
+    remove(id) {
+      const s = state.features.customPlaylists, n = s.lists.length;
+      s.lists = s.lists.filter(p => String(p.id) !== String(id));
+      if (s.lists.length === n) return false;
+      if (state.activePlaylist === '@list:' + id) state.activePlaylist = 'all';
+      Prefs.save(); return true;
+    },
+    addTracks(id, trackIds) {
+      const p = this._find(id);
+      if (!p) return false;
+      (trackIds || []).forEach(t => { if (p.ids.indexOf(t) === -1) p.ids.push(t); });
+      Prefs.save(); return true;
+    },
+    removeTrack(id, trackId) {
+      const p = this._find(id);
+      if (!p) return false;
+      p.ids = p.ids.filter(t => t !== trackId);
+      Prefs.save(); return true;
+    },
+  });
+
+  /* ---- Search ----------------------------------------------------------------
+     The matching lives in MediaLibrary.search(); this is the seam a search
+     box plugs into. run() just returns matches; queueResults() makes the
+     queue "play only these" (a later rescan or playlist switch rebuilds the
+     queue from the selected playlist again, as usual). */
+  AudioFeatures.register({
+    id: 'search', label: 'Search', status: 'logic-ready',
+    defaults: {},
+    persistKeys: [],
+    run(query) { return MediaLibrary.search(query); },
+    queueResults(query) {
+      const ids = MediaLibrary.search(query).map(t => t.id);
+      PlaybackQueue.buildFrom(ids);
+      AudioUI.render();
+      return ids.length;
+    },
+  });
+
+  /* ---- Native effects (equalizer + replay-gain boost) --------------------------
+     Bridges the UI's 10 EQ sliders to android.media.audiofx.Equalizer on
+     ExoPlayer's audio session, so the EQ is audible for background playback
+     too (see NativeAudioEffects.kt — the device's own band layout is
+     interpolated from our 10 bands there). The state stays in state.eqBands
+     / state.eqPreampDb, shared with the Web Audio EQ, so switching engines
+     keeps the same curve. */
+  AudioFeatures.register({
+    id: 'nativeEffects', label: 'Native equalizer', status: 'framework',
+    defaults: {},
+    persistKeys: [],
+    info: null,                                    // set by window.onNativeAudioEffectsInfo
+    _bridge() { return window.AndroidBridge || null; },
+    supported() { const b = this._bridge(); return !!(b && b.nativeAudioSetEqualizer); },
+    requestInfo() {
+      const b = this._bridge();
+      if (b && b.nativeAudioEffectsRequestInfo) { try { b.nativeAudioEffectsRequestInfo(); } catch (e) { /* ignore */ } }
+    },
+    // Push the current curve. Returns true when the call was made.
+    apply() {
+      const b = this._bridge();
+      if (!b || !b.nativeAudioSetEqualizer) return false;
+      try { b.nativeAudioSetEqualizer(JSON.stringify(state.eqBands), state.eqPreampDb); return true; }
+      catch (e) { console.error('native EQ apply failed', e); return false; }
+    },
+    pushBoost() {
+      const b = this._bridge();
+      if (!b || !b.nativeAudioSetBoostDb) return;
+      const db = AudioFeatures.replayGain.boostDb(MediaLibrary.getTrack(state.currentTrackId));
+      try { b.nativeAudioSetBoostDb(db); } catch (e) { /* ignore */ }
+    },
+    engineChanged(engine) { if (engine === NativeAudioEngine) { this.requestInfo(); this.apply(); this.pushBoost(); } },
+    trackStart() { if (AudioEngine === NativeAudioEngine) { this.apply(); this.pushBoost(); } },
+    onInfo(info) {
+      this.info = info || null;
+      if (this.info && this.info.available === false && AudioEngine === NativeAudioEngine) {
+        AudioUI.setNote('This device doesn\u2019t offer an equalizer for background playback.');
+      }
+    },
+  });
 
   /* =======================================================================
      8. UI
@@ -1532,6 +1960,7 @@ window.NovelAudio = (function () {
       if (currentId && positionSec) state.handoffPositionSec = positionSec;
 
       AudioEngine = NativeAudioEngine;
+      AudioFeatures.emit('engineChanged', NativeAudioEngine);
 
       if (currentId && wasPlaying) {
         AudioEngine.play(currentId);
@@ -1574,13 +2003,17 @@ window.NovelAudio = (function () {
       MediaLibrary.onScanned(tracks);
     },
 
+    // Optional-feature registry and modules: NovelAudio.features.abRepeat,
+    // .replayGain, .history, .likes, .customPlaylists, .search, .describe()...
+    features: AudioFeatures,
+
     // Exposed for debugging and for the tests. `AudioEngine` is exposed
     // as a getter since the underlying binding is reassigned by
     // _switchToNative() — a plain property here would freeze at
     // whichever engine was active the moment _modules was built.
     _state: state,
     _modules: {
-      MediaLibrary, PlaybackQueue, LocalAudioEngine, NativeAudioEngine, AudioUI, Prefs,
+      MediaLibrary, PlaybackQueue, LocalAudioEngine, NativeAudioEngine, AudioUI, Prefs, AudioFeatures,
       get AudioEngine() { return AudioEngine; },
     },
   };
@@ -1648,4 +2081,16 @@ window.onNativeAudioSkipNext = function () {
 };
 window.onNativeAudioSkipPrevious = function () {
   window.NovelAudio._nativeOnSkipPrevious();
+};
+
+// Native → JS: what the device's equalizer looks like (band layout, dB range,
+// or available:false). Requested by AudioFeatures.nativeEffects.requestInfo()
+// when the native engine takes over — see NativeAudioEffects.kt.
+window.onNativeAudioEffectsInfo = function (json) {
+  try {
+    const info = typeof json === 'string' ? JSON.parse(json) : json;
+    window.NovelAudio.features.nativeEffects.onInfo(info);
+  } catch (e) {
+    console.error('Failed to parse native effects info', e);
+  }
 };

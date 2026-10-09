@@ -195,12 +195,12 @@ top-of-file comment for the architecture, and `PlaybackService.kt` /
 | --- | --- |
 | Broad format support (mp3, m4a/aac, flac, ogg, opus, wav) | **Working** |
 | Near-gapless playback (next track pre-buffered) | **Working**¹ |
-| Playback speed with pitch preservation | **Working** |
-| 10-band equalizer + preamp | **Working**² |
-| Volume normalisation (replay gain) | Planned |
-| Resume-at-position per track | **Working** |
-| A-B repeat | Planned |
-| Audio delay / sync adjustment | Planned |
+| Playback speed with pitch preservation | Removed — the speed control is gone; playback is always 1× |
+| 10-band equalizer + preamp | **Working**² (native engine: built, see footnote) |
+| Volume normalisation (replay gain) | Framework — cuts and boosts are wired; needs the scanner to read ReplayGain tags |
+| Resume-at-position per track | Removed — every track starts at 0 (only a live engine hand-off keeps its position) |
+| A-B repeat | Logic ready — works through the JS API; no buttons yet |
+| Audio delay / sync adjustment | Stub — stores an offset; nothing uses it yet |
 | Graceful handling of unplayable files (skip, don't stall) | **Working** |
 
 **From Spotify — how it feels to use**
@@ -209,13 +209,13 @@ top-of-file comment for the architecture, and `PlaybackService.kt` /
 | --- | --- |
 | Library scan (native folder scan + tags) | **Working** |
 | Playlists via folders (a subfolder in Audio/ = a playlist) | **Working** |
-| Search (function ready; no search box in the UI yet) | Backend ready |
-| Curated playlists (hand-picked, not tied to a folder) | Planned |
+| Search (`NovelAudio.features.search`; no search box in the UI yet) | Logic ready |
+| Curated playlists (hand-picked, not tied to a folder) | Logic ready — create/rename/delete/add in JS; no editor UI yet |
 | Visible "up next" queue | **Working** |
 | Shuffle (real Fisher-Yates) + repeat (off / all / one) | **Working** |
 | Now-playing bar with artwork, seek scrubber | **Working** |
-| Crossfade between tracks | Planned |
-| Recently played / liked tracks | Planned |
+| Crossfade between tracks | Planned — the trigger hook exists; neither engine implements the overlap yet |
+| Recently played / liked tracks | Logic ready — recorded and persisted, selectable as virtual playlists; no buttons yet |
 
 **Reader-specific / background playback**
 
@@ -264,13 +264,18 @@ current one plays, which removes the network/disk delay that causes
 most audible gaps, but the transition is still a normal src-swap rather
 than a sample-accurate crossfade-capable handoff.
 
-² The equalizer is a real 10-band Web Audio graph (`<audio>` element →
-10 peaking `BiquadFilterNode`s → preamp `GainNode` → destination), but
-it only reaches the WebView engine — audio played through the native
-background engine doesn't pass through the page's `AudioContext` at all,
-so EQ changes are stored but not yet audible there. The native
-equivalent (`android.media.audiofx.Equalizer` against ExoPlayer's audio
-session id) is documented as a next step in `NativeAudioEngine.setEqualizer()`.
+² The WebView engine's equalizer is a real 10-band Web Audio graph
+(`<audio>` element → 10 peaking `BiquadFilterNode`s → preamp `GainNode` →
+destination). Audio played through the native background engine never
+passes through the page's `AudioContext`, so the native engine uses
+Android's own `android.media.audiofx.Equalizer` on ExoPlayer's audio
+session instead (`NativeAudioEffects.kt`). Devices expose their own band
+layout (commonly 5 bands), so the 10 UI bands are interpolated onto
+whatever the device has, in log-frequency. Both engines share the same
+curve (`state.eqBands`), so switching engines keeps the sound. **This
+native half was written without being compiled or run** — test it on a
+device before relying on it; if a device has no equalizer effect the app
+says so in the music panel's note line.
 
 ³ ExoPlayer only ever holds one track at a time (JS owns the queue —
 see `audio-player.js`'s architecture note), so it normally has no
@@ -280,11 +285,80 @@ buttons entirely. `PlaybackService.kt`'s `QueueAwarePlayer` — a
 routes taps back into the JS queue — is what makes them show up and
 work despite that.
 
-**Still to build:** replay gain, A-B repeat, audio delay/sync
-adjustment, crossfade, playlists, "recently played" — none of these
-are started; `audio-player.js` and `NativeAudioEngine.setEqualizer()`
-document the more involved ones (native EQ, gapless-via-native-playlist)
-with the concrete next step for each.
+## Audio feature framework
+
+The optional audio features all hang off one small framework in
+`audio-player.js` (section **7b. AUDIO FEATURES FRAMEWORK**), so adding or
+finishing one doesn't mean threading changes through both engines.
+
+**How it works.** The engines and queue stay feature-agnostic; they only
+announce what happened, and feature *modules* react. Each module is a plain
+object passed to `AudioFeatures.register()`:
+
+```js
+{
+  id: 'abRepeat', label: 'A-B repeat', status: 'logic-ready',
+  defaults: { a: null, b: null },   // per-feature state -> state.features[id]
+  persistKeys: [],                  // optional; omit = save all, [] = save none
+  trackStart(track) {}  trackEnd(track) {}  progress({positionSec, durationSec}) {}
+  engineChanged(engine) {}  libraryChanged() {}
+  outputGain(track) {}              // linear multiplier <= 1, folded into gain()
+}
+```
+
+Every hook is optional and wrapped in try/catch, so a broken feature can
+never stall playback. Per-feature state is saved inside the existing audio
+prefs blob (so it is mirrored to `settings.txt` for free) and restored by
+`Prefs.load()`; restore only accepts keys the module declares, with the same
+type as the default. Modules are reachable as `NovelAudio.features.<id>`, and
+`NovelAudio.features.describe()` lists them with their status.
+
+**Where the hooks fire** (all one-liners in the core): `trackStart` — in each
+engine's `play()` when a new track loads; `progress` — the WebView
+`timeupdate` event (~4 Hz) and the native progress callback (~2 Hz);
+`trackEnd` — `handleTrackEnded()`; `engineChanged` — `_switchToNative()`;
+`libraryChanged` — after a scan.
+
+**Status vocabulary** — `working` (behaviour + UI), `logic-ready` (works
+through the JS API, no control yet), `framework` (plumbing in place, needs
+data or native support), `stub` (stores a value, nothing consumes it),
+`planned` (hook exists, behaviour not written).
+
+| Module (`NovelAudio.features.…`) | Status | What exists | Next step |
+| --- | --- | --- | --- |
+| `abRepeat` | logic-ready | `setA()`, `setB()`, `clear()`, `get()`; loops via `AudioEngine.seek()`; cleared on every new track; never persisted. Loop can overshoot B by up to ~0.5 s (progress rate) | A/B buttons + a marker on the seek bar. Frame-accurate looping would need a native `ClippingMediaSource` |
+| `replayGain` | framework | `setMode('off'/'track'/'album')`. Cuts go through `gain()`; boosts go to the native `LoudnessEnhancer`; honours `replayGainPeak` so it never clips | `MainActivity.listAudioFiles()` must read ReplayGain tags (ID3 `TXXX`, Vorbis comments) and add `replayGainTrackDb` / `replayGainAlbumDb` / `replayGainPeak` to each track. Until then it changes nothing |
+| `audioDelay` | stub | `setOffsetMs()` (±2000), persisted | Needs a consumer (lyrics/video sync, or latency-compensated progress) |
+| `crossfade` | planned | `setSeconds()` (0–12), persisted; calls `AudioEngine.beginCrossfade(nextId, seconds)` once when the track is inside the window | Implement `beginCrossfade` — WebView: second `<audio>` + two gain ramps; native: a second ExoPlayer |
+| `history` | logic-ready | Newest-first, deduped, capped at 100, persisted; virtual playlist `@recent` | Playlist picker entry |
+| `likes` | logic-ready | `toggle(id?)`, `isLiked()`, `getIds()`; virtual playlist `@liked` | Heart button on the now-playing card (needs an `i-heart` icon in the sprite) |
+| `customPlaylists` | logic-ready | `create/rename/remove/addTracks/removeTrack/list`; virtual playlist `@list:<id>` | Editor UI + picker entries |
+| `search` | logic-ready | `run(q)`, `queueResults(q)` | The search box |
+| `nativeEffects` | framework | Pushes the EQ curve + preamp + replay-gain boost to the native side on engine switch, track start and every slider change | Verify on a device (see footnote ²) |
+
+**Virtual playlists.** `state.activePlaylist` may be `'all'`, a folder name,
+or `'@recent'`, `'@liked'`, `'@list:<id>'`. `MediaLibrary.currentSelectionIds()`
+resolves the virtual ones through `AudioFeatures.selectionFor()`, dropping any
+track no longer in the library, so shuffle/repeat/next/previous work on them
+unchanged. `AudioFeatures.listVirtualPlaylists()` returns what a picker should
+offer. The existing folder dropdown does not list them yet.
+
+**Native bridge added for this** (Kotlin side in `NativeAudioEffects.kt`,
+created and released by `PlaybackService`): `nativeAudioSetEqualizer(bandsJson,
+preampDb)`, `nativeAudioSetBoostDb(db)`, and `nativeAudioEffectsRequestInfo()`,
+which answers asynchronously through `window.onNativeAudioEffectsInfo(json)`.
+`NativeAudioEffects` keeps the last curve and re-applies it if the audio
+session changes or the service restarts.
+
+**Adding a feature:** register a module (copy `likes` for plain data, or
+`abRepeat` for something that reacts to playback), list it in the table above
+with an honest status, and add checks to `tests/audio-features.test.js`.
+
+**Tests.** `tests/audio-features.test.js` loads `audio-player.js` under Node
+with stubbed browser globals and checks the framework (registry, persistence,
+A-B loop, replay-gain maths, virtual playlists, crossfade trigger, native EQ
+fallback). Run it from the project root: `node tests/audio-features.test.js`.
+It cannot exercise the Kotlin side or real audio.
 
 Chapter files are read either in the original `chapter_downloader.py`
 format (title / `Source:` line / `====` separator / body) or as plain

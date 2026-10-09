@@ -205,6 +205,15 @@ class PlaybackService : MediaSessionService() {
          */
         var queueNavigationListener: QueueNavigationListener? = null
 
+        /**
+         * Equalizer / loudness effects attached to the ExoPlayer's audio
+         * session (see NativeAudioEffects). Same single-process reasoning as
+         * queueNavigationListener: MainActivity's bridge methods reach it
+         * directly. Null while the service isn't running.
+         */
+        @Volatile
+        var effects: NativeAudioEffects? = null
+
         // How long the service may sit with nothing playing before it
         // shuts itself (and its notification) down.
         private const val IDLE_STOP_MS = 10 * 60 * 1000L
@@ -235,6 +244,10 @@ class PlaybackService : MediaSessionService() {
             // the phone speaker the moment headphones are unplugged.
             .setHandleAudioBecomingNoisy(true)
             .build()
+
+        // The equalizer attaches to the player's audio session. The provider
+        // is called lazily, always from the main thread (see NativeAudioEffects).
+        effects = NativeAudioEffects { player.audioSessionId }
 
         // Tapping the notification (or the lock-screen player) brings this
         // app's own MainActivity to the front. Without a session activity
@@ -306,6 +319,8 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         idleHandler.removeCallbacks(idleStopRunnable)
+        effects?.release()
+        effects = null
         mediaSession?.run {
             player.release()
             release()
