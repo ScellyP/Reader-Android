@@ -1,0 +1,2105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0d12">
+<meta name="color-scheme" content="dark">
+<title>Novel Reader</title>
+<style>
+/* =========================================================================
+   Novel Reader — "Lamplight" design system
+   -------------------------------------------------------------------------
+   One dark reading room, lit by one lamp. Surfaces are deep ink; the only
+   chromatic colour is a single warm amber, and it is reserved for STATE
+   (the chapter you are on, what is playing, an armed timer, progress).
+   Nothing decorative uses it, so when amber appears it always means
+   something.
+
+   Scale (kept deliberately small so nothing feels one-off):
+     radius   8 controls  ·  14 panels  ·  999 pills / round buttons
+     space    4 8 12 16 20 28
+     type     Manrope for chrome, Newsreader for the book voice
+   ========================================================================= */
+
+@font-face {
+  font-family: "Newsreader";
+  src: url("fonts/newsreader.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Manrope";
+  src: url("fonts/manrope.woff2") format("woff2");
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Lora";
+  src: url("fonts/lora.woff2") format("woff2");
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  src: url("fonts/atkinson-400.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Atkinson Hyperlegible";
+  src: url("fonts/atkinson-700.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  /* Surfaces, darkest to lightest. Slightly blue-black so the warm text
+     and amber sit against a cool ground, which is what makes them glow. */
+  --bg: #0b0d12;
+  --panel: #12151c;
+  --panel-2: #191d27;
+  --raised: #202532;
+  --border: #272c3a;
+  --border-strong: #363c4e;
+
+  --text: #ebe6da;          /* warm off-white: softer than blue-white at night */
+  --muted: #a3a8b6;         /* secondary text, 7.6:1 on panel */
+  --faint: #7a7f8f;         /* tertiary text, 4.6:1 on panel: still legible, clearly quieter */
+
+  --accent: #e8a83e;        /* the lamp */
+  --accent-strong: #f2bb5c;
+  --accent-ink: #1a1305;    /* text that sits ON amber */
+  --accent-soft: rgba(232, 168, 62, .13);
+  --accent-line: rgba(232, 168, 62, .42);
+  --danger: #e77a6a;
+
+  --r-sm: 8px;
+  --r-md: 14px;
+  --r-pill: 999px;
+
+  --font-ui: "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-book: "Newsreader", "Iowan Old Style", Georgia, "Times New Roman", serif;
+
+  --ease: cubic-bezier(.22, 1, .36, 1);  /* long, soft landing */
+
+  /* Reported by the native Android side (see reader.js). */
+  --status-bar-height: 24px;
+  --nav-bar-height: 24px;
+}
+
+* { box-sizing: border-box; min-width: 0; min-height: 0; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 16px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+}
+
+button, select, input { font-family: inherit; color: inherit; }
+button { -webkit-appearance: none; appearance: none; }
+
+/* Visible keyboard / d-pad focus, never a default blue ring. */
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:focus:not(:focus-visible), select:focus:not(:focus-visible) { outline: none; }
+
+/* ---------------------------------------------------------------------
+   Icons. One sprite, one stroke language: 1.75px, round caps and joins.
+   Sized with em so a button's font-size scales its icon.
+   --------------------------------------------------------------------- */
+.ico {
+  width: 1.25em;
+  height: 1.25em;
+  flex-shrink: 0;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+.ico.fill { fill: currentColor; stroke: none; }
+
+/* ---------------------------------------------------------------------
+   Layout shell
+   --------------------------------------------------------------------- */
+#app {
+  display: flex;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* ---------------------------------------------------------------------
+   Launch splash — the one orchestrated moment.
+   Shown from the first paint (it is plain HTML/CSS, so it needs no JS to
+   appear), and lifted by reader.js once the bridge has answered and the
+   fonts are ready. Two ways it can end: the app is ready, or a hard
+   timeout fires — it can never trap the user behind itself.
+   --------------------------------------------------------------------- */
+#splash {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  transition: opacity .55s var(--ease), transform .55s var(--ease), visibility 0s linear .55s;
+}
+#splash.leaving { opacity: 0; transform: scale(1.04); visibility: hidden; pointer-events: none; }
+#splash.gone { display: none; }
+
+/* A soft pool of lamplight behind the book. */
+#splash::before {
+  content: "";
+  position: absolute;
+  width: 78vmin;
+  height: 78vmin;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(232,168,62,.20), rgba(232,168,62,.06) 55%, transparent 75%);
+  animation: lampIn 1.4s var(--ease) both;
+}
+
+#splash-book { position: relative; width: 112px; height: 112px; }
+#splash-book svg { width: 100%; height: 100%; overflow: visible; }
+#splash-book .sb-cover {
+  fill: none; stroke: var(--accent); stroke-width: 2.2;
+  stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 340; stroke-dashoffset: 340;
+  animation: draw 1.1s var(--ease) .1s forwards;
+}
+#splash-book .sb-spine {
+  stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round;
+  stroke-dasharray: 60; stroke-dashoffset: 60;
+  animation: draw .6s var(--ease) .75s forwards;
+}
+#splash-book .sb-line {
+  stroke: var(--text); stroke-opacity: .55; stroke-width: 1.8; stroke-linecap: round;
+  stroke-dasharray: 22; stroke-dashoffset: 22;
+  animation: draw .5s var(--ease) forwards;
+}
+#splash-book .sb-line:nth-of-type(1) { animation-delay: .95s; }
+#splash-book .sb-line:nth-of-type(2) { animation-delay: 1.05s; }
+#splash-book .sb-line:nth-of-type(3) { animation-delay: 1.15s; }
+#splash-book .sb-line:nth-of-type(4) { animation-delay: 1.25s; }
+
+#splash-word {
+  position: relative;
+  text-align: center;
+  animation: rise .9s var(--ease) .55s both;
+}
+#splash-word .sw-name {
+  font-family: var(--font-book);
+  font-size: 32px;
+  font-weight: 500;
+  letter-spacing: .2px;
+  color: var(--text);
+  line-height: 1.1;
+}
+#splash-status {
+  margin-top: 10px;
+  min-height: 1.4em;
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: .2px;
+  transition: opacity .25s ease;
+}
+/* Three quiet dots while it works. */
+#splash-status .dots { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: middle; }
+#splash-status .dots i {
+  width: 4px; height: 4px; border-radius: 50%; background: var(--accent);
+  opacity: .25; animation: pulse 1.1s ease-in-out infinite;
+}
+#splash-status .dots i:nth-child(2) { animation-delay: .15s; }
+#splash-status .dots i:nth-child(3) { animation-delay: .3s; }
+
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes lampIn { from { opacity: 0; transform: scale(.6); } to { opacity: 1; transform: scale(1); } }
+@keyframes pulse { 0%, 100% { opacity: .25; transform: translateY(0); } 50% { opacity: 1; transform: translateY(-2px); } }
+
+/* ---------------------------------------------------------------------
+   Sidebar
+   --------------------------------------------------------------------- */
+#sidebar {
+  width: 308px;
+  min-width: 220px;
+  flex-shrink: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  transition: margin-left .2s ease;
+}
+#sidebar.collapsed { margin-left: -308px; }
+
+#sidebar-header {
+  padding: 16px 16px 14px;
+  padding-top: calc(16px + var(--status-bar-height));
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+#sidebar-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-bottom: 16px;
+}
+
+#sidebar-header h1 {
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-book);
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: .1px;
+  color: var(--text);
+  /* Truncate rather than let the icon row crush the word "Novels" into
+     overlapping it — see #sidebar-icon-buttons below for the other
+     half of the fix (wrapping to its own line once there's no room). */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#sidebar-header h1 .ico { flex-shrink: 0; color: var(--accent); width: 22px; height: 22px; }
+
+/* flex-basis: 100% forces this onto its own line inside the wrapping
+   title row once it no longer fits next to "Novels" at its natural
+   width, instead of the row compressing the title to make room (which
+   is what let the palette icon visually collide with the word). */
+#sidebar-icon-buttons { display: flex; align-items: center; gap: 4px; flex: 0 1 auto; }
+
+.sidebar-icon-btn {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  font-size: 17px;
+  cursor: pointer;
+  transition: color .15s ease, background .15s ease, border-color .15s ease;
+}
+.sidebar-icon-btn:hover { color: var(--text); background: var(--panel-2); }
+.sidebar-icon-btn:active { background: var(--raised); }
+/* "On" state: an icon lit amber with a faint amber ground. */
+.sidebar-icon-btn.active,
+#session-timer-btn-sidebar.limit-active {
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-color: transparent;
+}
+#bookmark-toggle.active .ico { fill: currentColor; fill-opacity: .25; }
+
+#novel-select {
+  display: block;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 11px 36px 11px 14px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  cursor: pointer;
+}
+#novel-select.hidden { display: none; }
+
+/* Selects share one custom chevron. */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a3a8b6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+}
+select:hover, #novel-select:hover { border-color: var(--border-strong); }
+select option { background: var(--panel-2); color: var(--text); }
+
+.load-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: none;
+  border-radius: var(--r-sm);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s ease, transform .1s ease;
+}
+.load-btn:hover { background: var(--accent-strong); }
+.load-btn:active { transform: scale(.985); }
+/* "Switch novel" is a secondary action: outlined, so it never reads as one
+   block with the accent-coloured "Allow access" button below it. */
+#library-btn {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+#library-btn:hover { background: var(--raised); border-color: var(--border-strong); }
+#library-btn:not([style*="none"]) + #open-chapters-btn { margin-top: 8px; }
+
+#chapters-folder-status {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 8px;
+  line-height: 1.45;
+}
+#chapters-folder-status:empty { display: none; }
+#chapters-folder-status button {
+  background: var(--panel-2);
+  color: var(--accent);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  margin-top: 6px;
+}
+
+.search-wrap { position: relative; margin-top: 12px; }
+.search-wrap .ico {
+  position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+  width: 16px; height: 16px; color: var(--faint);
+}
+#chapter-search {
+  width: 100%;
+  padding: 10px 12px 10px 36px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-size: 14px;
+}
+#chapter-search::placeholder { color: var(--faint); }
+#chapter-search:focus { outline: none; border-color: var(--accent-line); }
+
+#chapter-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  overscroll-behavior: none;
+}
+#chapter-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px;
+  margin-bottom: 2px;
+  border-radius: var(--r-sm);
+  border-left: 2px solid transparent;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--muted);
+  transition: background .12s ease, color .12s ease;
+}
+.chapter-item-label { flex: 1; word-break: break-word; }
+#chapter-list li:hover { background: var(--panel-2); color: var(--text); }
+/* The chapter you are on: an amber rule and warm text, not a solid slab. */
+#chapter-list li.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  border-left-color: var(--accent);
+  font-weight: 600;
+  border-radius: 2px var(--r-sm) var(--r-sm) 2px;
+}
+
+/* Version marker: pinned to the bottom of the side menu. Number is set in
+   version.js (see the comment there for how the numbering works). */
+#app-version {
+  flex-shrink: 0;
+  padding: 8px 16px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--border);
+  color: var(--faint);
+  font-size: 12px;
+  letter-spacing: .04em;
+  text-align: center;
+  user-select: none;
+}
+
+/* Empty sidebar: tells you what to do, in the order you'd do it. */
+#empty-note {
+  padding: 24px 20px 28px;
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.55;
+  flex-shrink: 0;
+}
+#empty-note .en-title {
+  font-family: var(--font-book);
+  font-size: 18px;
+  color: var(--text);
+  margin: 0 0 8px;
+}
+#empty-note .en-path {
+  display: block;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--accent-strong);
+  word-break: break-all;
+}
+
+/* ---------------------------------------------------------------------
+   Main reading area + top bar
+   --------------------------------------------------------------------- */
+#main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+#status-gap { height: var(--status-bar-height); flex-shrink: 0; background: var(--panel); position: relative; }
+#status-clock {
+  position: absolute; top: 0; left: 16px; bottom: 0;
+  display: flex; align-items: center;
+  font-size: 12px; font-weight: 700; color: var(--muted);
+  letter-spacing: .3px; font-variant-numeric: tabular-nums;
+  pointer-events: none; z-index: 5;
+}
+
+#topbar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  position: relative;
+  max-height: 64px;
+}
+#topbar.hidden { max-height: 0; padding-top: 0; padding-bottom: 0; border-bottom-color: transparent; overflow: hidden; }
+
+/* Icon buttons in the top bar: square, quiet, one shape. */
+#topbar button {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: 18px;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+#topbar button:hover:not(:disabled) { background: var(--panel-2); border-color: var(--border-strong); }
+#topbar button:active:not(:disabled) { background: var(--raised); }
+#topbar button:disabled { opacity: .3; cursor: not-allowed; }
+
+#topbar .spacer { flex: 1 1 0; }
+
+#font-controls { display: flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0; }
+
+#font-family-select {
+  background-color: transparent;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 0 32px 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  height: 42px;
+  min-width: 0;
+  max-width: 150px;
+  background-position: right 10px center;
+}
+
+/* Text-size stepper: one joined control, not two loose buttons. */
+#size-stepper { display: flex; align-items: stretch; }
+#size-stepper button { border-radius: 0; }
+#size-stepper #font-smaller { border-radius: var(--r-sm) 0 0 var(--r-sm); border-right-width: 0; }
+#size-stepper #font-bigger { border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+#font-smaller .ico, #font-bigger .ico { width: 20px; height: 20px; }
+
+/* ---------------------------------------------------------------------
+   Floating panels: shared shell so all four match.
+   --------------------------------------------------------------------- */
+#theme-panel,
+#session-settings-panel,
+#audio-panel,
+#bookmarks-panel {
+  position: fixed;
+  top: calc(60px + var(--status-bar-height));
+  left: 12px;
+  z-index: 90;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  padding: 18px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.6), 0 2px 0 rgba(255,255,255,.02) inset;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  animation: panelIn .2s var(--ease) both;
+}
+#theme-panel.hidden,
+#session-settings-panel.hidden,
+#audio-panel.hidden,
+#bookmarks-panel.hidden { display: none; }
+
+@keyframes panelIn { from { opacity: 0; transform: translateY(-6px) scale(.985); } to { opacity: 1; transform: none; } }
+
+/* Music is a right-side slide-in drawer (mirrors #sidebar's own left-
+   side slide-in — see that rule's mobile media-query block), not a
+   floating top-left card like the other three panels. It keeps the
+   shared panel look (background/border/padding/flex layout) from the
+   rule above; only position, size and entrance motion are overridden
+   here. opening/closing is still driven entirely by reader.js's
+   existing togglePanel()/closeOnOutsideClick()/closeAllPanels(), which
+   only ever add/remove the .hidden class — none of that logic needed
+   to change for this to work as a drawer instead of a floating card. */
+#audio-panel {
+  top: 0;
+  left: auto;
+  right: 0;
+  bottom: var(--nav-bar-height);
+  width: 86vw;
+  max-width: 380px;
+  max-height: none;
+  height: auto;
+  border-radius: 0;
+  border-right: none;
+  border-top: none;
+  border-bottom: none;
+  box-shadow: -8px 0 40px rgba(0,0,0,.55);
+  animation: none;
+  transition: transform .26s var(--ease);
+  transform: translateX(100%);
+  /* Clears the status bar / notch the same way #sidebar-header does,
+     since this drawer's own header sits flush at the very top of the
+     panel the way the sidebar's does. */
+  padding-top: calc(18px + var(--status-bar-height));
+}
+#audio-panel:not(.hidden) { transform: translateX(0); }
+/* Overrides the shared rule's `display: none` (which would otherwise
+   also cancel the slide-out transition on close) with a delayed
+   display switch, so the panel animates off-screen first and is only
+   removed from layout once that's finished. */
+#audio-panel.hidden {
+  display: flex;
+  transform: translateX(100%);
+  transition: transform .26s var(--ease), visibility 0s linear .26s;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-book);
+  font-size: 19px;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: .1px;
+}
+.panel-title .ico { color: var(--accent); width: 18px; height: 18px; }
+
+/* Every panel's title sits in one of these, title on the left and the
+   close button on the right — the one shared pattern across all four
+   panels (theme/session/audio/bookmarks) so closing one works the same
+   way regardless of which is open. Needed because the panel scrim
+   (mobile) sits above the sidebar's own toggle icons, so re-tapping the
+   icon that opened a panel isn't reliably reachable once it's open. */
+.panel-title-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.panel-close {
+  flex-shrink: 0;
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; color: var(--muted);
+  border: 1px solid transparent; border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: color .12s ease, background .12s ease, border-color .12s ease;
+}
+.panel-close .ico { width: 16px; height: 16px; }
+.panel-close:hover { color: var(--text); background: var(--panel-2); border-color: var(--border); }
+/* The audio panel already had its own header row (title + Rescan); this
+   keeps that pair as one flexible group so the shared close button can
+   sit to its right without a third item cramming the row. */
+.audio-title-group { flex: 1; min-width: 0; }
+
+/* Shared range slider: an amber fill that shows how far along you are. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+  --pct: 50%;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--pct), var(--raised) var(--pct));
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--text);
+  border: 0;
+  box-shadow: 0 1px 6px rgba(0,0,0,.5);
+  transition: transform .12s ease, background .12s ease;
+}
+input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.2); background: var(--accent-strong); }
+input[type="range"]:disabled { opacity: .35; }
+input[type="range"]:disabled::-webkit-slider-thumb { background: var(--faint); }
+
+/* ---------------------------------------------------------------------
+   Reading-colours panel
+   --------------------------------------------------------------------- */
+#theme-panel { min-width: 260px; max-width: 320px; }
+
+.theme-panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  font-size: 14px;
+  color: var(--text);
+}
+.theme-panel-row label { flex-shrink: 0; color: var(--muted); }
+.theme-panel-row input[type="range"] { flex: 1; }
+.theme-panel-row input[type="color"] {
+  -webkit-appearance: none; appearance: none;
+  width: 44px; height: 30px; padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: none;
+  cursor: pointer;
+  overflow: hidden;
+}
+.theme-panel-row input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+.theme-panel-row input[type="color"]::-webkit-color-swatch { border: none; border-radius: 0; }
+
+/* A real switch, not a checkbox — matches the amber-on-dark language
+   used for "on" states elsewhere (active chapter, playing track). */
+.switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 26px;
+  border-radius: var(--r-pill);
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform .15s var(--ease), background .15s ease;
+}
+.switch.on { background: var(--accent-soft); border-color: var(--accent-line); }
+.switch.on::after { transform: translateX(18px); background: var(--accent); }
+
+.theme-panel-row.disabled { opacity: .4; }
+.theme-panel-row.disabled input[type="range"] { pointer-events: none; }
+
+.ghost-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: transparent;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color .12s ease, border-color .12s ease, background .12s ease;
+}
+.ghost-btn:hover { color: var(--text); border-color: var(--border-strong); background: var(--panel-2); }
+
+/* ---------------------------------------------------------------------
+   Session timer
+   --------------------------------------------------------------------- */
+#session-settings-panel { min-width: 280px; max-width: 330px; }
+
+#session-mode-toggle {
+  display: flex;
+  gap: 2px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 3px;
+}
+#session-mode-toggle button {
+  flex: 1;
+  background: transparent;
+  color: var(--muted);
+  border: none;
+  border-radius: 6px;
+  padding: 9px 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .18s ease, color .18s ease;
+}
+#session-mode-toggle button:hover { color: var(--text); }
+#session-mode-toggle button.active { color: var(--text); background: var(--raised); box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+
+.session-panel-hint { margin: 0; font-size: 13px; color: var(--muted); line-height: 1.5; text-align: center; }
+.session-mode-view { display: flex; flex-direction: column; gap: 14px; }
+.session-mode-view.hidden { display: none; }
+
+#dial-readout { display: flex; align-items: flex-end; justify-content: center; gap: 2px; }
+.dial-seg {
+  flex: 1 1 0; min-width: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  background: none; border: none; padding: 0; cursor: pointer;
+}
+.dial-seg-label { font-size: 11px; font-weight: 600; letter-spacing: .3px; color: var(--faint); transition: color .18s ease; }
+.dial-seg.active .dial-seg-label { color: var(--accent); }
+.dial-seg-value {
+  width: 100%;
+  padding: 10px 0;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  transition: border-color .18s ease, color .18s ease, background .18s ease;
+}
+.dial-seg.active .dial-seg-value { border-color: var(--accent-line); color: var(--text); background: var(--accent-soft); }
+.dial-colon { flex: 0 0 auto; padding-bottom: 20px; font-size: 20px; font-weight: 700; color: var(--border-strong); }
+
+#dial-wrap {
+  position: relative; width: 100%; max-width: 220px; margin: 0 auto; aspect-ratio: 1 / 1;
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+#dial { width: 100%; height: 100%; display: block; overflow: visible; }
+#dial-track { fill: none; stroke: var(--panel-2); stroke-width: 12; }
+#dial-progress {
+  fill: none; stroke: var(--accent); stroke-width: 12; stroke-linecap: round;
+  transform: rotate(-90deg); transform-origin: 110px 110px;
+  transition: stroke-dashoffset .12s linear;
+}
+#dial-wrap.dragging #dial-progress { transition: none; }
+.dial-tick { stroke: var(--border-strong); stroke-width: 2; stroke-linecap: round; }
+.dial-tick.major { stroke: var(--faint); stroke-width: 2.5; }
+#dial-handle {
+  fill: var(--text); stroke: var(--panel); stroke-width: 4;
+  filter: drop-shadow(0 2px 8px rgba(232,168,62,.45));
+  transition: r .14s ease;
+}
+#dial-wrap.dragging #dial-handle { r: 15; }
+
+#dial-center {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  pointer-events: none; text-align: center;
+}
+#dial-center-value {
+  font-family: var(--font-book);
+  font-size: 42px; font-weight: 500; line-height: 1;
+  color: var(--text); font-variant-numeric: tabular-nums;
+}
+#dial-center-unit { margin-top: 6px; font-size: 12px; font-weight: 600; color: var(--muted); }
+#dial-center-state { margin-top: 6px; font-size: 11px; font-weight: 700; color: var(--accent); }
+#dial-center-state.hidden { display: none; }
+
+#session-duration-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+#session-duration-presets button {
+  flex: 1 1 0; min-width: 44px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--r-pill);
+  padding: 8px 4px;
+  font-size: 12.5px; font-weight: 600;
+  cursor: pointer;
+  transition: border-color .15s ease, color .15s ease, background .15s ease;
+}
+#session-duration-presets button:hover { border-color: var(--border-strong); color: var(--text); }
+#session-duration-presets button.active { color: var(--accent-strong); background: var(--accent-soft); border-color: var(--accent-line); }
+
+#session-actions { display: flex; align-items: center; gap: 8px; }
+.session-action-btn {
+  flex: 1 1 0; min-width: 0; height: 46px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: transparent; color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  font-size: 14px; font-weight: 600;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease, opacity .15s ease;
+}
+.session-action-btn:hover:not(:disabled) { background: var(--panel-2); border-color: var(--border-strong); }
+.session-action-btn:disabled { opacity: .35; cursor: not-allowed; }
+#session-start-btn {
+  flex: 1.6 1 0;
+  background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700;
+}
+#session-start-btn:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); }
+#session-start-btn.running { background: transparent; border-color: var(--accent-line); color: var(--accent-strong); }
+#session-start-btn.running:hover:not(:disabled) { background: var(--accent-soft); }
+
+#session-status {
+  font-size: 13px; color: var(--muted); text-align: center;
+  border-top: 1px solid var(--border); padding-top: 12px; line-height: 1.5;
+}
+#session-status strong { color: var(--text); font-variant-numeric: tabular-nums; }
+#session-status.armed strong { color: var(--accent-strong); }
+
+#session-time-actions { display: flex; align-items: center; gap: 8px; }
+#session-time-set-btn {
+  background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700;
+}
+#session-time-set-btn:hover:not(:disabled) { background: var(--accent-strong); border-color: var(--accent-strong); }
+#session-time-set-btn:disabled { background: transparent; border-color: var(--accent-line); color: var(--accent-strong); opacity: 1; cursor: default; }
+
+#session-limit-off-btn {
+  background: none; color: var(--faint); border: none; padding: 2px;
+  font-size: 12.5px; cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+#session-limit-off-btn:hover { color: var(--danger); }
+
+/* ---------------------------------------------------------------------
+   Audio player
+   --------------------------------------------------------------------- */
+/* width/max-height/position for #audio-panel live with its other
+   drawer rules near the top of the stylesheet, not here — this file
+   previously sized it as a floating card like the other three panels;
+   see the comment there for why Music is a right-side drawer instead. */
+#audio-panel { gap: 12px; }
+/* Sleep timer and equalizer toggle: hidden per spec, not deleted — see
+   the HTML comment on these elements. */
+.hidden-feature { display: none !important; }
+
+#audio-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; }
+#audio-panel-title { display: flex; align-items: center; gap: 8px; font-family: var(--font-book); font-size: 19px; font-weight: 500; color: var(--text); }
+#audio-panel-title .ico { color: var(--accent); width: 18px; height: 18px; }
+
+#audio-scan-btn {
+  display: flex; align-items: center; gap: 6px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--border); border-radius: var(--r-pill);
+  padding: 6px 12px 6px 10px;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: color .12s ease, border-color .12s ease, background .12s ease;
+}
+#audio-scan-btn .ico { width: 14px; height: 14px; }
+#audio-scan-btn:hover { color: var(--text); border-color: var(--border-strong); background: var(--panel-2); }
+
+/* Now playing card */
+#audio-now-playing {
+  display: flex; flex-direction: column; gap: 14px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 14px;
+  flex-shrink: 0;
+}
+#audio-np-top { display: flex; align-items: center; gap: 14px; min-width: 0; }
+
+#audio-artwork {
+  flex-shrink: 0; width: 56px; height: 56px;
+  border-radius: var(--r-sm);
+  background: linear-gradient(145deg, var(--raised), var(--panel-2));
+  border: 1px solid var(--accent-line);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent);
+  font-size: 22px;
+}
+#audio-artwork .ico { width: 24px; height: 24px; }
+
+#audio-np-text { flex: 1; min-width: 0; }
+#audio-np-title { font-size: 15px; color: var(--text); font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#audio-np-artist { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 3px; }
+
+#audio-seek-row { display: flex; align-items: center; gap: 10px; font-size: 11.5px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+#audio-seek { flex: 1; min-width: 0; }
+
+/* Transport: round icon buttons, the primary one filled amber. */
+#audio-controls { display: flex; align-items: center; justify-content: space-between; gap: 4px; flex-shrink: 0; padding: 0 2px; }
+#audio-controls button {
+  flex: 0 0 auto;
+  width: 44px; height: 44px;
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; color: var(--text);
+  border: none; border-radius: 50%;
+  font-size: 20px; cursor: pointer;
+  transition: background .12s ease, color .12s ease, transform .1s ease;
+  position: relative;
+}
+#audio-controls button:hover:not(:disabled) { background: var(--panel-2); }
+#audio-controls button:active:not(:disabled) { transform: scale(.92); }
+#audio-controls button:disabled { opacity: .3; cursor: not-allowed; }
+#audio-controls button.active { color: var(--accent); }
+/* Small dot under an "on" toggle so state isn't colour-only. */
+#audio-shuffle-btn.active::after,
+#audio-repeat-btn.active::after {
+  content: ""; position: absolute; bottom: 5px; left: 50%; margin-left: -2px;
+  width: 4px; height: 4px; border-radius: 50%; background: var(--accent);
+}
+#audio-play-btn {
+  width: 56px !important; height: 56px !important;
+  background: var(--accent) !important;
+  color: var(--accent-ink) !important;
+  font-size: 24px !important;
+  box-shadow: 0 6px 22px rgba(232,168,62,.28);
+}
+#audio-play-btn:hover:not(:disabled) { background: var(--accent-strong) !important; }
+#audio-play-btn:disabled { background: var(--raised) !important; color: var(--faint) !important; box-shadow: none; }
+
+/* Icon swaps driven by classes the JS toggles, so no emoji/text is written. */
+#audio-play-btn .i-pause, #audio-play-btn.is-playing .i-play { display: none; }
+#audio-play-btn.is-playing .i-pause { display: block; }
+#audio-repeat-btn .i-repeat-one { display: none; }
+#audio-repeat-btn.is-one .i-repeat-one { display: block; }
+#audio-repeat-btn.is-one .i-repeat { display: none; }
+
+.audio-row { display: flex; align-items: center; gap: 12px; font-size: 13px; color: var(--muted); flex-shrink: 0; }
+.audio-row label { flex-shrink: 0; min-width: 56px; }
+.audio-row input[type=range] { flex: 1; min-width: 0; }
+.audio-row select {
+  flex: 1; min-width: 0;
+  background-color: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 8px 32px 8px 12px; font-size: 13px; cursor: pointer;
+}
+.audio-row .audio-row-value { flex-shrink: 0; min-width: 38px; text-align: right; color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+#audio-song-list-heading {
+  font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--muted); flex-shrink: 0; margin-top: 2px;
+}
+/* The song list is the panel's primary, dominant area — flex: 1 lets it
+   claim whatever space the fixed-size rows above it don't need, and
+   min-height keeps it comfortably usable (scrollable, not squeezed to a
+   sliver) even when the panel itself is short. */
+#audio-queue { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 160px; flex: 1; overscroll-behavior: contain; }
+#audio-queue li {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; margin-bottom: 2px;
+  border-radius: var(--r-sm);
+  border-left: 2px solid transparent;
+  font-size: 13.5px; color: var(--muted); cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+#audio-queue li:hover { background: var(--panel-2); color: var(--text); }
+#audio-queue li.playing {
+  color: var(--accent-strong); font-weight: 600;
+  background: var(--accent-soft); border-left-color: var(--accent);
+  border-radius: 2px var(--r-sm) var(--r-sm) 2px;
+}
+.audio-track-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audio-track-duration { flex-shrink: 0; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+#audio-empty { font-size: 13px; color: var(--muted); line-height: 1.55; text-align: center; padding: 14px 6px; }
+#audio-empty code { font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; color: var(--accent-strong); word-break: break-all; }
+
+#audio-status-note { font-size: 12px; color: var(--muted); line-height: 1.5; border-top: 1px solid var(--border); padding-top: 10px; flex-shrink: 0; }
+#audio-status-note:empty { display: none; }
+
+#audio-playlist-row.hidden { display: none; }
+#audio-playlist-btn {
+  flex: 1; min-width: 0;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background-color: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 8px 10px 8px 12px; font-size: 13px; cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+#audio-playlist-btn:hover { border-color: var(--border-strong); background: var(--raised); }
+#audio-playlist-btn .ico { width: 15px; height: 15px; color: var(--muted); flex-shrink: 0; transition: transform .15s ease; }
+#audio-playlist-btn[aria-expanded="true"] .ico { transform: rotate(180deg); }
+#audio-playlist-btn-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Playlist list: expands inline, in normal document flow, directly
+   under the button above — not a separate floating overlay. This is
+   what fixes the "selecting a playlist closes the whole panel and
+   shows a blank screen" bug: the old version was a modal-style menu
+   whose list got rebuilt (innerHTML = '') from inside a click handler
+   on one of its own <li> items, which detached that <li> from the
+   document mid-bubble; closeOnOutsideClick()'s document-level listener
+   then saw a target no longer inside #audio-panel and closed the whole
+   panel. An inline list that's simply shown/hidden (never rebuilt
+   during its own click) can't trigger that. Capped height with its own
+   scroll so a long list of playlists can't push the now-playing card
+   and transport controls off-panel. */
+#audio-playlist-list.hidden { display: none; }
+#audio-playlist-list {
+  list-style: none; margin: 0; padding: 4px;
+  max-height: 180px; overflow-y: auto;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  flex-shrink: 0;
+}
+#audio-playlist-list li {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 10px 12px; margin-bottom: 2px;
+  border-radius: var(--r-sm);
+  border-left: 2px solid transparent;
+  font-size: 13.5px; color: var(--muted); cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+#audio-playlist-list li:hover { background: var(--panel); color: var(--text); }
+#audio-playlist-list li.active {
+  color: var(--accent-strong); font-weight: 600;
+  background: var(--accent-soft); border-left-color: var(--accent);
+  border-radius: 2px var(--r-sm) var(--r-sm) 2px;
+}
+#audio-playlist-list li.active .ico { color: var(--accent); }
+#audio-playlist-list .ico { width: 16px; height: 16px; flex-shrink: 0; }
+
+.audio-track-playlist {
+  flex-shrink: 0; font-size: 11px; font-weight: 600; color: var(--muted);
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: var(--r-pill); padding: 2px 9px; max-width: 96px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+#audio-eq-toggle {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  background: transparent; color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 10px 12px; font-size: 13px; font-weight: 600; cursor: pointer; flex-shrink: 0;
+  transition: border-color .12s ease, background .12s ease;
+}
+#audio-eq-toggle:hover { background: var(--panel-2); border-color: var(--border-strong); }
+#audio-eq-toggle .ico { width: 16px; height: 16px; color: var(--muted); transition: transform .2s var(--ease); }
+#audio-eq-toggle[aria-expanded="true"] .ico { transform: rotate(180deg); }
+
+#audio-eq-panel {
+  display: flex; flex-direction: column; gap: 12px;
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 14px 12px; flex-shrink: 0;
+}
+#audio-eq-panel.hidden { display: none; }
+#audio-eq-bands { display: flex; align-items: flex-end; justify-content: space-between; gap: 2px; height: 108px; }
+.eq-band { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; height: 100%; }
+.eq-band-slider { writing-mode: vertical-lr; direction: rtl; width: 22px; height: 100%; }
+.eq-band-slider::-webkit-slider-runnable-track { background: var(--raised) !important; width: 4px; height: auto; }
+.eq-band-slider::-webkit-slider-thumb { margin-top: 0; margin-left: -6px; }
+.eq-band-label { font-size: 10px; font-weight: 600; color: var(--faint); margin-top: 4px; }
+#audio-eq-reset { align-self: stretch; }
+
+/* ---------------------------------------------------------------------
+   Bookmarks
+   --------------------------------------------------------------------- */
+#bookmarks-panel { min-width: 260px; max-width: 320px; max-height: 64vh; }
+#bookmarks-panel-header { display: flex; flex-direction: column; gap: 12px; flex-shrink: 0; }
+
+#bookmark-chapter-btn {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: transparent; color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  padding: 11px 12px; font-size: 13.5px; font-weight: 600; cursor: pointer;
+  transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+#bookmark-chapter-btn:hover { background: var(--panel-2); border-color: var(--border-strong); }
+#bookmark-chapter-btn.active { color: var(--accent-strong); background: var(--accent-soft); border-color: var(--accent-line); }
+#bookmark-chapter-btn.active .ico { fill: currentColor; fill-opacity: .3; }
+
+#bookmarks-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; min-height: 0; }
+#bookmarks-list li {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 6px 10px 12px; margin-bottom: 2px;
+  border-radius: var(--r-sm);
+  font-size: 13.5px; color: var(--text); cursor: pointer;
+  transition: background .12s ease;
+}
+#bookmarks-list li:hover { background: var(--panel-2); }
+.bookmark-kind { flex-shrink: 0; width: 16px; height: 16px; color: var(--accent); }
+.bookmark-item-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bookmark-remove-btn {
+  flex-shrink: 0; width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  background: none; border: none; color: var(--faint);
+  border-radius: 50%; cursor: pointer; font-size: 14px;
+  transition: color .12s ease, background .12s ease;
+}
+.bookmark-remove-btn:hover { color: var(--danger); background: rgba(231,122,106,.12); }
+#bookmarks-empty { font-size: 13.5px; color: var(--muted); line-height: 1.55; }
+
+.paragraph-bookmarked {
+  background: var(--accent-soft);
+  border-left: 3px solid var(--accent);
+  padding-left: 10px !important;
+  margin-left: -13px !important;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+
+/* ---------------------------------------------------------------------
+   Reader
+   --------------------------------------------------------------------- */
+#reader-scroll {
+  flex: 1; min-height: 0; overflow-y: auto;
+  display: flex; justify-content: center;
+  -webkit-overflow-scrolling: touch; overscroll-behavior: none;
+  background: var(--read-bg, transparent);
+}
+
+#reader { max-width: 720px; width: 100%; padding: 56px 28px 110px; color: var(--read-text, inherit); }
+
+#reader.flip-next, #reader.flip-prev {
+  transform-style: preserve-3d; backface-visibility: hidden;
+  animation-duration: var(--flip-duration, 2000ms);
+  animation-timing-function: cubic-bezier(.4, 0, .2, 1);
+  animation-fill-mode: both;
+}
+#reader.flip-next { transform-origin: left center; animation-name: pageFlipNext; }
+#reader.flip-prev { transform-origin: right center; animation-name: pageFlipPrev; }
+@keyframes pageFlipNext {
+  0%   { transform: perspective(1400px) rotateY(-72deg) scale(0.95); opacity: 0.45; }
+  55%  { transform: perspective(1400px) rotateY(12deg) scale(1); opacity: 1; }
+  80%  { transform: perspective(1400px) rotateY(-3deg); }
+  100% { transform: perspective(1400px) rotateY(0deg) scale(1); opacity: 1; }
+}
+@keyframes pageFlipPrev {
+  0%   { transform: perspective(1400px) rotateY(72deg) scale(0.95); opacity: 0.45; }
+  55%  { transform: perspective(1400px) rotateY(-12deg) scale(1); opacity: 1; }
+  80%  { transform: perspective(1400px) rotateY(3deg); }
+  100% { transform: perspective(1400px) rotateY(0deg) scale(1); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #reader.flip-next, #reader.flip-prev { animation: none; }
+  #splash *, #splash::before { animation-duration: .01s !important; animation-delay: 0s !important; }
+}
+
+/* The chapter title is the book voice. */
+#chapter-title {
+  font-family: var(--font-book);
+  font-size: 34px; font-weight: 500; line-height: 1.18; letter-spacing: -.2px;
+  color: var(--read-text, inherit);
+  margin: 0 0 8px;
+  text-wrap: balance;
+}
+#chapter-source { font-size: 12px; color: var(--faint); margin-bottom: 36px; word-break: break-all; }
+#chapter-source:empty { margin-bottom: 20px; }
+#chapter-source a { color: var(--faint); }
+
+#chapter-text {
+  font-family: var(--font-book);
+  font-size: 19px; line-height: 1.6; letter-spacing: 0;
+  white-space: pre-wrap;
+  color: var(--read-text, inherit);
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+#chapter-text p { margin: 0 0 22px; }
+
+/* Welcome / first-run state */
+#welcome { max-width: 560px; margin: 0 auto; padding: 72px 24px; text-align: center; color: var(--muted); }
+#welcome .wl-mark {
+  width: 64px; height: 64px; margin: 0 auto 24px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+  background: var(--accent-soft); color: var(--accent);
+  border: 1px solid var(--accent-line);
+}
+#welcome .wl-mark .ico { width: 28px; height: 28px; }
+#welcome h2 { font-family: var(--font-book); font-weight: 500; color: var(--text); font-size: 30px; line-height: 1.15; margin: 0 0 10px; }
+#welcome p { margin: 0 auto 26px; max-width: 40ch; line-height: 1.6; font-size: 15px; }
+#welcome .steps {
+  text-align: left;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--r-md); padding: 6px 4px;
+  margin: 0; list-style: none; counter-reset: s;
+}
+#welcome .steps li {
+  counter-increment: s;
+  display: flex; gap: 14px; align-items: flex-start;
+  padding: 14px 16px; font-size: 14.5px; line-height: 1.5; color: var(--muted);
+}
+#welcome .steps li + li { border-top: 1px solid var(--border); }
+#welcome .steps li::before {
+  content: counter(s);
+  flex-shrink: 0; width: 24px; height: 24px; margin-top: 1px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; border: 1px solid var(--accent-line);
+  color: var(--accent); font-size: 12px; font-weight: 700;
+}
+#welcome .steps code { font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: var(--accent-strong); word-break: break-all; }
+#welcome .steps b { color: var(--text); font-weight: 600; }
+
+#welcome.is-loading .wl-mark { animation: breathe 2.4s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { box-shadow: 0 0 0 0 rgba(232,168,62,.0); } 50% { box-shadow: 0 0 0 10px rgba(232,168,62,.10); } }
+
+#bottom-nav { display: flex; flex-wrap: wrap; justify-content: space-between; margin-top: 56px; gap: 10px; }
+#bottom-nav button {
+  flex: 1 1 120px;
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 15px 14px;
+  background: transparent; color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  font-size: 14.5px; font-weight: 600; cursor: pointer;
+  transition: background .12s ease, border-color .12s ease;
+}
+#bottom-nav button .ico { width: 18px; height: 18px; }
+#bottom-nav button:hover:not(:disabled) { background: var(--panel-2); border-color: var(--border-strong); }
+#bottom-nav button:disabled { opacity: .3; cursor: not-allowed; }
+#bottom-next:not(:disabled) { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-strong); }
+
+#open-termux-btn {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; margin-top: 14px; padding: 15px;
+  background: transparent; color: var(--muted);
+  border: 1px dashed var(--border-strong); border-radius: var(--r-sm);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+  transition: color .12s ease, border-color .12s ease, background .12s ease;
+}
+#open-termux-btn:hover { color: var(--text); border-color: var(--muted); background: var(--panel); }
+#open-termux-btn.hidden { display: none; }
+
+#toggle-sidebar { flex-shrink: 0; }
+
+/* Hidden on desktop: the sidebar is docked there, not an overlay, so it
+   never needs a dedicated close button (#toggle-sidebar already shows/
+   hides it). The mobile media query below turns this back on. */
+#sidebar-close { display: none; }
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
+
+/* ---------------------------------------------------------------------
+   In-app dialog: replaces the native light-theme AlertDialog so
+   messages match the rest of the app.
+   --------------------------------------------------------------------- */
+#dialog-layer {
+  position: fixed; inset: 0; z-index: 300;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: rgba(5,6,9,.72);
+  animation: fadeIn .18s ease both;
+}
+#dialog-layer.hidden { display: none; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+#dialog-box {
+  width: 100%; max-width: 340px;
+  background: var(--panel); border: 1px solid var(--border-strong);
+  border-radius: var(--r-md); padding: 22px 20px 16px;
+  box-shadow: 0 30px 80px rgba(0,0,0,.65);
+  animation: panelIn .22s var(--ease) both;
+}
+#dialog-icon { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); margin-bottom: 14px; }
+#dialog-icon .ico { width: 20px; height: 20px; }
+#dialog-message { font-size: 15px; line-height: 1.55; color: var(--text); margin: 0 0 20px; }
+#dialog-actions { display: flex; justify-content: flex-end; }
+#dialog-ok {
+  padding: 11px 22px; background: var(--accent); color: var(--accent-ink);
+  border: none; border-radius: var(--r-sm);
+  font-size: 14px; font-weight: 700; cursor: pointer;
+}
+#dialog-ok:hover { background: var(--accent-strong); }
+
+/* ---------------------------------------------------------------------
+   Session-limit overlay
+   --------------------------------------------------------------------- */
+/* Night lock: opaque, above everything (splash is 500, break overlay 200). */
+#night-lock {
+  position: fixed; inset: 0;
+  z-index: 1000;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+#night-lock.hidden { display: none; }
+#night-lock-box { max-width: 340px; text-align: center; color: var(--text); }
+#night-lock-icon {
+  width: 72px; height: 72px; margin: 0 auto 22px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-line);
+}
+#night-lock-icon svg { width: 32px; height: 32px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#night-lock-box h2 { margin: 0 0 10px; font-family: var(--font-book); font-weight: 500; font-size: 28px; }
+#night-lock-box p { margin: 0 0 8px; color: var(--muted); font-size: 15px; line-height: 1.55; }
+#night-lock-now { font-size: 34px; font-weight: 600; letter-spacing: .02em; color: var(--text); margin: 14px 0 6px; }
+#night-lock-opens { color: var(--accent); font-size: 14px; font-weight: 600; }
+
+#session-limit-overlay {
+  position: fixed; inset: 0;
+  background: var(--overlay, rgba(5,6,9,.9));
+  z-index: 200;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+}
+#session-limit-overlay.hidden { display: none; }
+#session-limit-box { max-width: 340px; text-align: center; color: var(--text); animation: rise .5s var(--ease) both; }
+#session-limit-icon {
+  width: 72px; height: 72px; margin: 0 auto 22px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-line);
+}
+#session-limit-icon .ico { width: 32px; height: 32px; }
+#session-limit-box h2 { margin: 0 0 10px; font-family: var(--font-book); font-weight: 500; font-size: 28px; color: var(--text); }
+#session-limit-box p { margin: 0 0 26px; color: var(--muted); font-size: 15px; line-height: 1.55; }
+#session-limit-dismiss-btn {
+  padding: 13px 26px; background: transparent; color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: var(--r-sm);
+  font-size: 14px; font-weight: 600; cursor: pointer;
+}
+#session-limit-dismiss-btn:hover { background: var(--panel-2); }
+
+/* ---------------------------------------------------------------------
+   Mobile
+   --------------------------------------------------------------------- */
+@media (max-width: 720px) {
+  #app { position: relative; }
+
+  #sidebar {
+    position: fixed; inset: 0 auto var(--nav-bar-height) 0;
+    width: 88vw; max-width: 350px; z-index: 70;
+    transition: transform .26s var(--ease);
+    transform: translateX(-100%);
+    box-shadow: 8px 0 40px rgba(0,0,0,.55);
+  }
+  #sidebar:not(.collapsed) { transform: translateX(0); }
+
+  #sidebar-scrim {
+    position: fixed; inset: 0; background: rgba(4,5,8,.62);
+    z-index: 65; opacity: 0; pointer-events: none; transition: opacity .26s ease;
+  }
+  #sidebar-scrim.visible { opacity: 1; pointer-events: auto; }
+
+  /* One z-index below the panels themselves (90), above everything else
+     — including an open sidebar drawer (70) — so a panel opened from
+     the sidebar reads as sitting in front of a clean screen. Fully
+     opaque rather than translucent: a panel's card only wraps its own
+     content, so this is what actually hides the sidebar list behind it
+     — any translucency here left chapter titles faintly but
+     distractingly legible through the gap below the panel's card. */
+  #panel-scrim {
+    position: fixed; inset: 0; background: var(--bg);
+    z-index: 85; opacity: 0; pointer-events: none; transition: opacity .2s ease;
+  }
+  #panel-scrim.visible { opacity: 1; pointer-events: auto; }
+
+  #sidebar-header { padding: 14px 14px 12px; padding-top: calc(14px + var(--status-bar-height)); }
+  #sidebar-header h1 { font-size: 22px; }
+  #chapter-list { padding: 6px; }
+  #chapter-list li { padding: 13px 12px; font-size: 15px; }
+
+  #main { width: 100%; }
+
+  #reader { padding: 30px 20px 120px; }
+  #chapter-title { font-size: 27px; }
+  #chapter-text { font-size: 18px; line-height: 1.6; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+
+  #topbar { gap: 6px; padding: 8px 10px; position: sticky; top: 0; z-index: 40; }
+  #topbar button { width: 40px; height: 40px; }
+  #font-family-select { height: 40px; max-width: 118px; font-size: 12.5px; padding-left: 10px; }
+  #status-clock { left: 14px; font-size: 11px; }
+
+  /* #toggle-sidebar (inside #topbar) can't be rescued with a bigger
+     z-index once the drawer is open: #topbar is its own stacking
+     context (position: sticky + z-index), so any z-index set on a
+     button inside it is only ever compared *within* that context, and
+     then the whole context loses to the open drawer (z-index 70) as a
+     unit — no z-index on a #topbar descendant can escape that. Rather
+     than fight that, #sidebar-close (see the markup, inside
+     #sidebar-icon-buttons) is a plain member of the drawer's own header
+     row — a normal document-flow icon button, not an overlay — so
+     there's no stacking contest to lose in the first place. It's shown
+     only on mobile, and only once the drawer has content worth closing. */
+  #sidebar-close { display: flex; }
+
+  #theme-panel, #bookmarks-panel, #session-settings-panel {
+    right: 10px; left: 10px; min-width: 0; max-width: none;
+    top: calc(64px + var(--status-bar-height));
+  }
+  /* #audio-panel is a full-height right-side drawer on every width (see
+     its own rules near the top of the stylesheet) — it's intentionally
+     excluded from the floating-card repositioning above. */
+  #audio-panel { width: 92vw; max-width: 380px; }
+
+  #bottom-nav { margin-top: 44px; }
+  #bottom-nav button { min-height: 50px; }
+
+  #welcome { padding: 44px 18px; }
+  #welcome h2 { font-size: 26px; }
+}
+
+@media (max-width: 360px) {
+  #topbar button { width: 36px; height: 36px; }
+  #font-family-select { max-width: 96px; }
+}
+
+/* Icon parts that are solid rather than stroked: transport glyphs and the
+   little paint dots. Kept here so the sprite stays presentation-free. */
+.ico .solid { fill: currentColor; stroke: currentColor; stroke-width: 1.2; }
+.ico .dot { fill: currentColor; stroke: none; }
+.ico circle[r=".9"], .ico circle[r=".6"] { fill: currentColor; stroke: none; }
+
+
+/* ---------------------------------------------------------------------
+   Motion pass: animation for controls/panels that had none. All rules
+   use :where() or low specificity so any existing, more specific
+   transition on a given control still wins. Disabled by the
+   prefers-reduced-motion block at the end.
+   --------------------------------------------------------------------- */
+:where(button:not(:disabled)) {
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease,
+              box-shadow .2s ease, opacity .15s ease, transform .14s var(--ease);
+}
+:where(button:active:not(:disabled)) { transform: scale(.94); }
+:where(button .ico) { transition: transform .22s var(--ease), color .15s ease; }
+:where(button:hover:not(:disabled) .ico) { transform: scale(1.1); }
+:where(button:active:not(:disabled) .ico) { transform: scale(.92); }
+
+/* List rows: press feedback + smooth highlight. */
+#chapter-list li, #bookmarks-list li, #audio-queue li, #audio-playlist-list li {
+  transition: background-color .15s ease, color .15s ease, border-color .15s ease, transform .14s var(--ease);
+}
+#chapter-list li:active, #bookmarks-list li:active,
+#audio-queue li:active, #audio-playlist-list li:active { transform: scale(.985); }
+
+/* Panels: their contents rise in one after another each time one opens
+   (the panels toggle display:none, so these replay on every open). */
+#theme-panel:not(.hidden) > *,
+#session-settings-panel:not(.hidden) > *,
+#bookmarks-panel:not(.hidden) > * { animation: rise .34s var(--ease) both; }
+#theme-panel:not(.hidden) > :nth-child(1), #session-settings-panel:not(.hidden) > :nth-child(1), #bookmarks-panel:not(.hidden) > :nth-child(1) { animation-delay: .00s; }
+#theme-panel:not(.hidden) > :nth-child(2), #session-settings-panel:not(.hidden) > :nth-child(2), #bookmarks-panel:not(.hidden) > :nth-child(2) { animation-delay: .03s; }
+#theme-panel:not(.hidden) > :nth-child(3), #session-settings-panel:not(.hidden) > :nth-child(3), #bookmarks-panel:not(.hidden) > :nth-child(3) { animation-delay: .06s; }
+#theme-panel:not(.hidden) > :nth-child(4), #session-settings-panel:not(.hidden) > :nth-child(4), #bookmarks-panel:not(.hidden) > :nth-child(4) { animation-delay: .09s; }
+#theme-panel:not(.hidden) > :nth-child(5), #session-settings-panel:not(.hidden) > :nth-child(5), #bookmarks-panel:not(.hidden) > :nth-child(5) { animation-delay: .12s; }
+#theme-panel:not(.hidden) > :nth-child(n+6), #session-settings-panel:not(.hidden) > :nth-child(n+6), #bookmarks-panel:not(.hidden) > :nth-child(n+6) { animation-delay: .15s; }
+
+/* Bookmark rows animate in when the list is shown. */
+#bookmarks-panel:not(.hidden) #bookmarks-list li { animation: fadeIn .3s ease both; }
+
+/* Music drawer: inline sections expand with a soft entrance. */
+#audio-playlist-list:not(.hidden),
+#audio-eq-panel:not(.hidden) { animation: panelIn .22s var(--ease) both; transform-origin: top center; }
+
+/* Music: the play button glows gently while audio is playing, and the
+   now-playing row in the queue has a slow pulse on its accent. */
+#audio-play-btn.is-playing { box-shadow: 0 0 0 6px var(--accent-soft); }
+#audio-queue li.playing { animation: fadeIn .25s ease both; }
+#audio-np-title, #audio-np-artist, #audio-status-note { transition: opacity .2s ease, color .2s ease; }
+
+/* Reading column: chapter title/text ease in when a chapter loads. */
+#chapter-title { animation: rise .45s var(--ease) both; }
+
+/* Sidebar: smoother slide, and the toggle button turns a little. */
+#toggle-sidebar .ico { transition: transform .26s var(--ease); }
+#sidebar.collapsed ~ * #toggle-sidebar .ico { transform: scaleX(-1); }
+
+/* Dialogs/overlays leave as softly as they arrive. */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* Theme presets + recently used colours. */
+.preset-group { display: flex; gap: 6px; flex: 1; justify-content: flex-end; }
+.preset-btn {
+  padding: 6px 14px; border-radius: var(--r-pill);
+  background: var(--panel-2); color: var(--muted);
+  border: 1px solid var(--border-strong);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.preset-btn:hover { color: var(--text); }
+.preset-btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.recent-colors { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; min-height: 0; margin-top: -6px; }
+.recent-colors:empty { display: none; }
+.recent-swatch {
+  width: 24px; height: 24px; padding: 0; border-radius: 50%;
+  border: 2px solid var(--border-strong); cursor: pointer;
+}
+.recent-swatch.current { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+#audio-toggle-top.playing { color: var(--accent); border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-soft); }
+#audio-artwork { overflow: hidden; }
+#audio-artwork.has-art { border-color: var(--border-strong); }
+#audio-artwork img { width: 100%; height: 100%; object-fit: cover; display: block; animation: fadeIn .3s ease both; }
+/* Peek mode (see peek-mode.js): fade everything but the dragged slider. */
+#theme-panel, #session-settings-panel { transition: background-color .2s ease, border-color .2s ease, box-shadow .2s ease; }
+#theme-panel > *, #session-settings-panel > * { transition: opacity .2s ease; }
+body.peek-active #theme-panel,
+body.peek-active #session-settings-panel {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+body.peek-active #theme-panel > :not(.peek-keep),
+body.peek-active #session-settings-panel > :not(.peek-keep) { opacity: 0 !important; pointer-events: none; }
+body.peek-active #theme-panel > .peek-keep,
+body.peek-active #session-settings-panel > .peek-keep {
+  opacity: 1 !important;
+  /* Mostly see-through so the text behind the slider stays readable. */
+  background: var(--overlay-soft, rgba(5,6,9,.5));
+  border-radius: var(--r-md, 14px);
+  box-shadow: none;
+  padding: 8px 12px;
+}
+/* The menu/top bar and everything else fades away too while dragging. */
+#topbar { transition: opacity .2s ease; }
+body.peek-active #topbar,
+body.peek-active #sidebar,
+body.peek-active #sidebar-scrim,
+body.peek-active #bottom-nav,
+body.peek-active #status-clock { opacity: 0 !important; pointer-events: none; }
+body.peek-active #panel-scrim { opacity: 0 !important; background: transparent !important; }
+
+/* ---------------------------------------------------------------------
+   Smoothness pass: softer easing (see --ease), slightly longer durations,
+   and panels now fade/slide OUT instead of vanishing. Only transform and
+   opacity are animated, which the browser can run without re-layout.
+   --------------------------------------------------------------------- */
+#theme-panel, #session-settings-panel, #bookmarks-panel { animation-duration: .34s; }
+#theme-panel:not(.hidden) > *,
+#session-settings-panel:not(.hidden) > *,
+#bookmarks-panel:not(.hidden) > * { animation-duration: .5s; }
+#dialog-layer { animation-duration: .26s; }
+#dialog-box { animation-duration: .34s; }
+
+:where(button:not(:disabled)) {
+  transition: background-color .2s ease, color .2s ease, border-color .2s ease,
+              box-shadow .25s ease, opacity .2s ease, transform .2s var(--ease);
+}
+#chapter-list li, #bookmarks-list li, #audio-queue li, #audio-playlist-list li {
+  transition: background-color .2s ease, color .2s ease, border-color .2s ease, transform .2s var(--ease);
+}
+
+/* Panels fade and drift out on close (display is held until the fade ends;
+   browsers without allow-discrete just close instantly as before). */
+#theme-panel, #session-settings-panel, #bookmarks-panel {
+  transition: opacity .26s var(--ease), transform .26s var(--ease), display .26s allow-discrete,
+              background-color .2s ease, border-color .2s ease, box-shadow .2s ease;
+}
+#theme-panel.hidden, #session-settings-panel.hidden, #bookmarks-panel.hidden {
+  animation: none;
+  opacity: 0;
+  transform: translateY(-8px) scale(.985);
+  pointer-events: none;
+}
+
+/* Drawers and scrim: a little slower so the motion reads as smooth. */
+#sidebar { transition: margin-left .32s var(--ease); }
+@media (max-width: 720px) {
+  #sidebar { transition: transform .34s var(--ease); }
+  #sidebar-scrim { transition: opacity .34s ease; }
+}
+
+/* ---- Library / novel picker ---- */
+#novel-picker {
+  position: fixed; inset: 0; z-index: 150;
+  background: var(--bg);
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: calc(var(--status-bar-height, 24px) + 18px) 18px calc(var(--nav-bar-height, 24px) + 24px);
+  animation: fadeIn .35s ease both;
+}
+#novel-picker.hidden { display: none; }
+#novel-picker-inner { max-width: 760px; margin: 0 auto; }
+#novel-picker-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+#novel-picker-head h1 { margin: 0; font-size: 26px; font-weight: 700; letter-spacing: -.3px; color: var(--text); }
+#novel-picker-sub { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+#novel-picker-close {
+  width: 40px; height: 40px; flex-shrink: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--panel-2); color: var(--text); border: 1px solid var(--border-strong); cursor: pointer;
+}
+#novel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 22px 16px; }
+.novel-card {
+  display: flex; flex-direction: column; gap: 10px; align-items: stretch;
+  background: none; border: none; padding: 0; margin: 0; cursor: pointer;
+  color: var(--text); text-align: center; font: inherit;
+  animation: rise .5s var(--ease) both; animation-delay: calc(var(--i, 0) * 45ms);
+}
+.novel-cover {
+  position: relative; width: 100%; aspect-ratio: 2 / 3; overflow: hidden;
+  border-radius: 12px; background: var(--panel-2);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 8px 22px rgba(0,0,0,.35);
+  display: flex; align-items: center; justify-content: center;
+  transition: transform .25s var(--ease), box-shadow .25s ease;
+}
+.novel-card:active .novel-cover { transform: scale(.96); }
+.novel-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; animation: fadeIn .4s ease both; }
+.novel-cover .nc-ph { display: flex; flex-direction: column; align-items: center; gap: 8px; color: var(--muted); }
+.novel-cover .nc-ph .ico { width: 34px; height: 34px; }
+.novel-cover .nc-ph b { font-size: 34px; font-weight: 700; color: var(--text); opacity: .85; }
+.novel-name {
+  font-size: 14px; font-weight: 600; line-height: 1.25; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.novel-last { font-size: 11px; color: var(--faint); margin-top: -6px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+</style>
+<style id="enhanced-splash-book-anim">#splash-book { position: relative; width: 120px; height: 120px; perspective: 1000px; }#splash-book .sb-svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 10px 24px rgba(229,164,59,0.32)); }#splash-book .sb-underlight { opacity: 0; transform-origin: 60px 82px; animation: glowPulse 2.4s ease-in-out infinite alternate, lampIn 1.1s var(--ease) 0.3s both; }#splash-book .sb-cover { fill: rgba(17, 20, 28, 0.7); stroke: var(--accent); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; filter: url(#book-glow); }#splash-book .sb-spine { stroke: var(--accent-strong); stroke-width: 2.6; stroke-linecap: round; }#splash-book .sb-spine-curve { stroke: var(--accent); stroke-width: 2.2; fill: none; }#splash-book .sb-page-sheet { fill: rgba(26, 31, 44, 0.85); stroke: rgba(240, 235, 225, 0.5); stroke-width: 1.4; stroke-linejoin: round; }#splash-book .sb-line { stroke: var(--text); stroke-opacity: 0.55; stroke-width: 1.6; stroke-linecap: round; }#splash-book .sb-bookmark-ribbon { fill: var(--accent); opacity: 0.85; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); transform-origin: 60px 42px; animation: ribbonSway 2.6s ease-in-out infinite alternate; }#splash-book .sb-cover-left { transform-origin: 60px 60px; animation: bookOpenLeft 1.4s cubic-bezier(0.2, 0.85, 0.3, 1) 0.1s both; }#splash-book .sb-cover-right { transform-origin: 60px 60px; animation: bookOpenRight 1.4s cubic-bezier(0.2, 0.85, 0.3, 1) 0.1s both; }#splash-book .sb-page-left-back { transform-origin: 60px 60px; animation: bookOpenLeft 1.3s cubic-bezier(0.2, 0.85, 0.3, 1) 0.3s both; }#splash-book .sb-page-right-back { transform-origin: 60px 60px; animation: bookOpenRight 1.3s cubic-bezier(0.2, 0.85, 0.3, 1) 0.3s both; }#splash-book .sb-page-left-main { transform-origin: 60px 60px; animation: pageFanLeft 1.4s cubic-bezier(0.2, 0.85, 0.3, 1) 0.45s both; }#splash-book .sb-page-right-main { transform-origin: 60px 60px; animation: pageFanRight 1.4s cubic-bezier(0.2, 0.85, 0.3, 1) 0.45s both; }#splash-book .sb-spine-group { transform-origin: 60px 60px; animation: spineRise 1.2s var(--ease) both; }@keyframes bookOpenLeft { 0% { transform: scaleX(0.08) rotateY(70deg) skewY(8deg); opacity: 0; } 45% { opacity: 1; } 100% { transform: scaleX(1) rotateY(0deg) skewY(0deg); opacity: 1; } }@keyframes bookOpenRight { 0% { transform: scaleX(0.08) rotateY(-70deg) skewY(-8deg); opacity: 0; } 45% { opacity: 1; } 100% { transform: scaleX(1) rotateY(0deg) skewY(0deg); opacity: 1; } }@keyframes pageFanLeft { 0% { transform: scaleX(0.05) rotateY(75deg); opacity: 0; } 30% { opacity: 0.6; } 70% { transform: scaleX(1.05) rotateY(-8deg); opacity: 1; } 100% { transform: scaleX(1) rotateY(0deg); opacity: 1; } }@keyframes pageFanRight { 0% { transform: scaleX(0.05) rotateY(-75deg); opacity: 0; } 30% { opacity: 0.6; } 70% { transform: scaleX(1.05) rotateY(8deg); opacity: 1; } 100% { transform: scaleX(1) rotateY(0deg); opacity: 1; } }@keyframes spineRise { 0% { transform: scaleY(0.4) translateY(12px); opacity: 0; } 100% { transform: scaleY(1) translateY(0); opacity: 1; } }@keyframes ribbonSway { 0% { transform: rotate(0deg); } 100% { transform: rotate(4.5deg) scaleX(0.96); } }@keyframes glowPulse { 0% { opacity: 0.35; transform: scale(0.92); } 100% { opacity: 0.85; transform: scale(1.12); } }</style>
+</head>
+<body>
+<!-- Icon sprite: 24x24 grid, 1.75px stroke, round caps/joins (set in .ico). -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6.5C10.4 5.2 8 4.5 4.5 4.5v13c3.5 0 5.9.7 7.5 2 1.6-1.3 4-2 7.5-2v-13c-3.5 0-5.9.7-7.5 2Z"/><path d="M12 6.5v13"/></symbol>
+  <symbol id="i-palette" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.1 0 1.8-.8 1.8-1.7 0-.5-.2-.8-.4-1.1-.3-.3-.5-.7-.5-1.2 0-.9.7-1.6 1.6-1.6H16a4.5 4.5 0 0 0 4.5-4.5C20.5 6.5 16.7 3.5 12 3.5Z"/><circle cx="7.6" cy="11.4" r=".9" class="dot"/><circle cx="10.2" cy="7.6" r=".9"/><circle cx="14.6" cy="7.6" r=".9"/></symbol>
+  <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3.5" y="14.5" width="4" height="6" rx="1.6"/><rect x="16.5" y="14.5" width="4" height="6" rx="1.6"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6.5 4.5h11a1 1 0 0 1 1 1v14.2a.5.5 0 0 1-.8.4L12 15.5l-5.7 4.6a.5.5 0 0 1-.8-.4V5.5a1 1 0 0 1 1-1Z"/></symbol>
+  <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M6.5 3.5h11M6.5 20.5h11"/><path d="M8 3.5c0 4 2.2 5.4 4 8.5-1.8 3.1-4 4.5-4 8.5M16 3.5c0 4-2.2 5.4-4 8.5 1.8 3.1 4 4.5 4 8.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4.5 7h15M4.5 12h15M4.5 17h9"/></symbol>
+  <symbol id="i-chev-left" viewBox="0 0 24 24"><path d="m14.5 6-6 6 6 6"/></symbol>
+  <symbol id="i-chev-right" viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6"/></symbol>
+  <symbol id="i-chev-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 6v12M6 12h12"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5.5 12.5 4.5 4.5 8.5-9.5"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path class="solid" d="M8 5.6v12.8a.6.6 0 0 0 .9.5l10.3-6.4a.6.6 0 0 0 0-1L8.9 5.1a.6.6 0 0 0-.9.5Z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect class="solid" x="6.5" y="5" width="3.8" height="14" rx="1.2"/><rect class="solid" x="13.7" y="5" width="3.8" height="14" rx="1.2"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path class="solid" d="M17.5 6.1v11.8a.5.5 0 0 1-.8.4L9 12.4a.5.5 0 0 1 0-.8l7.7-5.9a.5.5 0 0 1 .8.4Z"/><path d="M6.5 6v12"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path class="solid" d="M6.5 6.1v11.8a.5.5 0 0 0 .8.4l7.7-5.9a.5.5 0 0 0 0-.8L7.3 5.7a.5.5 0 0 0-.8.4Z"/><path d="M17.5 6v12"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M3 7h3c1.2 0 2.3.6 3 1.6l6 6.8c.7 1 1.8 1.6 3 1.6h2.5"/><path d="M3 17h3c1.2 0 2.3-.6 3-1.6l1-1.1"/><path d="M14 9.7l1-1.1c.7-1 1.8-1.6 3-1.6h2.5"/><path d="M17.5 4.5L20.5 7l-3 2.5"/><path d="M17.5 19.5L20.5 17l-3-2.5"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M4.5 11V9.5A2.5 2.5 0 0 1 7 7h11.5"/><path d="m16 4.5 2.5 2.5-2.5 2.5"/><path d="M19.5 13v1.5A2.5 2.5 0 0 1 17 17H5.5"/><path d="m8 19.5-2.5-2.5L8 14.5"/></symbol>
+  <symbol id="i-repeat-one" viewBox="0 0 24 24"><path d="M4.5 11V9.5A2.5 2.5 0 0 1 7 7h11.5"/><path d="m16 4.5 2.5 2.5-2.5 2.5"/><path d="M19.5 13v1.5A2.5 2.5 0 0 1 17 17H5.5"/><path d="m8 19.5-2.5-2.5L8 14.5"/><path d="M11.2 10.6 12.6 10v5"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5"/><path d="M4.5 12a7.5 7.5 0 0 1 13.1-5"/><path d="M17.8 3.5v3.7h-3.7M6.2 20.5v-3.7h3.7"/></symbol>
+  <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5"/><path d="M4.5 4.5v4h4"/></symbol>
+  <symbol id="i-paragraph" viewBox="0 0 24 24"><path d="M13 4.5v15M17 4.5v15"/><path d="M17 4.5H9.5a3.5 3.5 0 0 0 0 7H13"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="14" rx="2.5"/><path d="m7.5 10 3 2.2-3 2.2M13 14.5h3.5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.8l2 2.2h7.2a2 2 0 0 1 2 2v7.3a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2V7.5Z"/></symbol>
+  <symbol id="i-lock-open" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 6.6-1.6"/></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.2"/><circle cx="12" cy="7.9" r=".6"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M5 7h7M16 7h3M5 17h3M12 17h7"/><circle cx="14" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+</svg>
+
+<!-- Launch splash: pure HTML/CSS so it paints on the very first frame, before
+     any script runs. reader.js removes it once the app is ready. -->
+<div id="splash" role="status" aria-live="polite">
+  <div id="splash-book" aria-hidden="true"><svg viewBox="0 0 120 120" fill="none" class="sb-svg"><defs><filter id="book-glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"></feGaussianBlur><feColorMatrix type="matrix" values="1 0 0 0 0.9  0 1 0 0 0.65  0 0 1 0 0.25  0 0 0 0.75 0" result="glow"></feColorMatrix><feMerge><feMergeNode in="glow"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge></filter><radialGradient id="spine-light" cx="50%" cy="90%" r="80%"><stop offset="0%" stop-color="#ffd276" stop-opacity="0.7"></stop><stop offset="100%" stop-color="#e5a43b" stop-opacity="0"></stop></radialGradient></defs><ellipse cx="60" cy="82" rx="36" ry="8" fill="url(#spine-light)" class="sb-underlight"></ellipse><g class="sb-spine-group"><path class="sb-spine" d="M60 40 L60 84"></path><path class="sb-spine-curve" d="M56 84 C58 86 62 86 64 84"></path></g><g class="sb-cover-left"><path class="sb-cover" d="M60 40 C46 32 30 31 16 34 L16 78 C30 75 46 76 60 84 Z"></path></g><g class="sb-cover-right"><path class="sb-cover" d="M60 40 C74 32 90 31 104 34 L104 78 C90 75 74 76 60 84 Z"></path></g><g class="sb-page-left-back"><path class="sb-page-sheet" d="M60 43 C48 36 34 35 22 38 L22 76 C34 73 48 74 60 81 Z"></path></g><g class="sb-page-right-back"><path class="sb-page-sheet" d="M60 43 C72 36 86 35 98 38 L98 76 C86 73 72 74 60 81 Z"></path></g><g class="sb-page-left-main"><path class="sb-page-sheet" d="M60 45 C49 39 36 38 26 41 L26 77 C36 74 49 75 60 81 Z"></path><line class="sb-line" x1="32" y1="51" x2="52" y2="48"></line><line class="sb-line" x1="32" y1="58" x2="52" y2="55"></line><line class="sb-line" x1="32" y1="65" x2="48" y2="62"></line></g><g class="sb-page-right-main"><path class="sb-page-sheet" d="M60 45 C71 39 84 38 94 41 L94 77 C84 74 71 75 60 81 Z"></path><line class="sb-line" x1="68" y1="48" x2="88" y2="51"></line><line class="sb-line" x1="68" y1="55" x2="88" y2="58"></line><line class="sb-line" x1="72" y1="62" x2="88" y2="65"></line></g><path class="sb-bookmark-ribbon" d="M60 41 Q62 58 66 70 Q68 76 64 86 L60 82 L56 86 Q58 74 60 41 Z"></path></svg></div>
+  <div id="splash-word">
+    <div class="sw-name">Novel Reader</div>
+    <div id="splash-status">Opening your library<span class="dots"><i></i><i></i><i></i></span></div>
+  </div>
+</div>
+
+<div id="sidebar-scrim"></div>
+<!-- Dims everything behind the four floating panels (theme/session/audio/
+     bookmarks) on mobile, where a panel's height only wraps its own
+     content and previously left the dimmed-but-not-covered sidebar list
+     showing through past its bottom edge. Also lets a tap outside the
+     panel close it, same as the sidebar's own scrim. -->
+<div id="panel-scrim"></div>
+<!-- Library: shown at launch; pick a novel by its cover. Covers are images
+     inside each novel's own folder (see README). -->
+<div id="novel-picker" class="hidden" role="dialog" aria-label="Choose a novel">
+  <div id="novel-picker-inner">
+    <div id="novel-picker-head">
+      <div>
+        <h1>Your library</h1>
+        <p id="novel-picker-sub"></p>
+      </div>
+      <button id="novel-picker-close" type="button" title="Close" aria-label="Close library" style="display:none"><svg class="ico"><use href="#i-close"/></svg></button>
+    </div>
+    <div id="novel-grid"></div>
+  </div>
+</div>
+
+<div id="app">
+  <div id="sidebar">
+    <div id="sidebar-header">
+      <div id="sidebar-title-row">
+        <h1><svg class="ico"><use href="#i-book"/></svg>Novels</h1>
+        <div id="sidebar-icon-buttons">
+          <button id="theme-toggle" class="sidebar-icon-btn" title="Reading colours" aria-label="Reading colours"><svg class="ico"><use href="#i-palette"/></svg></button>
+          <button id="audio-toggle" class="sidebar-icon-btn" title="Music" aria-label="Music"><svg class="ico"><use href="#i-headphones"/></svg></button>
+          <button id="bookmark-toggle" class="sidebar-icon-btn" title="Bookmarks" aria-label="Bookmarks"><svg class="ico"><use href="#i-bookmark"/></svg></button>
+          <button id="session-timer-btn-sidebar" class="sidebar-icon-btn" title="Reading timer" aria-label="Reading timer"><svg class="ico"><use href="#i-hourglass"/></svg></button>
+          <!-- Mobile-only: a normal child of the drawer itself, not a
+               floating overlay, so it needs no position/z-index tricks
+               to stay clickable — see the CSS comment on #sidebar-close
+               for why #toggle-sidebar in #topbar can't do this job. -->
+          <button id="sidebar-close" type="button" class="sidebar-icon-btn" title="Close" aria-label="Close chapter list"><svg class="ico"><use href="#i-close"/></svg></button>
+        </div>
+      </div>
+      <select id="novel-select" class="hidden" aria-label="Choose a novel"></select>
+      <button class="load-btn" id="library-btn" type="button" style="display:none"><svg class="ico"><use href="#i-book"/></svg>Switch novel</button>
+      <button class="load-btn" id="open-chapters-btn" style="display:none"><svg class="ico"><use href="#i-lock-open"/></svg>Allow access to your novels</button>
+      <div id="chapters-folder-status"></div>
+      <div class="search-wrap">
+        <svg class="ico"><use href="#i-search"/></svg>
+        <input type="text" id="chapter-search" placeholder="Search chapters" autocomplete="off" aria-label="Search chapters">
+      </div>
+    </div>
+    <ul id="chapter-list"></ul>
+    <div id="empty-note">
+      <p class="en-title">No novels yet</p>
+      Allow access above, then add one folder per novel with its <b>.txt</b> chapters inside.
+      <span class="en-path">/storage/emulated/0/Novel</span>
+    </div>
+    <div id="app-version" title="App version"></div>
+  </div>
+
+  <div id="main">
+    <div id="status-gap"><div id="status-clock"></div></div>
+    <div id="topbar">
+      <button id="toggle-sidebar" title="Chapters" aria-label="Open chapters"><svg class="ico"><use href="#i-menu"/></svg></button>
+      <button id="prev-btn" title="Previous chapter" aria-label="Previous chapter" disabled><svg class="ico"><use href="#i-chev-left"/></svg></button>
+      <button id="next-btn" title="Next chapter" aria-label="Next chapter" disabled><svg class="ico"><use href="#i-chev-right"/></svg></button>
+      <!-- Music shortcut: appears here once a track is loaded/playing (the
+           sidebar's headphones button is hidden while this one shows). -->
+      <button id="audio-toggle-top" title="Music" aria-label="Music" style="display:none"><svg class="ico"><use href="#i-headphones"/></svg></button>
+      <div class="spacer"></div>
+      <div id="font-controls">
+        <select id="font-family-select" title="Reading font" aria-label="Reading font" autocomplete="off">
+          <option value="'Newsreader', Georgia, serif">Newsreader</option>
+          <option value="'Lora', Georgia, serif">Lora</option>
+          <option value="'Atkinson Hyperlegible', Arial, sans-serif">Atkinson</option>
+          <option value="'Manrope', system-ui, sans-serif">Manrope</option>
+          <option value="Georgia, 'Times New Roman', serif">Georgia</option>
+        </select>
+        <div id="size-stepper">
+          <button id="font-smaller" title="Smaller text" aria-label="Smaller text"><svg class="ico"><use href="#i-minus"/></svg></button>
+          <button id="font-bigger" title="Larger text" aria-label="Larger text"><svg class="ico"><use href="#i-plus"/></svg></button>
+        </div>
+      </div>
+    </div>
+
+    <div id="bookmarks-panel" class="hidden">
+      <div id="bookmarks-panel-header">
+        <div class="panel-title-row">
+          <span class="panel-title"><svg class="ico"><use href="#i-bookmark"/></svg>Bookmarks</span>
+          <button type="button" class="panel-close" data-close-panel title="Close" aria-label="Close bookmarks"><svg class="ico"><use href="#i-close"/></svg></button>
+        </div>
+        <button id="bookmark-chapter-btn"><svg class="ico"><use href="#i-bookmark"/></svg><span>Bookmark this chapter</span></button>
+      </div>
+      <ul id="bookmarks-list"></ul>
+      <div id="bookmarks-empty">Nothing saved yet. Bookmark a chapter above, or press and hold any paragraph while reading to save that exact spot.</div>
+    </div>
+
+    <div id="theme-panel" class="hidden">
+      <div class="panel-title-row">
+        <span class="panel-title"><svg class="ico"><use href="#i-palette"/></svg>Reading</span>
+        <button type="button" class="panel-close" data-close-panel title="Close" aria-label="Close reading colours"><svg class="ico"><use href="#i-close"/></svg></button>
+      </div>
+      <div class="theme-panel-row">
+        <label id="preset-label">Preset</label>
+        <div class="preset-group" role="group" aria-labelledby="preset-label">
+          <button type="button" class="preset-btn" data-preset="dark" aria-pressed="false">Dark</button>
+          <button type="button" class="preset-btn" data-preset="light" aria-pressed="false">Light</button>
+        </div>
+      </div>
+      <div class="theme-panel-row">
+        <label for="bg-color-input">Page</label>
+        <input type="color" id="bg-color-input" value="#000000">
+      </div>
+      <div class="recent-colors" id="recent-bg-colors" aria-label="Recent page colours"></div>
+      <div class="theme-panel-row">
+        <label for="text-color-input">Text</label>
+        <input type="color" id="text-color-input" value="#5e5e5e">
+      </div>
+      <div class="recent-colors" id="recent-text-colors" aria-label="Recent text colours"></div>
+      <div class="theme-panel-row">
+        <label for="line-height-input">Line height</label>
+        <input type="range" id="line-height-input" min="1.2" max="2.6" step="0.1" value="1.7">
+      </div>
+      <div class="theme-panel-row">
+        <label for="letter-spacing-input">Letter spacing</label>
+        <input type="range" id="letter-spacing-input" min="-0.5" max="3" step="0.1" value="2.3">
+      </div>
+      <div class="theme-panel-row">
+        <label for="flip-duration-input">Page turn</label>
+        <input type="range" id="flip-duration-input" min="200" max="3000" step="50" value="1250">
+      </div>
+      <div class="theme-panel-row">
+        <label for="smart-scroll-toggle">Smart scroll</label>
+        <button type="button" id="smart-scroll-toggle" class="switch" role="switch" aria-checked="false" aria-label="Smart scroll"></button>
+      </div>
+      <div class="theme-panel-row">
+        <label for="audio-volume-keys-toggle">Volume keys in audio player</label>
+        <button type="button" id="audio-volume-keys-toggle" class="switch on" role="switch" aria-checked="true" aria-label="Volume keys change volume while the audio player is open"></button>
+      </div>
+      <div class="theme-panel-row">
+        <label for="volume-scroll-toggle">Volume button scroll</label>
+        <button type="button" id="volume-scroll-toggle" class="switch on" role="switch" aria-checked="true" aria-label="Volume button scroll"></button>
+      </div>
+      <div class="theme-panel-row" id="tap-scroll-row">
+        <label for="tap-scroll-lines-input">Tap scroll</label>
+        <input type="range" id="tap-scroll-lines-input" min="3" max="30" step="1" value="27">
+      </div>
+      <button id="theme-reset-btn" class="ghost-btn"><svg class="ico"><use href="#i-reset"/></svg>Reset to default</button>
+    </div>
+
+    <div id="session-settings-panel" class="hidden">
+      <div class="panel-title-row">
+        <span id="session-panel-title" class="panel-title"><svg class="ico"><use href="#i-hourglass"/></svg>Reading timer</span>
+        <button type="button" class="panel-close" data-close-panel title="Close" aria-label="Close reading timer"><svg class="ico"><use href="#i-close"/></svg></button>
+      </div>
+
+      <div id="session-mode-toggle">
+        <button id="session-mode-duration-btn" type="button" class="active">Countdown</button>
+        <button id="session-mode-time-btn" type="button">Daily time</button>
+      </div>
+
+      <!-- One dial shared by both tabs: Countdown edits h:m:s, Daily time
+           edits a clock time (hours 0-23, minutes). -->
+      <div id="session-dial-block" class="session-mode-view">
+        <div id="dial-readout">
+          <button class="dial-seg active" type="button" data-unit="hours">
+            <span class="dial-seg-label">Hours</span>
+            <span class="dial-seg-value" id="dial-value-hours">00</span>
+          </button>
+          <span class="dial-colon">:</span>
+          <button class="dial-seg" type="button" data-unit="minutes">
+            <span class="dial-seg-label">Minutes</span>
+            <span class="dial-seg-value" id="dial-value-minutes">00</span>
+          </button>
+          <span class="dial-colon" id="dial-colon-seconds">:</span>
+          <button class="dial-seg" type="button" data-unit="seconds">
+            <span class="dial-seg-label">Seconds</span>
+            <span class="dial-seg-value" id="dial-value-seconds">00</span>
+          </button>
+        </div>
+
+        <div id="dial-wrap">
+          <svg id="dial" viewBox="0 0 220 220">
+            <g id="dial-ticks"></g>
+            <circle id="dial-track" cx="110" cy="110" r="88"></circle>
+            <circle id="dial-progress" cx="110" cy="110" r="88"></circle>
+            <circle id="dial-handle" cx="110" cy="22" r="13"></circle>
+          </svg>
+          <div id="dial-center">
+            <div id="dial-center-value">00</div>
+            <div id="dial-center-unit">Hours</div>
+            <div id="dial-center-state" class="hidden">Running</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="session-mode-duration" class="session-mode-view">
+        <div id="session-duration-presets">
+          <button type="button" data-minutes="15">15m</button>
+          <button type="button" data-minutes="30">30m</button>
+          <button type="button" data-minutes="45">45m</button>
+          <button type="button" data-minutes="60">1h</button>
+          <button type="button" data-minutes="90">1h 30</button>
+        </div>
+
+        <div id="session-actions">
+          <button id="session-reset-btn" class="session-action-btn" type="button"><svg class="ico"><use href="#i-reset"/></svg>Reset</button>
+          <button id="session-start-btn" class="session-action-btn" type="button">Start</button>
+        </div>
+      </div>
+
+      <div id="session-mode-time" class="session-mode-view hidden">
+        <p class="session-panel-hint">Turn the dial to pick a time. You'll be reminded to take a break at that time every day.</p>
+        <div id="session-time-actions">
+          <button id="session-time-set-btn" class="session-action-btn" type="button">Set reminder</button>
+        </div>
+      </div>
+
+      <div id="session-status">No limit set</div>
+
+      <button id="session-limit-off-btn" type="button">Turn off reading timer</button>
+    </div>
+
+    <div id="audio-panel" class="hidden">
+      <div id="audio-panel-header">
+        <div class="panel-title-row audio-title-group">
+          <span id="audio-panel-title"><svg class="ico"><use href="#i-headphones"/></svg>Music</span>
+          <button id="audio-scan-btn" type="button"><svg class="ico"><use href="#i-refresh"/></svg>Rescan</button>
+        </div>
+        <button type="button" class="panel-close" data-close-panel title="Close" aria-label="Close music"><svg class="ico"><use href="#i-close"/></svg></button>
+      </div>
+
+      <!-- Playlist selector: an inline expand/collapse list living in the
+           panel's normal document flow (not a separate floating overlay).
+           Selecting an item never rebuilds this list's own DOM from
+           inside its own click handler — see renderPlaylistOptions() —
+           which is what previously let the click's bubble phase see a
+           detached target and made closeOnOutsideClick() close the
+           whole panel instead of just this list. -->
+      <div class="audio-row" id="audio-playlist-row">
+        <label>Playlist</label>
+        <button type="button" id="audio-playlist-btn" aria-expanded="false">
+          <span id="audio-playlist-btn-label">All songs</span>
+          <svg class="ico"><use href="#i-chev-down"/></svg>
+        </button>
+      </div>
+      <ul id="audio-playlist-list" class="hidden"></ul>
+
+      <div id="audio-now-playing">
+        <div id="audio-np-top">
+          <div id="audio-artwork"><svg class="ico"><use href="#i-music"/></svg></div>
+          <div id="audio-np-text">
+            <div id="audio-np-title">Nothing playing</div>
+            <div id="audio-np-artist">Pick a track below</div>
+          </div>
+        </div>
+        <div id="audio-seek-row">
+          <span id="audio-elapsed">0:00</span>
+          <input type="range" id="audio-seek" min="0" max="1000" value="0" step="1" disabled>
+          <span id="audio-duration">0:00</span>
+        </div>
+      </div>
+
+      <div id="audio-controls">
+        <button id="audio-shuffle-btn" type="button" title="Shuffle" aria-label="Shuffle"><svg class="ico"><use href="#i-shuffle"/></svg></button>
+        <button id="audio-prev-btn" type="button" title="Previous track" aria-label="Previous track"><svg class="ico"><use href="#i-prev"/></svg></button>
+        <button id="audio-play-btn" type="button" title="Play" aria-label="Play or pause">
+          <svg class="ico i-play"><use href="#i-play"/></svg>
+          <svg class="ico i-pause"><use href="#i-pause"/></svg>
+        </button>
+        <button id="audio-next-btn" type="button" title="Next track" aria-label="Next track"><svg class="ico"><use href="#i-next"/></svg></button>
+        <button id="audio-repeat-btn" type="button" title="Repeat" aria-label="Repeat">
+          <svg class="ico i-repeat"><use href="#i-repeat"/></svg>
+          <svg class="ico i-repeat-one"><use href="#i-repeat-one"/></svg>
+        </button>
+      </div>
+
+      <div class="audio-row">
+        <label for="audio-volume">Volume</label>
+        <input type="range" id="audio-volume" min="0" max="100" value="80">
+        <span class="audio-row-value" id="audio-volume-value">80%</span>
+      </div>
+
+      <!-- Sleep timer and equalizer: hidden, not removed, per spec —
+           state/engine code (state.sleepTimerMinutes, setPreamp, etc.)
+           is untouched so this can be un-hidden later without rebuilding
+           the underlying feature. -->
+      <div class="audio-row hidden-feature">
+        <label for="audio-sleep">Sleep</label>
+        <select id="audio-sleep">
+          <option value="0" selected>Off</option>
+          <option value="15">After 15 min</option>
+          <option value="30">After 30 min</option>
+          <option value="60">After 60 min</option>
+          <option value="-1">End of track</option>
+        </select>
+      </div>
+
+      <button id="audio-eq-toggle" type="button" aria-expanded="false" class="hidden-feature"><span>Equalizer</span><svg class="ico"><use href="#i-chev-down"/></svg></button>
+      <div id="audio-eq-panel" class="hidden">
+        <div id="audio-eq-bands"></div>
+        <div class="audio-row">
+          <label for="audio-eq-preamp">Preamp</label>
+          <input type="range" id="audio-eq-preamp" min="-12" max="12" step="1" value="0">
+        </div>
+        <button id="audio-eq-reset" type="button" class="ghost-btn"><svg class="ico"><use href="#i-reset"/></svg>Reset equalizer</button>
+      </div>
+
+      <div id="audio-song-list-heading">Songs</div>
+      <ul id="audio-queue"></ul>
+      <div id="audio-empty">No audio files yet. Put music in <code>/storage/emulated/0/Novel/Audio</code>, then tap Rescan.</div>
+
+      <div id="audio-status-note"></div>
+    </div>
+
+    <div id="reader-scroll">
+      <div id="welcome" class="is-loading">
+        <div class="wl-mark"><svg class="ico"><use href="#i-book"/></svg></div>
+        <h2>Your library is loading</h2>
+        <p>Looking for novels in your Novel folder.</p>
+      </div>
+      <div id="reader" style="display:none;">
+        <h2 id="chapter-title"></h2>
+        <div id="chapter-source"></div>
+        <div id="chapter-text"></div>
+        <div id="bottom-nav">
+          <button id="bottom-prev" disabled><svg class="ico"><use href="#i-chev-left"/></svg>Previous</button>
+          <button id="bottom-next" disabled>Next<svg class="ico"><use href="#i-chev-right"/></svg></button>
+        </div>
+        <button id="open-termux-btn" class="hidden"><svg class="ico"><use href="#i-terminal"/></svg>Open Termux to fetch new chapters</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="session-limit-overlay" class="hidden">
+  <div id="session-limit-box">
+    <div id="session-limit-icon"><svg class="ico"><use href="#i-hourglass"/></svg></div>
+    <h2>Time for a break</h2>
+    <p>You've reached the reading limit you set. Rest your eyes for a bit.</p>
+    <button id="session-limit-dismiss-btn">Keep reading</button>
+  </div>
+</div>
+
+<!-- Night lock: covers the whole app overnight (see "Night lock" in reader.js). -->
+<div id="night-lock" class="hidden" role="alertdialog" aria-modal="true" aria-label="Night lock">
+  <div id="night-lock-box">
+    <div id="night-lock-icon"><svg viewBox="0 0 24 24"><path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7z"/></svg></div>
+    <h2>Time to sleep</h2>
+    <p>Novel Reader is locked for the night.</p>
+    <div id="night-lock-now"></div>
+    <div id="night-lock-opens"></div>
+  </div>
+</div>
+
+<!-- In-app message dialog. Replaces window.alert() so messages are themed
+     instead of showing the system's light-coloured native dialog. -->
+<div id="dialog-layer" class="hidden" role="alertdialog" aria-modal="true" aria-describedby="dialog-message">
+  <div id="dialog-box">
+    <div id="dialog-icon"><svg class="ico"><use href="#i-info"/></svg></div>
+    <p id="dialog-message"></p>
+    <div id="dialog-actions"><button id="dialog-ok" type="button">Got it</button></div>
+  </div>
+</div>
+
+<script src="version.js"></script>
+<script src="settings-file.js"></script>
+<script src="audio-player.js"></script>
+<script src="reader.js"></script>
+<script src="peek-mode.js"></script>
+</body>
+</html>

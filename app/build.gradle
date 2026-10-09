@@ -1,0 +1,82 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.scell.novelreader.redesign'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.scell.novelreader.redesign"
+        minSdk 24
+        targetSdk 34
+        // Every GitHub Actions run has a higher number than the last, so each
+        // new APK is a valid *update* over the installed one (Android refuses
+        // to install an APK whose versionCode is lower than the installed one).
+        def runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
+        versionCode runNumber
+        versionName "1.0.${runNumber}"
+    }
+
+    // A fixed signing key kept in the repo. Android only lets a new APK
+    // update an installed app when both are signed with the SAME key. The
+    // default debug key is regenerated on every fresh CI runner, which is
+    // why each build used to say "App not installed" over the old one.
+    // Keep this repo private: anyone with this keystore can sign updates.
+    signingConfigs {
+        shared {
+            storeFile file('novelreader.keystore')
+            storePassword 'novelreader'
+            keyAlias 'novelreader'
+            keyPassword 'novelreader'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.shared
+        }
+        release {
+            signingConfig signingConfigs.shared
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    implementation 'androidx.activity:activity-ktx:1.9.2'
+    implementation 'androidx.documentfile:documentfile:1.0.1'
+    implementation 'androidx.core:core-ktx:1.13.1'
+
+    // Real background audio playback (PlaybackService.kt): ExoPlayer for
+    // decoding/playback, media3-session for the MediaSession that gives
+    // us the system media notification, lock-screen transport controls,
+    // and audio-focus/headset handling for free.
+    //
+    // PINNED TO 1.4.1 DELIBERATELY — newer media3 releases raise the
+    // *minimum compileSdk* their AAR metadata demands (1.10.1 requires
+    // compileSdk 36; this project builds against compileSdk 34, and AGP
+    // 8.5.2 doesn't support going past 34 anyway), which fails the build
+    // at the `checkDebugAarMetadata` task before a single line of Kotlin
+    // even compiles. 1.4.1 is confirmed to require only compileSdk 34 —
+    // an exact match. All the APIs this project actually uses
+    // (MediaSessionService, MediaSession, MediaController, ForwardingPlayer,
+    // the COMMAND_SEEK_TO_*_MEDIA_ITEM commands) have been stable since
+    // early 1.x, so nothing here needed to change to support the
+    // downgrade. If you bump this later, bump compileSdk/targetSdk (and
+    // check AGP's supported range) in the same change, or you'll hit
+    // this exact failure again.
+    implementation 'androidx.media3:media3-exoplayer:1.4.1'
+    implementation 'androidx.media3:media3-session:1.4.1'
+}

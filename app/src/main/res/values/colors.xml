@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches the bg token in assets/index.html so the OS launch window, the
+         WebView and the HTML splash are one continuous surface with no
+         white/black flash between them. -->
+    <color name="ink">#0b0d12</color>
+    <color name="lamp">#e8a83e</color>
+</resources>
