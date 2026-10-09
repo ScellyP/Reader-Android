@@ -175,29 +175,6 @@ button:focus:not(:focus-visible), select:focus:not(:focus-visible) { outline: no
   animation: lampIn 1.4s var(--ease) both;
 }
 
-#splash-book { position: relative; width: 112px; height: 112px; }
-#splash-book svg { width: 100%; height: 100%; overflow: visible; }
-#splash-book .sb-cover {
-  fill: none; stroke: var(--accent); stroke-width: 2.2;
-  stroke-linecap: round; stroke-linejoin: round;
-  stroke-dasharray: 340; stroke-dashoffset: 340;
-  animation: draw 1.1s var(--ease) .1s forwards;
-}
-#splash-book .sb-spine {
-  stroke: var(--accent); stroke-width: 2.2; stroke-linecap: round;
-  stroke-dasharray: 60; stroke-dashoffset: 60;
-  animation: draw .6s var(--ease) .75s forwards;
-}
-#splash-book .sb-line {
-  stroke: var(--text); stroke-opacity: .55; stroke-width: 1.8; stroke-linecap: round;
-  stroke-dasharray: 22; stroke-dashoffset: 22;
-  animation: draw .5s var(--ease) forwards;
-}
-#splash-book .sb-line:nth-of-type(1) { animation-delay: .95s; }
-#splash-book .sb-line:nth-of-type(2) { animation-delay: 1.05s; }
-#splash-book .sb-line:nth-of-type(3) { animation-delay: 1.15s; }
-#splash-book .sb-line:nth-of-type(4) { animation-delay: 1.25s; }
-
 #splash-word {
   position: relative;
   text-align: center;
@@ -1686,7 +1663,402 @@ body.peek-active #panel-scrim { opacity: 0 !important; background: transparent !
 .novel-last { font-size: 11px; color: var(--faint); margin-top: -6px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
-<style id="enhanced-splash-book-anim">#splash-book { position: relative; width: 120px; height: 120px; perspective: 1000px; }#splash-book .sb-svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 10px 24px rgba(229,164,59,0.32)); }#splash-book .sb-underlight { opacity: 0; transform-origin: 60px 82px; animation: glowPulse 2.4s ease-in-out infinite alternate, lampIn 1.1s var(--ease) 0.3s both; }#splash-book .sb-cover { fill: rgba(17, 20, 28, 0.7); stroke: var(--accent); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; filter: url(#book-glow); }#splash-book .sb-spine { stroke: var(--accent-strong); stroke-width: 2.6; stroke-linecap: round; }#splash-book .sb-spine-curve { stroke: var(--accent); stroke-width: 2.2; fill: none; }#splash-book .sb-page-sheet { fill: rgba(26, 31, 44, 0.85); stroke: rgba(240, 235, 225, 0.5); stroke-width: 1.4; stroke-linejoin: round; }#splash-book .sb-line { stroke: var(--text); stroke-opacity: 0.55; stroke-width: 1.6; stroke-linecap: round; }#splash-book .sb-bookmark-ribbon { fill: var(--accent); opacity: 0.85; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); transform-origin: 60px 42px; animation: ribbonSway 2.6s ease-in-out infinite alternate; }#splash-book .sb-cover-left { transform-origin: 60px 60px; animation: bookOpenLeft 1.4s cubic-bezier(0.2, 0.85, 0.3, 1) 0.1s both; }#splash-book .sb-cover-right { transform-origin: 60px 60px; animation: bookOpenRight 1.4s cubic-bezier(0.2, 0.85, 0.3, 1) 0.1s both; }#splash-book .sb-page-left-back { transform-origin: 60px 60px; animation: bookOpenLeft 1.3s cubic-bezier(0.2, 0.85, 0.3, 1) 0.3s both; }#splash-book .sb-page-right-back { transform-origin: 60px 60px; animation: bookOpenRight 1.3s cubic-bezier(0.2, 0.85, 0.3, 1) 0.3s both; }#splash-book .sb-page-left-main { transform-origin: 60px 60px; animation: pageFanLeft 1.4s cubic-bezier(0.2, 0.85, 0.3, 1) 0.45s both; }#splash-book .sb-page-right-main { transform-origin: 60px 60px; animation: pageFanRight 1.4s cubic-bezier(0.2, 0.85, 0.3, 1) 0.45s both; }#splash-book .sb-spine-group { transform-origin: 60px 60px; animation: spineRise 1.2s var(--ease) both; }@keyframes bookOpenLeft { 0% { transform: scaleX(0.08) rotateY(70deg) skewY(8deg); opacity: 0; } 45% { opacity: 1; } 100% { transform: scaleX(1) rotateY(0deg) skewY(0deg); opacity: 1; } }@keyframes bookOpenRight { 0% { transform: scaleX(0.08) rotateY(-70deg) skewY(-8deg); opacity: 0; } 45% { opacity: 1; } 100% { transform: scaleX(1) rotateY(0deg) skewY(0deg); opacity: 1; } }@keyframes pageFanLeft { 0% { transform: scaleX(0.05) rotateY(75deg); opacity: 0; } 30% { opacity: 0.6; } 70% { transform: scaleX(1.05) rotateY(-8deg); opacity: 1; } 100% { transform: scaleX(1) rotateY(0deg); opacity: 1; } }@keyframes pageFanRight { 0% { transform: scaleX(0.05) rotateY(-75deg); opacity: 0; } 30% { opacity: 0.6; } 70% { transform: scaleX(1.05) rotateY(8deg); opacity: 1; } 100% { transform: scaleX(1) rotateY(0deg); opacity: 1; } }@keyframes spineRise { 0% { transform: scaleY(0.4) translateY(12px); opacity: 0; } 100% { transform: scaleY(1) translateY(0); opacity: 1; } }@keyframes ribbonSway { 0% { transform: rotate(0deg); } 100% { transform: rotate(4.5deg) scaleX(0.96); } }@keyframes glowPulse { 0% { opacity: 0.35; transform: scale(0.92); } 100% { opacity: 0.85; transform: scale(1.12); } }</style>
+<style id="lamplight-polish">
+/* =========================================================================
+   Lamplight polish layer
+   -------------------------------------------------------------------------
+   Pure CSS refinement. It targets only existing IDs / classes, never renames
+   or removes any, and leaves every z-index (65 / 70 / 85 / 90 / 150 / 200 /
+   300 / 500 / 1000) untouched. Every state class the JS toggles (.hidden,
+   .active, .playing, .collapsed, .is-loading, .is-playing, .is-one, .on,
+   .running, .armed, .limit-active, .dragging, .visible, .has-art,
+   .peek-active, .peek-keep) keeps its original meaning.
+   Motion only animates transform + opacity (compositor-only) wherever the
+   old rules animated paint- or layout-bound properties.
+   ========================================================================= */
+:root {
+  --r-sm: 10px;
+  --r-md: 16px;
+  --r-lg: 20px;
+  --faint: #8e93a4;                         /* lifted: >=5:1 on panel, ~4.7:1 on panel-2 */
+  --control-edge: #4a5167;                  /* >=3:1 edge for toggles / sliders (WCAG 1.4.11) */
+  --ease-press: cubic-bezier(.3, .7, .4, 1);
+  --shadow-float: 0 28px 64px rgba(0,0,0,.62), 0 6px 18px rgba(0,0,0,.35);
+}
+
+/* ---- Focus: a clear, two-tone ring that works on every surface ---------- */
+:focus-visible { outline: 2px solid var(--accent-strong); outline-offset: 3px; border-radius: inherit; }
+li:focus-visible, .novel-card:focus-visible .novel-cover { outline-offset: -2px; }
+#chapter-search:focus, .audio-row select:focus, #novel-select:focus, #font-family-select:focus {
+  outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft);
+}
+#chapter-search:focus-visible { outline: none; }
+input[type="range"]:focus-visible { outline: none; }
+input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--bg), 0 0 0 5px var(--accent-strong); }
+
+/* ---- Scrollbars: slimmer, quieter ---------------------------------------- */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; }
+
+/* ---- Sidebar -------------------------------------------------------------- */
+#sidebar-header { padding: 18px 18px 16px; padding-top: calc(18px + var(--status-bar-height)); }
+#sidebar-title-row { margin-bottom: 18px; }
+#sidebar-header h1 { font-size: 26px; }
+#sidebar-icon-buttons { gap: 2px; }
+.sidebar-icon-btn { width: 40px; height: 40px; border-radius: 12px; }
+.sidebar-icon-btn.active, #session-timer-btn-sidebar.limit-active { box-shadow: inset 0 0 0 1px var(--accent-line); }
+#novel-select, #chapter-search { min-height: 44px; border-radius: 12px; }
+#novel-select { margin-bottom: 12px; }
+.search-wrap { margin-top: 14px; }
+.load-btn { min-height: 48px; border-radius: 12px; letter-spacing: .1px; }
+.load-btn:active { transform: scale(.975); }
+#library-btn:not([style*="none"]) + #open-chapters-btn { margin-top: 10px; }
+#chapter-list { padding: 10px 10px 16px; scroll-padding: 12px; }
+#chapter-list li { padding: 13px 14px; margin-bottom: 3px; min-height: 48px; border-radius: 12px; }
+#chapter-list li.active { border-radius: 4px 12px 12px 4px; box-shadow: inset 0 0 0 1px var(--accent-soft); }
+#empty-note { padding: 24px 22px 28px; }
+#app-version { padding: 10px 16px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+
+/* ---- Top bar --------------------------------------------------------------- */
+#topbar { padding: 9px 14px; gap: 10px; }
+#topbar button { border-radius: 12px; border-color: var(--border); }
+#topbar button:active:not(:disabled) { background: var(--raised); }
+#font-family-select { border-radius: 12px; }
+#size-stepper #font-smaller { border-radius: 12px 0 0 12px; }
+#size-stepper #font-bigger  { border-radius: 0 12px 12px 0; }
+
+/* ---- Floating panels: roomier shell ---------------------------------------- */
+#theme-panel, #session-settings-panel, #audio-panel, #bookmarks-panel {
+  padding: 20px;
+  gap: 16px;
+  border-radius: var(--r-lg);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-float), inset 0 1px 0 rgba(255,255,255,.04);
+  background-image: linear-gradient(180deg, rgba(255,255,255,.022), transparent 120px);
+}
+#theme-panel:not(.hidden), #session-settings-panel:not(.hidden), #bookmarks-panel:not(.hidden) { will-change: transform, opacity; }
+/* Keep tall panels reachable on short screens. */
+#theme-panel, #session-settings-panel {
+  max-height: calc(100dvh - var(--status-bar-height) - var(--nav-bar-height) - 84px);
+  overflow-y: auto; overscroll-behavior: contain;
+}
+.panel-title { font-size: 20px; gap: 10px; }
+.panel-title-row { min-height: 36px; }
+.panel-close { width: 36px; height: 36px; border-radius: 50%; background: var(--panel-2); border-color: var(--border); }
+.panel-close:hover { background: var(--raised); border-color: var(--border-strong); }
+.panel-close:active { background: var(--raised); }
+.theme-panel-row { min-height: 40px; gap: 16px; }
+.theme-panel-row label { font-size: 14px; }
+.ghost-btn { min-height: 44px; border-radius: 12px; }
+.ghost-btn:active:not(:disabled) { transform: scale(.975); background: var(--raised); }
+
+/* Overshoot-free, compositor-only entrance (translate3d keeps it on the GPU). */
+@keyframes panelIn { from { opacity: 0; transform: translate3d(0,-8px,0) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes rise    { from { opacity: 0; transform: translate3d(0,12px,0); } to { opacity: 1; transform: none; } }
+
+/* ---- Range sliders: native-feeling, still driven by --pct ------------------ */
+input[type="range"] {
+  --track: 6px; --thumb: 22px;
+  height: 32px;
+  touch-action: pan-y;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: var(--track);
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) var(--pct), var(--control-edge) var(--pct));
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.35);
+}
+input[type="range"]::-webkit-slider-thumb {
+  width: var(--thumb); height: var(--thumb);
+  margin-top: calc((var(--track) - var(--thumb)) / 2);
+  background: var(--text);
+  box-shadow: 0 2px 8px rgba(0,0,0,.55), 0 0 0 1px rgba(0,0,0,.25);
+  transition: transform .18s var(--ease), box-shadow .18s ease, background-color .18s ease;
+}
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.14); background: var(--accent-strong);
+  box-shadow: 0 2px 10px rgba(0,0,0,.55), 0 0 0 8px var(--accent-soft);
+}
+input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--raised); }
+/* Vertical EQ sliders keep their own geometry. */
+.eq-band-slider::-webkit-slider-runnable-track { width: var(--track); height: auto; }
+.eq-band-slider::-webkit-slider-thumb { margin-top: 0; margin-left: calc((var(--track) - var(--thumb)) / 2); }
+.eq-band-label { font-size: 11px; }
+
+/* ---- Toggle switches: 48x28, thumb squishes under the finger ---------------- */
+.switch { width: 50px; height: 30px; background: var(--panel-2); border: 1px solid var(--control-edge); }
+.switch::after {
+  top: 3px; left: 3px; width: 22px; height: 22px;
+  background: var(--muted);
+  box-shadow: 0 1px 4px rgba(0,0,0,.5);
+  transition: transform .26s var(--ease), width .18s var(--ease), background-color .2s ease;
+}
+.switch.on { background: rgba(232,168,62,.28); border-color: var(--accent); }
+.switch.on::after { transform: translateX(20px); background: var(--accent-strong); }
+.switch:active::after { width: 28px; }
+.switch.on:active::after { transform: translateX(14px); }
+
+/* ---- Reading-colour panel extras --------------------------------------------- */
+.preset-btn { min-height: 38px; padding: 7px 16px; transition: background-color .2s ease, color .2s ease, border-color .2s ease, transform .2s var(--ease); }
+.preset-btn:active { transform: scale(.95); }
+.theme-panel-row input[type="color"] { width: 48px; height: 34px; border-radius: 10px; border-color: var(--control-edge); }
+.recent-swatch { width: 28px; height: 28px; transition: transform .2s var(--ease), border-color .2s ease; }
+.recent-swatch:active { transform: scale(.88); }
+
+/* ---- Reading timer ----------------------------------------------------------------- */
+#session-mode-toggle { padding: 4px; border-radius: 12px; }
+#session-mode-toggle button { padding: 11px 6px; border-radius: 9px; }
+#session-mode-toggle button.active { box-shadow: 0 1px 4px rgba(0,0,0,.45), inset 0 0 0 1px var(--border-strong); }
+#dial-readout { gap: 4px; }
+.dial-seg { gap: 8px; }
+.dial-seg:active .dial-seg-value { transform: scale(.97); }
+.dial-seg-value { padding: 12px 0; border-radius: 12px; transition: border-color .2s ease, color .2s ease, background-color .2s ease, transform .18s var(--ease); }
+.dial-seg-label { font-size: 11.5px; font-weight: 700; }
+#session-duration-presets { gap: 8px; }
+#session-duration-presets button { min-height: 40px; padding: 9px 4px; }
+#session-duration-presets button:active { transform: scale(.94); }
+.session-action-btn { height: 50px; border-radius: 12px; }
+.session-action-btn:active:not(:disabled) { transform: scale(.975); }
+#session-status { padding-top: 14px; }
+
+/* ---- Music drawer ------------------------------------------------------------------------ */
+#audio-panel {
+  gap: 16px;
+  padding: 20px;
+  padding-top: calc(20px + var(--status-bar-height));
+  padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  border-radius: 0;
+  box-shadow: -12px 0 48px rgba(0,0,0,.6);
+  background-image: linear-gradient(180deg, rgba(255,255,255,.018), transparent 160px);
+  will-change: transform;
+}
+#audio-panel-title { font-size: 20px; gap: 10px; }
+#audio-scan-btn { min-height: 36px; padding: 7px 14px 7px 12px; }
+#audio-scan-btn:active { transform: scale(.95); }
+#audio-now-playing {
+  gap: 16px; padding: 16px; border-radius: var(--r-lg);
+  background: linear-gradient(160deg, var(--raised) -40%, var(--panel-2) 60%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 10px 28px rgba(0,0,0,.28);
+}
+#audio-np-top { gap: 16px; }
+#audio-artwork { width: 64px; height: 64px; border-radius: 14px; box-shadow: 0 6px 16px rgba(0,0,0,.4); }
+#audio-np-title { font-size: 16px; line-height: 1.3; }
+#audio-np-artist { margin-top: 4px; }
+#audio-seek-row { gap: 12px; font-size: 12px; }
+#audio-controls { padding: 2px 0; gap: 2px; }
+#audio-controls button { width: 46px; height: 46px; color: var(--muted); }
+#audio-controls button:hover:not(:disabled) { color: var(--text); }
+#audio-controls button.active { color: var(--accent); }
+#audio-controls button:active:not(:disabled) { transform: scale(.88); background: var(--panel-2); }
+#audio-controls #audio-prev-btn, #audio-controls #audio-next-btn { color: var(--text); }
+#audio-play-btn { width: 64px !important; height: 64px !important; font-size: 26px !important; box-shadow: 0 8px 24px rgba(232,168,62,.3); }
+#audio-play-btn:active:not(:disabled) { transform: scale(.92); }
+/* Playing halo: a ring that scales + fades (transform/opacity only; the old
+   box-shadow ring stays as the static fallback). */
+#audio-play-btn::before {
+  content: ""; position: absolute; inset: 0; border-radius: 50%;
+  border: 2px solid var(--accent); opacity: 0; pointer-events: none;
+}
+#audio-play-btn.is-playing::before { animation: playHalo 2.4s var(--ease) infinite; will-change: transform, opacity; }
+@keyframes playHalo { 0% { transform: scale(1); opacity: .55; } 100% { transform: scale(1.38); opacity: 0; } }
+.audio-row { gap: 14px; font-size: 13.5px; }
+.audio-row select, #audio-playlist-btn { min-height: 44px; border-radius: 12px; }
+#audio-playlist-btn:active { background: var(--raised); }
+#audio-playlist-list { padding: 6px; border-radius: 14px; }
+#audio-playlist-list li, #audio-queue li { padding: 12px 14px; min-height: 48px; border-radius: 12px; margin-bottom: 3px; }
+#audio-queue li.playing, #audio-playlist-list li.active { border-radius: 4px 12px 12px 4px; }
+#audio-queue { padding-bottom: 8px; }
+#audio-song-list-heading { margin-top: 4px; letter-spacing: .08em; font-size: 12px; color: var(--faint); }
+.audio-track-duration { font-size: 12.5px; }
+#audio-status-note { padding-top: 12px; }
+#audio-eq-panel { padding: 16px 14px; }
+
+/* ---- Bookmarks --------------------------------------------------------------------------------- */
+#bookmarks-panel-header { gap: 14px; }
+#bookmark-chapter-btn { min-height: 46px; border-radius: 12px; }
+#bookmark-chapter-btn:active { transform: scale(.975); }
+#bookmarks-list li { padding: 12px 8px 12px 14px; min-height: 48px; border-radius: 12px; }
+#bookmarks-list li:active { background: var(--raised); }
+.bookmark-remove-btn { width: 36px; height: 36px; }
+
+/* ---- Reader surface ---------------------------------------------------------------------------------- */
+#bottom-nav button { border-radius: 12px; min-height: 52px; }
+#bottom-nav button:active:not(:disabled) { transform: scale(.975); background: var(--raised); }
+#bottom-next:not(:disabled):active { background: rgba(232,168,62,.22); }
+#open-termux-btn { border-radius: 12px; }
+#welcome .steps { border-radius: var(--r-lg); }
+/* The loading ring animates transform/opacity instead of box-shadow. */
+#welcome .wl-mark { position: relative; }
+#welcome.is-loading .wl-mark { animation: none; }
+#welcome.is-loading .wl-mark::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%;
+  border: 1px solid var(--accent-line); pointer-events: none;
+  animation: ringOut 2.4s var(--ease) infinite;
+}
+@keyframes ringOut { from { transform: scale(1); opacity: .8; } to { transform: scale(1.55); opacity: 0; } }
+
+/* ---- Dialog + overlays ------------------------------------------------------------------------------- */
+#dialog-box { border-radius: var(--r-lg); padding: 24px 22px 18px; box-shadow: var(--shadow-float); }
+#dialog-ok { min-height: 46px; padding: 12px 26px; border-radius: 12px; transition: background-color .2s ease, transform .2s var(--ease); }
+#dialog-ok:active { transform: scale(.96); }
+#session-limit-dismiss-btn { min-height: 48px; border-radius: 12px; }
+
+/* ---- Library picker ---------------------------------------------------------------------------------------- */
+#novel-picker-close { width: 44px; height: 44px; transition: background-color .2s ease, transform .2s var(--ease); }
+#novel-picker-close:active { transform: scale(.9); }
+.novel-cover { border-radius: 14px; }
+.novel-card:focus-visible { outline: none; }
+.novel-card:focus-visible .novel-cover { outline: 2px solid var(--accent-strong); outline-offset: 2px; }
+
+/* ---- Mobile --------------------------------------------------------------------------------------------------- */
+@media (max-width: 720px) {
+  #sidebar-header { padding: 16px 16px 14px; padding-top: calc(16px + var(--status-bar-height)); }
+  #sidebar { will-change: transform; }
+  #chapter-list { padding: 8px 8px 16px; }
+  #chapter-list li { padding: 14px 14px; font-size: 15px; }
+  #topbar { padding: 8px 12px; gap: 8px; }
+  #theme-panel, #bookmarks-panel, #session-settings-panel { right: 12px; left: 12px; }
+  #audio-panel { width: 92vw; max-width: 380px; }
+}
+@media (max-width: 360px) {
+  #topbar { padding: 8px 8px; gap: 6px; }
+  #theme-panel, #session-settings-panel, #bookmarks-panel { padding: 16px; }
+  #audio-controls button { width: 42px; height: 42px; }
+  #audio-play-btn { width: 58px !important; height: 58px !important; }
+}
+
+/* ---- Hover only where hover exists (no sticky highlight after a tap) ------------------------------------------ */
+@media (hover: hover) {
+  .switch:hover { border-color: var(--muted); }
+  .switch.on:hover { border-color: var(--accent-strong); }
+  input[type="range"]:hover::-webkit-slider-thumb { transform: scale(1.08); }
+  input[type="range"]:active:hover::-webkit-slider-thumb { transform: scale(1.14); }
+}
+
+/* ---- Accessibility preferences ----------------------------------------------------------------------------------- */
+@media (prefers-contrast: more) {
+  :root { --border: #4a5167; --border-strong: #6a7290; --muted: #c4c8d4; --faint: #aeb3c2; }
+}
+@media (forced-colors: active) {
+  .switch::after { background: CanvasText; }
+  .switch.on { border-color: Highlight; }
+  .switch.on::after { background: Highlight; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #audio-play-btn.is-playing::before, #welcome.is-loading .wl-mark::after { animation: none; opacity: 0; }
+  #audio-play-btn.is-playing { box-shadow: 0 0 0 6px var(--accent-soft); }
+}
+</style>
+<style id="lamplight-splash-flipbook">
+/* =========================================================================
+   Launch splash — flip book
+   A closed-loop page-turn that keeps riffling until reader.js adds
+   `.leaving`; the camera then dives into the open page and the app fades up.
+   No JS changes: reader.js still adds .leaving, then .gone 650ms later, so the
+   dive is timed to finish inside that window. Everything animated is
+   transform/opacity only.
+   Loop design: 8 pages share one keyframe cycle, staggered by --s. Each page
+   waits on the right (z rises toward 0 so the longest-waiting page is on top),
+   flips, rests on the left (z falls so the newest page is on top), then resets
+   underneath the other pages, so the loop has no visible seam.
+   ========================================================================= */
+#splash {
+  transition: opacity .3s ease .32s, visibility 0s linear .62s;
+}
+#splash.leaving { transform: none; }
+
+#splash-book {
+  --pw: 78px; --ph: 108px;           /* one page */
+  --s: .42s; --T: 3.36s;             /* stagger between flips / full cycle (8 pages) */
+  position: relative;
+  width: 168px; height: 120px;
+  perspective: 900px; perspective-origin: 50% 30%;
+  transform-origin: 123px 60px;      /* centre of the right-hand page */
+  transition: transform .62s cubic-bezier(.55, .02, .85, .35);
+  animation: fbEnter .9s var(--ease) both;
+}
+/* The dive: scale into the page until it fills the screen. */
+#splash.leaving #splash-book { transform: scale(24); }
+#splash.leaving #splash-word { opacity: 0; transform: translate3d(0, 14px, 0); transition: opacity .22s ease, transform .3s var(--ease); }
+
+/* Warm pool of light under the book (replaces the old SVG underlight). */
+#splash-book::before {
+  content: ""; position: absolute; left: 50%; bottom: -26px;
+  width: 190px; height: 34px; margin-left: -95px; border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(232,168,62,.42), rgba(232,168,62,.10) 62%, transparent 100%);
+  animation: fbGlow 2.4s ease-in-out infinite alternate;
+}
+
+.fb-stage {
+  position: absolute; inset: 0;
+  transform-style: preserve-3d;
+  transform: rotateX(16deg);
+}
+.fb-book { position: absolute; inset: 0; transform-style: preserve-3d; }
+
+/* Cover + the two resting pages sit beneath every moving page (z < -5px). */
+.fb-cover, .fb-base, .fb-pg {
+  position: absolute; top: 6px; height: var(--ph);
+}
+.fb-cover {
+  top: 0; left: 0; width: 168px; height: 120px; border-radius: 7px;
+  background: #0e1118;
+  border: 1.5px solid var(--accent);
+  box-shadow: 0 18px 44px rgba(0,0,0,.65), 0 0 30px rgba(232,168,62,.16);
+  transform: translateZ(-12px);
+}
+.fb-base { width: var(--pw); transform: translateZ(-8px); background: #161b27; }
+.fb-base-l { left: 6px; border-radius: 4px 0 0 4px; background: linear-gradient(90deg, #1b2130, #121620); }
+.fb-base-r { left: 84px; border-radius: 0 4px 4px 0; background: linear-gradient(90deg, #121620, #1b2130); }
+
+.fb-pg {
+  left: 84px; width: var(--pw);
+  transform-origin: 0 50%;
+  transform-style: preserve-3d;
+  border-radius: 0 4px 4px 0;
+  background: linear-gradient(90deg, #121620 0%, #1f2535 22%, #262d40 100%);
+  box-shadow: inset -1px 0 0 rgba(240,235,225,.20), inset 0 1px 0 rgba(240,235,225,.10);
+  animation: fbFlip var(--T) linear infinite backwards;
+  animation-delay: calc((var(--i) - 2) * var(--s));   /* page 0 is already mid-wait, so motion starts at once */
+  backface-visibility: visible;
+}
+/* Two printed faces so the back of a turned page reads the right way round. */
+.fb-pg::before, .fb-pg::after {
+  content: ""; position: absolute; inset: 14px 12px 14px 12px;
+  background:
+    repeating-linear-gradient(180deg, rgba(240,235,225,.34) 0 2px, transparent 2px 9px);
+  -webkit-mask-image: linear-gradient(180deg, #000 0, #000 78%, transparent 78%, transparent 84%, #000 84%, #000 100%);
+          mask-image: linear-gradient(180deg, #000 0, #000 78%, transparent 78%, transparent 84%, #000 84%, #000 100%);
+  backface-visibility: hidden; -webkit-backface-visibility: hidden;
+}
+.fb-pg::after { transform: rotateY(180deg); }
+/* Vary the "paragraphs" a little so the pages don't read as a single texture. */
+.fb-pg:nth-child(3n+1)::before, .fb-pg:nth-child(3n+1)::after { top: 18px; }
+.fb-pg:nth-child(3n+2)::before, .fb-pg:nth-child(3n+2)::after { right: 20px; }
+
+@keyframes fbFlip {
+  0%     { transform: rotateY(0deg)    translateZ(-5px); }
+  25%    { transform: rotateY(0deg)    translateZ(0);    animation-timing-function: cubic-bezier(.45, .05, .25, 1); }
+  54.76% { transform: rotateY(-180deg) translateZ(0); }
+  100%   { transform: rotateY(-180deg) translateZ(-5px); }
+}
+@keyframes fbEnter { from { opacity: 0; transform: translate3d(0, 10px, 0) scale(.94); } to { opacity: 1; transform: none; } }
+@keyframes fbGlow  { from { opacity: .45; transform: scale(.9); } to { opacity: .9; transform: scale(1.08); } }
+
+/* Reduced motion: the page-turn is the loading indicator, so it keeps running,
+   but slower and calmer, and the dive becomes a soft fade with a gentle push-in.
+   The older global rule forces .01s on every #splash animation (!important), so
+   the pages must out-rank it explicitly or they would strobe. */
+@media (prefers-reduced-motion: reduce) {
+  #splash-book { --s: .8s; --T: 6.4s; animation: none; }
+  #splash-book::before { animation: none; opacity: .7; }
+  #splash .fb-pg {
+    animation-duration: var(--T) !important;
+    animation-delay: calc((var(--i) - 2) * var(--s)) !important;
+  }
+  #splash.leaving #splash-book { transform: scale(2.2); transition: transform .6s ease-in, opacity .3s ease; }
+}
+</style>
 </head>
 <body>
 <!-- Icon sprite: 24x24 grid, 1.75px stroke, round caps/joins (set in .ico). -->
@@ -1727,7 +2099,7 @@ body.peek-active #panel-scrim { opacity: 0 !important; background: transparent !
 <!-- Launch splash: pure HTML/CSS so it paints on the very first frame, before
      any script runs. reader.js removes it once the app is ready. -->
 <div id="splash" role="status" aria-live="polite">
-  <div id="splash-book" aria-hidden="true"><svg viewBox="0 0 120 120" fill="none" class="sb-svg"><defs><filter id="book-glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"></feGaussianBlur><feColorMatrix type="matrix" values="1 0 0 0 0.9  0 1 0 0 0.65  0 0 1 0 0.25  0 0 0 0.75 0" result="glow"></feColorMatrix><feMerge><feMergeNode in="glow"></feMergeNode><feMergeNode in="SourceGraphic"></feMergeNode></feMerge></filter><radialGradient id="spine-light" cx="50%" cy="90%" r="80%"><stop offset="0%" stop-color="#ffd276" stop-opacity="0.7"></stop><stop offset="100%" stop-color="#e5a43b" stop-opacity="0"></stop></radialGradient></defs><ellipse cx="60" cy="82" rx="36" ry="8" fill="url(#spine-light)" class="sb-underlight"></ellipse><g class="sb-spine-group"><path class="sb-spine" d="M60 40 L60 84"></path><path class="sb-spine-curve" d="M56 84 C58 86 62 86 64 84"></path></g><g class="sb-cover-left"><path class="sb-cover" d="M60 40 C46 32 30 31 16 34 L16 78 C30 75 46 76 60 84 Z"></path></g><g class="sb-cover-right"><path class="sb-cover" d="M60 40 C74 32 90 31 104 34 L104 78 C90 75 74 76 60 84 Z"></path></g><g class="sb-page-left-back"><path class="sb-page-sheet" d="M60 43 C48 36 34 35 22 38 L22 76 C34 73 48 74 60 81 Z"></path></g><g class="sb-page-right-back"><path class="sb-page-sheet" d="M60 43 C72 36 86 35 98 38 L98 76 C86 73 72 74 60 81 Z"></path></g><g class="sb-page-left-main"><path class="sb-page-sheet" d="M60 45 C49 39 36 38 26 41 L26 77 C36 74 49 75 60 81 Z"></path><line class="sb-line" x1="32" y1="51" x2="52" y2="48"></line><line class="sb-line" x1="32" y1="58" x2="52" y2="55"></line><line class="sb-line" x1="32" y1="65" x2="48" y2="62"></line></g><g class="sb-page-right-main"><path class="sb-page-sheet" d="M60 45 C71 39 84 38 94 41 L94 77 C84 74 71 75 60 81 Z"></path><line class="sb-line" x1="68" y1="48" x2="88" y2="51"></line><line class="sb-line" x1="68" y1="55" x2="88" y2="58"></line><line class="sb-line" x1="72" y1="62" x2="88" y2="65"></line></g><path class="sb-bookmark-ribbon" d="M60 41 Q62 58 66 70 Q68 76 64 86 L60 82 L56 86 Q58 74 60 41 Z"></path></svg></div>
+  <div id="splash-book" aria-hidden="true"><div class="fb-stage"><div class="fb-book"><div class="fb-cover"></div><div class="fb-base fb-base-l"></div><div class="fb-base fb-base-r"></div><div class="fb-pg" style="--i:0"></div><div class="fb-pg" style="--i:1"></div><div class="fb-pg" style="--i:2"></div><div class="fb-pg" style="--i:3"></div><div class="fb-pg" style="--i:4"></div><div class="fb-pg" style="--i:5"></div><div class="fb-pg" style="--i:6"></div><div class="fb-pg" style="--i:7"></div></div></div></div>
   <div id="splash-word">
     <div class="sw-name">Novel Reader</div>
     <div id="splash-status">Opening your library<span class="dots"><i></i><i></i><i></i></span></div>
