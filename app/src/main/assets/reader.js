@@ -2302,10 +2302,9 @@
      Night lock — the app blocks itself overnight.
 
      Between NIGHT_LOCK_START and NIGHT_LOCK_END (local time, 24h "HH:MM")
-     a full-screen lock covers the app and music is paused. It lifts by
-     itself at NIGHT_LOCK_END. Change the two constants to move the window.
-     Not user-switchable on purpose: a lock you can turn off at 1 AM isn't
-     a lock. (It follows the phone's clock.)
+     a full-screen lock covers the app and music is paused. It lifts at
+     NIGHT_LOCK_END, or after the one-hour moon unlock on eligible days.
+     Change the two constants to move the window. (It follows local time.)
   --------------------------------------------------------------------- */
 
   const NIGHT_LOCK_START = '00:00'; // 12:00 AM
@@ -2344,7 +2343,9 @@
   function updateNightLock() {
     const d = new Date();
     const left = nightLockMinutesLeft(d);
-    const shouldLock = left > 0;
+    const unlocked = window.NovelMoonLock && window.NovelMoonLock.isUnlocked();
+    const dismissReady = window.NovelMoonLock && window.NovelMoonLock.canDismiss();
+    const shouldLock = left > 0 && !(unlocked && (!nightLocked || dismissReady));
 
     if (shouldLock) {
       nightLockNowEl.textContent = formatClockTime12(d.getHours() + ':' + String(d.getMinutes()).padStart(2, '0'));
@@ -2362,6 +2363,7 @@
     if (shouldLock === nightLocked) return;
     nightLocked = shouldLock;
     nightLockEl.classList.toggle('hidden', !shouldLock);
+    if (shouldLock && window.NovelMoonLock) window.NovelMoonLock.startSession();
     if (shouldLock) {
       // A break reminder underneath the lock would be pointless.
       sessionLimitOverlay.classList.add('hidden');
@@ -2371,6 +2373,7 @@
     }
   }
 
+  if (window.NovelMoonLock) window.NovelMoonLock.onUnlocked = updateNightLock;
   updateNightLock(); // already locked at launch? cover the screen right away
   setInterval(updateNightLock, 1000);
   document.addEventListener('visibilitychange', () => {

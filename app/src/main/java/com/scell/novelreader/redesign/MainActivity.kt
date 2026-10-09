@@ -98,17 +98,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Night lock, native side. reader.js draws the "Time to sleep" screen
-    // between 12:00 AM and 6:00 AM; this makes sure music can't keep playing
-    // from the background overnight (the web page's timers may be paused
-    // while the app is backgrounded). Keep the 6 in sync with
-    // NIGHT_LOCK_END in reader.js.
+    // Night lock, native side. reader.js draws the lock between 12:00 AM and
+    // 6:00 AM. This also stops background playback if WebView timers pause.
+    // Respect the moon lock's persisted one-hour unlock so a successful cheat
+    // works for native audio as well as the WebView UI.
     private val nightLockHandler = Handler(Looper.getMainLooper())
     private val nightLockCheck = object : Runnable {
         override fun run() {
             val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
             if (hour < 6) {
-                mediaController?.pause()
+                if (pageLoaded) {
+                    webView.evaluateJavascript(
+                        "!!(window.NovelMoonLock && window.NovelMoonLock.isUnlocked())"
+                    ) { unlocked -> if (unlocked != "true") mediaController?.pause() }
+                } else {
+                    mediaController?.pause()
+                }
             }
             nightLockHandler.postDelayed(this, 15_000L)
         }
