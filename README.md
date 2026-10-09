@@ -172,7 +172,10 @@ target unlocks the app for one hour. The unlock is saved locally and also
 allows native background audio; after it expires, the night lock returns if
 it is still before 6:00 AM. Other days show an inactive full moon. The lock
 window is set by `NIGHT_LOCK_START` / `NIGHT_LOCK_END` in `reader.js` and
-follows the phone's local clock.
+follows the phone's local clock. On active days, four edge impacts (one per
+side) grow in randomized order with 26 rays each. Shaded triangular facets,
+impact flashes, and a progress-scaled screen shake deepen the effect; reaching
+100% inverts the screen and leaves contrasting crack lines.
 
 ## Audio player
 
@@ -361,6 +364,11 @@ with stubbed browser globals and checks the framework (registry, persistence,
 A-B loop, replay-gain maths, virtual playlists, crossfade trigger, native EQ
 fallback). Run it from the project root: `node tests/audio-features.test.js`.
 It cannot exercise the Kotlin side or real audio.
+
+**Moon-lock checks.** `tests/moon-lock.test.js` checks eligible dates, moon
+phases, tap completion, four-side impact geometry, 26-ray density, random web
+staggering, facet progression, screen shake, and terminal contrast. Run it from
+the project root: `node tests/moon-lock.test.js`.
 
 Chapter files are read either in the original `chapter_downloader.py`
 format (title / `Source:` line / `====` separator / body) or as plain

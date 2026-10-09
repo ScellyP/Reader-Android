@@ -1337,6 +1337,7 @@ input[type="range"]:disabled::-webkit-slider-thumb { background: var(--faint); }
   overflow: hidden;
 }
 #night-lock.hidden { display: none; }
+#night-lock-stage { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--bg); overflow: hidden; will-change: transform; }
 #night-lock-box { position: relative; z-index: 1; max-width: 340px; text-align: center; color: var(--text); }
 #night-lock-icon {
   width: 120px; height: 120px; margin: 0 auto 22px;
@@ -1350,6 +1351,7 @@ input[type="range"]:disabled::-webkit-slider-thumb { background: var(--faint); }
 #night-lock-moon.active { cursor: pointer; }
 #night-lock-glass { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
 #night-lock-glass canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+#night-lock-flash { position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: 0; background: #fff; }
 #night-lock-box h2 { margin: 0 0 10px; font-family: var(--font-book); font-weight: 500; font-size: 28px; }
 #night-lock-box p { margin: 0 0 8px; color: var(--muted); font-size: 15px; line-height: 1.55; }
 #night-lock-now { font-size: 34px; font-weight: 600; letter-spacing: .02em; color: var(--text); margin: 14px 0 6px; }
@@ -2456,24 +2458,27 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
 
 <!-- Night lock: covers the whole app overnight (see "Night lock" in reader.js). -->
 <div id="night-lock" class="hidden" role="alertdialog" aria-modal="true" aria-label="Night lock">
-  <div id="night-lock-box">
-    <h2>Time to sleep</h2>
-    <p>Novel Reader is locked for the night.</p>
-    <button id="night-lock-icon" type="button" aria-label="Moon">
-      <svg id="night-lock-moon" viewBox="0 0 120 120" aria-hidden="true">
-        <circle id="night-lock-moon-disc" cx="60" cy="60" r="50" />
-        <path id="night-lock-moon-lit" d="" />
-      </svg>
-    </button>
-    <div id="night-lock-now"></div>
-    <div id="night-lock-opens"></div>
-  </div>
-  <div id="night-lock-glass" aria-hidden="true">
-    <canvas id="draw-refract"></canvas>
-    <canvas id="draw-reflect"></canvas>
-    <canvas id="draw-fractures"></canvas>
-    <canvas id="draw-mainline"></canvas>
-    <canvas id="draw-noise"></canvas>
+  <div id="night-lock-stage">
+    <div id="night-lock-box">
+      <h2>Time to sleep</h2>
+      <p>Novel Reader is locked for the night.</p>
+      <button id="night-lock-icon" type="button" aria-label="Moon">
+        <svg id="night-lock-moon" viewBox="0 0 120 120" aria-hidden="true">
+          <circle id="night-lock-moon-disc" cx="60" cy="60" r="50" />
+          <path id="night-lock-moon-lit" d="" />
+        </svg>
+      </button>
+      <div id="night-lock-now"></div>
+      <div id="night-lock-opens"></div>
+    </div>
+    <div id="night-lock-glass" aria-hidden="true">
+      <canvas id="draw-refract"></canvas>
+      <canvas id="draw-reflect"></canvas>
+      <canvas id="draw-fractures"></canvas>
+      <canvas id="draw-mainline"></canvas>
+      <canvas id="draw-noise"></canvas>
+    </div>
+    <div id="night-lock-flash"></div>
   </div>
 </div>
 
