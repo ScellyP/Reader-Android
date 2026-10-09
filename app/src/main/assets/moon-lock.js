@@ -21,9 +21,12 @@
   const flash = $('night-lock-flash');
   const glass = $('night-lock-glass');
   const canvases = ['draw-refract','draw-reflect','draw-fractures','draw-mainline','draw-noise'].map($);
+  const contexts = canvases.map(canvas => canvas && canvas.getContext('2d'));
+  const STAR_DIRECTIONS = Array.from({length:8},(_,i)=>[Math.cos(i*Math.PI/4),Math.sin(i*Math.PI/4)]);
   let state = null, tracker = null, seed = 0, system = null, unlockReady = false;
   let shown = 0, frame = 0, lastProgressAt = 0, finishTimer = 0;
   let lastDrawQ = -1;
+  let memoryUnlockUntil = 0, drawWarningShown = false;
 
   const pad = n => String(n).padStart(2, '0');
   function localKey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
@@ -32,18 +35,19 @@
       (d.getDay() === 6 && Math.ceil(d.getDate() / 7) % 2 === 1);
   }
   function unlockUntil() {
-    try { return Number(localStorage.getItem(UNLOCK_KEY) || 0) || 0; } catch (_) { return 0; }
+    try { return Math.max(memoryUnlockUntil,Number(localStorage.getItem(UNLOCK_KEY) || 0) || 0); } catch (_) { return memoryUnlockUntil; }
   }
   function isUnlocked(now) { return unlockUntil() > (now === undefined ? Date.now() : now); }
   function grantUnlock() {
-    try { localStorage.setItem(UNLOCK_KEY, String(Date.now() + UNLOCK_MS)); } catch (_) { /* storage may be disabled */ }
+    memoryUnlockUntil=Date.now()+UNLOCK_MS;
+    try { localStorage.setItem(UNLOCK_KEY, String(memoryUnlockUntil)); } catch (_) { /* in-memory unlock still lets this session finish */ }
   }
   function randomTarget() {
     const a = new Uint32Array(1);
     const crypt=window.crypto;
     if (crypt && crypt.getRandomValues) crypt.getRandomValues(a);
     else a[0] = Math.floor(Math.random() * 4294967296);
-    return 1 + (a[0] % 100);
+    return 50 + (a[0] % 51);
   }
   function advanceTap(progress) {
     if(progress.count<progress.target)progress.count++;
@@ -52,6 +56,7 @@
   }
   function crackFraction(seg,p){const t=clamp((p-seg.start)/Math.max(1e-6,seg.end-seg.start));return 1-(1-t)*(1-t);}
   function fillOpacity(p){const t=clamp((p-.82)/.18);return t*t*(3-2*t);}
+  function renderProgress(p){return p>=1?1:Math.floor(clamp(p)*40)/40;}
   function strokeScale(p){return 1+1.2*clamp(p);}
   function facetOpacity(facet,p,dark){const pop=clamp((p-facet.at)/.075);return (dark?[.09,.16,.23]:[.07,.13,.19])[facet.level]*(1-Math.pow(1-pop,3))*(1-fillOpacity(p));}
   function visibleSegmentCount(sys,p){return sys.segs.reduce((n,seg)=>n+(crackFraction(seg,p)>0?1:0),0);}
@@ -108,7 +113,9 @@
       const impact=impacts[wi],cx=impact.cx(),cy=impact.cy(),inward=impact.inward;
       const rmax = Math.hypot(Math.max(cx,w-cx), Math.max(cy,h-cy)) * 1.14;
       const delay = order[wi] * .18; webs.push({cx,cy,rmax,delay,side:impact.side,stagger:order[wi]});
-      const radii = []; for (let r = 12; r < rmax; r += r < 64 ? r * (.3 + rnd()*.2) : 32 + rnd()*18) radii.push(r); radii.push(rmax);
+      // Keep the 26-ray silhouette, but use wider rings and fewer optional
+      // links so total path count stays bounded on lower-end phones.
+      const radii = []; for (let r = 12; r < rmax; r += r < 64 ? r * (.3 + rnd()*.2) : 56 + rnd()*24) radii.push(r); radii.push(rmax);
       const rings = [];
       for (let ri = 0; ri < radii.length; ri++) {
         const pts = [];
@@ -132,19 +139,25 @@
         if(!a||!b||!c)return;
         const reach=Math.max(...[a,b,c].map(p=>Math.hypot(p.x-cx,p.y-cy)));
         const span=(1-delay)*.94;
-        facets.push({points:[a,b,c],at:Math.min(.98,delay+span*reach/rmax),level:Math.floor(rnd()*3),seed:rnd()});
+        facets.push({points:new Float32Array([a.x,a.y,b.x,b.y,c.x,c.y]),cx:(a.x+b.x+c.x)/3,cy:(a.y+b.y+c.y)/3,at:Math.min(.98,delay+span*reach/rmax),level:Math.floor(rnd()*3),seed:rnd()});
       };
       for (let ri=0; ri<rings.length; ri++) for (let ray=0; ray<rayCount; ray++) {
         if (ri) add(rings[ri-1][ray],rings[ri][ray]);
-        if (ray && rnd()<.58) add(rings[ri][ray-1],rings[ri][ray]);
-        if (ri && ray && rnd()<.22) add(rings[ri-1][ray-1],rings[ri][ray]);
+        if (ray && rnd()<.4) add(rings[ri][ray-1],rings[ri][ray]);
+        if (ri && ray && rnd()<.14) add(rings[ri-1][ray-1],rings[ri][ray]);
         if(ri<rings.length-1&&ray<rayCount-1){
           const a=rings[ri][ray],b=rings[ri+1][ray],c=rings[ri+1][ray+1],d=rings[ri][ray+1];
           addFacet(a,b,c);addFacet(a,c,d);
         }
       }
     }
-    return {w,h,webs,segs,facets,rayCount};
+    return {
+      w,h,webs,segs,facets,rayCount,
+      visibleSegments:new Int32Array(segs.length),
+      segmentProgress:new Float32Array(segs.length),
+      visibleFacets:[new Uint32Array(facets.length),new Uint32Array(facets.length),new Uint32Array(facets.length)],
+      visibleFacetCounts:new Uint32Array(3)
+    };
   }
   function prepareCanvases() {
     const rect=glass.getBoundingClientRect(), dpr=Math.min(window.devicePixelRatio||1,2);
@@ -156,116 +169,105 @@
     return {w:Math.max(1,rect.width),h:Math.max(1,rect.height)};
   }
   function clearCanvases(){ for(const canvas of canvases){ const ctx=canvas.getContext('2d'); ctx.clearRect(0,0,canvas.width,canvas.height); } }
-  function curvePoints(seg,f,spacing){
-    const length=Math.hypot(seg.b.x-seg.a.x,seg.b.y-seg.a.y), count=Math.max(2,Math.ceil(length*f/spacing)), pts=[];
-    for(let i=0;i<=count;i++){
-      const t=f*i/count, m=1-t;
-      const x=m*m*seg.a.x+2*m*t*seg.cp.x+t*t*seg.b.x, y=m*m*seg.a.y+2*m*t*seg.cp.y+t*t*seg.b.y;
-      const dx=2*m*(seg.cp.x-seg.a.x)+2*t*(seg.b.x-seg.cp.x), dy=2*m*(seg.cp.y-seg.a.y)+2*t*(seg.b.y-seg.cp.y), d=Math.hypot(dx,dy)||1;
-      pts.push({x,y,nx:dy/d,ny:-dx/d,tx:dx/d,ty:dy/d});
-    }
-    return pts;
-  }
-  function appendCurve(ctx,pts,offset){
-    if(pts.length<2)return;
-    pts.forEach((p,i)=>{const x=p.x+p.nx*offset,y=p.y+p.ny*offset;i?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+  function appendPartial(ctx,seg,f){
+    if(f<=0)return;
+    const a=seg.a,b=seg.b,c=seg.cp,m=1-f;
+    const cx=a.x+(c.x-a.x)*f,cy=a.y+(c.y-a.y)*f;
+    const x=m*m*a.x+2*m*f*c.x+f*f*b.x,y=m*m*a.y+2*m*f*c.y+f*f*b.y;
+    ctx.moveTo(a.x,a.y);ctx.quadraticCurveTo(cx,cy,x,y);
   }
   function drawGlass(progress) {
-    if (!glass || !system) return;
-    progress = Math.round(progress * 120) / 120;
-    if (progress === lastDrawQ) return;
-    lastDrawQ = progress;
-    const dark = isDarkTheme(), terminal=progress>=1?terminalPalette(dark):null;
-    const inverse = terminal ? terminal.fill : (dark ? '#fff' : '#000');
-    const base = terminal ? terminal.crack : (dark ? '#000' : '#fff');
-    const [refract,reflect,fractures,mainline,noise]=canvases.map(c=>c.getContext('2d'));
-    for(const ctx of [refract,reflect,fractures,mainline,noise])ctx.clearRect(0,0,system.w,system.h);
+    if(!glass||!system)return;
+    progress=renderProgress(progress); // Limit full-canvas redraws to 40 visual steps.
+    if(progress===lastDrawQ)return;lastDrawQ=progress;
+    const dark=isDarkTheme(),terminal=progress>=1?terminalPalette(dark):null;
+    const inverse=terminal?terminal.fill:(dark?'#fff':'#000'),base=terminal?terminal.crack:(dark?'#000':'#fff');
+    const [refract,reflect,facets,mainline,noise]=contexts;
+    refract.clearRect(0,0,system.w,system.h);reflect.clearRect(0,0,system.w,system.h);facets.clearRect(0,0,system.w,system.h);mainline.clearRect(0,0,system.w,system.h);noise.clearRect(0,0,system.w,system.h);
 
-    // Refraction layer: soft impact pools and the inverse-colour glass wash.
-    refract.fillStyle=inverse;
-    const terminalFill=fillOpacity(progress);
-    if(terminalFill){refract.globalAlpha=terminalFill;refract.fillRect(0,0,system.w,system.h);refract.globalAlpha=1;}
+    const fill=fillOpacity(progress);
+    if(fill){refract.globalAlpha=fill;refract.fillStyle=inverse;refract.fillRect(0,0,system.w,system.h);refract.globalAlpha=1;}
+    // Four compact radial glows; no full-screen image copies or retained GPU surfaces.
     for(const web of system.webs){
       const g=clamp((progress-web.delay)/(1-web.delay));if(!g)continue;
-      const radius=g*web.rmax*.62, gradient=refract.createRadialGradient(web.cx,web.cy,0,web.cx,web.cy,radius||1);
-      gradient.addColorStop(0,dark?'rgba(255,255,255,.9)':'rgba(0,0,0,.9)');
-      gradient.addColorStop(.55,dark?'rgba(255,255,255,.55)':'rgba(0,0,0,.55)');
-      gradient.addColorStop(1,dark?'rgba(255,255,255,0)':'rgba(0,0,0,0)');
-      refract.globalAlpha=.9*clamp((g-.05)/.8);refract.fillStyle=gradient;refract.beginPath();refract.arc(web.cx,web.cy,radius,0,Math.PI*2);refract.fill();refract.globalAlpha=1;
+      const radius=g*web.rmax*.5,gradient=refract.createRadialGradient(web.cx,web.cy,0,web.cx,web.cy,radius||1);
+      gradient.addColorStop(0,dark?'rgba(255,255,255,.75)':'rgba(0,0,0,.75)');gradient.addColorStop(1,dark?'rgba(255,255,255,0)':'rgba(0,0,0,0)');
+      refract.globalAlpha=.65*clamp((g-.05)/.8);refract.fillStyle=gradient;refract.beginPath();refract.arc(web.cx,web.cy,radius,0,Math.PI*2);refract.fill();refract.globalAlpha=1;
     }
 
-    // Batch facets into brightness buckets to keep dense webs inexpensive to draw.
-    const facetGroups=Array.from({length:3},()=>Array.from({length:8},()=>[]));
-    for(const facet of system.facets){
-      const raw=clamp((progress-facet.at)/.075);if(!raw)continue;
-      const pop=1-Math.pow(1-raw,3),cx=(facet.points[0].x+facet.points[1].x+facet.points[2].x)/3,cy=(facet.points[0].y+facet.points[1].y+facet.points[2].y)/3;
-      const scale=.84+.16*pop,alpha=facetOpacity(facet,progress,dark);
-      if(alpha<=.002)continue;
-      const bucket=Math.min(7,Math.floor(alpha/.23*8));
-      facetGroups[facet.level][bucket].push(facet.points.map(p=>({x:cx+(p.x-cx)*scale,y:cy+(p.y-cy)*scale})));
+    let segmentCount=0;
+    for(let i=0;i<system.segs.length;i++){
+      const f=crackFraction(system.segs[i],progress);if(f<=0)continue;
+      system.visibleSegments[segmentCount]=i;system.segmentProgress[i]=f;segmentCount++;
     }
-    for(let level=0;level<3;level++)for(let bucket=0;bucket<8;bucket++){
-      const triangles=facetGroups[level][bucket];if(!triangles.length)continue;
-      fractures.beginPath();for(const tri of triangles){fractures.moveTo(tri[0].x,tri[0].y);fractures.lineTo(tri[1].x,tri[1].y);fractures.lineTo(tri[2].x,tri[2].y);fractures.closePath();}
-      fractures.globalAlpha=Math.min(.23,(bucket+.5)*.23/8);fractures.fillStyle=inverse;fractures.fill();fractures.globalAlpha=1;
+    system.visibleFacetCounts.fill(0);
+    for(let i=0;i<system.facets.length;i++){
+      const facet=system.facets[i];if(progress>facet.at){const group=system.visibleFacets[facet.level],count=system.visibleFacetCounts[facet.level]++;group[count]=i;}
     }
 
-    const active=[],shardPaths=[];
-    for(const seg of system.segs){
-      const f=clamp((progress-seg.start)/Math.max(.000001,seg.end-seg.start));if(!f)continue;
-      const pts=curvePoints(seg,f,12);active.push({seg,f,pts});
-      // Fracture shards along longer segments, appearing as their point is reached.
-      if(f>.65&&seg.seed>.83){
-        const p=pts[Math.floor(pts.length/2)], z=2+seg.seed*5;
-        shardPaths.push([{x:p.x-p.tx*z,y:p.y-p.ty*z},{x:p.x+p.nx*z*2,y:p.y+p.ny*z*2},{x:p.x+p.tx*z,y:p.y+p.ty*z},{x:p.x-p.nx*z*2,y:p.y-p.ny*z*2}]);
+    // Three batched paths retain brightness tiers. Facets pop from 84% to full
+    // scale as progress crosses their precomputed arrival window.
+    const levelAlpha=dark?[.09,.16,.23]:[.07,.13,.19];
+    for(let level=0;level<3;level++){
+      const count=system.visibleFacetCounts[level];if(!count||fill>=1)continue;
+      const ids=system.visibleFacets[level];facets.beginPath();
+      for(let j=0;j<count;j++){
+        const facet=system.facets[ids[j]],pop=clamp((progress-facet.at)/.075),scale=.84+.16*pop,p=facet.points;
+        facets.moveTo(facet.cx+(p[0]-facet.cx)*scale,facet.cy+(p[1]-facet.cy)*scale);
+        facets.lineTo(facet.cx+(p[2]-facet.cx)*scale,facet.cy+(p[3]-facet.cy)*scale);
+        facets.lineTo(facet.cx+(p[4]-facet.cx)*scale,facet.cy+(p[5]-facet.cy)*scale);facets.closePath();
       }
+      facets.globalAlpha=levelAlpha[level]*(1-fill);facets.fillStyle=inverse;facets.fill();facets.globalAlpha=1;
     }
-    // Draw the supplied pen's refraction/reflection layers in batched paths.
-    refract.save();refract.shadowColor=inverse;refract.shadowBlur=4;refract.beginPath();
-    for(const item of active)appendRibbon(refract,item.pts,4);
-    refract.fillStyle=dark?'rgba(0,0,0,.14)':'rgba(255,255,255,.15)';refract.fill();refract.restore();
-    reflect.beginPath();for(const item of active)appendRibbon(reflect,item.pts,14);
-    reflect.globalAlpha=.2;reflect.fillStyle='rgba(255,255,255,.38)';reflect.fill();reflect.globalAlpha=1;
-    reflect.beginPath();for(const item of active)appendRibbon(reflect,item.pts,2.5);
-    reflect.globalAlpha=.35;reflect.fillStyle='rgba(255,255,255,.65)';reflect.fill();reflect.globalAlpha=1;
-    if(shardPaths.length){fractures.beginPath();for(const poly of shardPaths){poly.forEach((p,i)=>i?fractures.lineTo(p.x,p.y):fractures.moveTo(p.x,p.y));fractures.closePath();}fractures.globalAlpha=.45;fractures.fillStyle=inverse;fractures.fill();fractures.globalAlpha=1;}
 
-    // Side-specific starbursts scale with each impact's own staggered reach.
+    // Pre-sized typed arrays hold visible indices and eased growth fractions;
+    // the same active set feeds all crack layers without allocating point lists.
+    refract.beginPath();reflect.beginPath();mainline.beginPath();
+    for(let j=0;j<segmentCount;j++){
+      const index=system.visibleSegments[j],seg=system.segs[index],f=system.segmentProgress[index];
+      appendPartial(refract,seg,f);appendPartial(reflect,seg,f);appendPartial(mainline,seg,f);
+    }
+    refract.lineCap='round';refract.strokeStyle=dark?'rgba(0,0,0,.22)':'rgba(255,255,255,.22)';refract.lineWidth=4;refract.stroke();
+    reflect.lineCap='round';reflect.strokeStyle='rgba(255,255,255,.16)';reflect.lineWidth=9;reflect.stroke();
+    reflect.strokeStyle='rgba(255,255,255,.55)';reflect.lineWidth=1.5;reflect.stroke();
+
+    const thickness=strokeScale(progress);
+    mainline.lineCap='round';mainline.lineJoin='round';mainline.strokeStyle=dark?'rgba(255,255,255,.16)':'rgba(0,0,0,.16)';mainline.lineWidth=5*thickness;mainline.stroke();
+    mainline.strokeStyle=dark?'rgba(255,255,255,.94)':'rgba(0,0,0,.9)';mainline.lineWidth=1.1*thickness;mainline.stroke();
+    mainline.strokeStyle=base;mainline.globalAlpha=.15+.85*clamp((progress-.3)/.6);mainline.lineWidth=progress>=1?1.7:.75;mainline.stroke();mainline.globalAlpha=1;
+
+    // Sparse, deterministic branches and scratches reuse segment math. No per-frame
+    // RNG, point arrays, or trigonometric lookup is needed for this texture pass.
+    facets.beginPath();noise.beginPath();
+    for(let j=0;j<segmentCount;j++){
+      const index=system.visibleSegments[j],seg=system.segs[index],f=system.segmentProgress[index];if(f<.45||!(seg.seed>.9||seg.seed<.11))continue;
+      const a=seg.a,b=seg.b,c=seg.cp,t=.5,m=.5,x=m*m*a.x+2*m*t*c.x+t*t*b.x,y=m*m*a.y+2*m*t*c.y+t*t*b.y;
+      const dx=2*m*(c.x-a.x)+2*t*(b.x-c.x),dy=2*m*(c.y-a.y)+2*t*(b.y-c.y),d=Math.hypot(dx,dy)||1,nx=dy/d,ny=-dx/d;
+      if(seg.seed>.9){const r=3+seg.seed*4;facets.moveTo(x-nx*r,y-ny*r);facets.lineTo(x+nx*r*2,y+ny*r*2);facets.lineTo(x+nx*r,y+ny*r);facets.lineTo(x-nx*r*2,y-ny*r*2);facets.closePath();}
+      if(seg.seed<.11){const side=seg.seed<.055?-1:1,off=side*4,len=4+seg.seed*25;noise.moveTo(x+nx*off,y+ny*off);noise.lineTo(x+nx*off+dx/d*len,y+ny*off+dy/d*len);}
+    }
+    facets.globalAlpha=.38*(1-fill);facets.fillStyle=inverse;facets.fill();facets.globalAlpha=1;
+    noise.strokeStyle=dark?'rgba(255,255,255,.3)':'rgba(0,0,0,.28)';noise.lineWidth=.65;noise.stroke();
+
+    // Starbursts are only four small paths and follow their independently staggered web.
     for(const web of system.webs){
-      const flashState=impactFlash(web,progress),g=flashState.progress;if(g<=0)continue;
-      const radius=flashState.radius,alpha=flashState.opacity,turn=(web.stagger* Math.PI/4);
-      reflect.save();reflect.globalAlpha=alpha;reflect.strokeStyle=inverse;reflect.lineWidth=1.1+1.1*g;
-      const halo=reflect.createRadialGradient(web.cx,web.cy,0,web.cx,web.cy,radius*1.7);
-      halo.addColorStop(0,dark?'rgba(255,255,255,.95)':'rgba(0,0,0,.8)');halo.addColorStop(1,dark?'rgba(255,255,255,0)':'rgba(0,0,0,0)');
-      reflect.fillStyle=halo;reflect.beginPath();reflect.arc(web.cx,web.cy,radius*1.7,0,Math.PI*2);reflect.fill();
-      reflect.beginPath();
-      for(let ray=0;ray<8;ray++){const a=turn+ray*Math.PI/4,inner=radius*(ray%2?.16:.28),outer=radius*(ray%2?.72:1.2);reflect.moveTo(web.cx+Math.cos(a)*inner,web.cy+Math.sin(a)*inner);reflect.lineTo(web.cx+Math.cos(a)*outer,web.cy+Math.sin(a)*outer);}
+      const flashState=impactFlash(web,progress),g=flashState.progress;if(!g)continue;
+      const radius=flashState.radius;reflect.save();reflect.globalAlpha=flashState.opacity;reflect.strokeStyle=inverse;reflect.lineWidth=1+g;reflect.beginPath();
+      for(let ray=0;ray<8;ray++){const [dx,dy]=STAR_DIRECTIONS[ray],inner=radius*(ray%2?.16:.28),outer=radius*(ray%2?.72:1.2);reflect.moveTo(web.cx+dx*inner,web.cy+dy*inner);reflect.lineTo(web.cx+dx*outer,web.cy+dy*outer);}
       reflect.stroke();reflect.restore();
     }
-
-    // Main line: broad glow, bright reflected edge, then a fine base-colour core.
-    mainline.lineCap='round';mainline.lineJoin='round';
-    const thickness=strokeScale(progress);
-    mainline.beginPath();for(const item of active)appendCurve(mainline,item.pts,0);
-    mainline.strokeStyle=dark?'rgba(255,255,255,.12)':'rgba(0,0,0,.12)';mainline.lineWidth=7*thickness;mainline.stroke();
-    mainline.strokeStyle=dark?'rgba(255,255,255,.52)':'rgba(0,0,0,.48)';mainline.lineWidth=2.5*thickness;mainline.stroke();
-    mainline.strokeStyle=dark?'rgba(255,255,255,.98)':'rgba(0,0,0,.94)';mainline.lineWidth=1.15*thickness;mainline.stroke();
-    mainline.strokeStyle=base;mainline.globalAlpha=.15+.85*clamp((progress-.3)/.6);mainline.lineWidth=progress>=1?1.5:.8;mainline.stroke();mainline.globalAlpha=1;
-
-    // Deterministic fine noise and hairline scratches beside the main fractures.
-    noise.beginPath();
-    for(const item of active){const {seg,pts}=item,rand=rngFor((seed^Math.floor(seg.seed*0xffffffff))>>>0),total=Math.min(5,Math.max(1,Math.floor(pts.length/5)));
-      for(let i=0;i<total;i++){const p=pts[Math.floor(rand()*pts.length)],side=rand()<.5?-1:1,off=(2+rand()*7)*side,len=3+rand()*8,skew=(rand()-.5)*1.1;
-        noise.moveTo(p.x+p.nx*off,p.y+p.ny*off);noise.lineTo(p.x+p.nx*(off+skew)+p.tx*len,p.y+p.ny*(off+skew)+p.ty*len);
-      }
-    }
-    noise.lineWidth=.65;noise.strokeStyle=dark?'rgba(255,255,255,.34)':'rgba(0,0,0,.3)';noise.stroke();
   }
 
   function render() {
     if (!state) return;
     updateMoon(state.count % 8, state.active && !state.done);
-    if (state.active) drawGlass(shown);
+    if (state.active) {
+      try { drawGlass(shown); }
+      catch (error) {
+        // A graphics API failure should never strand the user on the lock.
+        if(!drawWarningShown){drawWarningShown=true;console.warn('Moon-lock canvas draw skipped:',error);}
+      }
+    }
   }
   function animate(now) {
     frame = 0;
@@ -294,27 +296,35 @@
     unlockReady=false;
     lastDrawQ=-1;
     seed=(Math.random()*0x7fffffff)|0; system=null;
-    clearCanvases();
-    if (active) {
-      const size=prepareCanvases();system=generateGlass(size.w,size.h,seed);
+    try {
+      clearCanvases();
+      if (active) { const size=prepareCanvases();system=generateGlass(size.w,size.h,seed); }
+    } catch (error) {
+      // Keep the tap/unlock state machine usable if this device lacks a canvas context.
+      system=null;
+      if(!drawWarningShown){drawWarningShown=true;console.warn('Moon-lock canvas setup skipped:',error);}
     }
     render();
   }
   function shakeForProgress(progress){
     if(!stage||!stage.animate)return;
-    stage.getAnimations().forEach(animation=>animation.cancel());
-    const amount=shakeAmplitude(progress);
-    stage.animate([
-      {transform:'translateX(0)'},{transform:`translateX(${-amount}px)`},{transform:`translateX(${amount}px)`},
-      {transform:`translateX(${-amount*.65}px)`},{transform:`translateX(${amount*.35}px)`},{transform:'translateX(0)'}
-    ],{duration:180+progress*100,easing:'ease-out'});
+    try {
+      if(stage.getAnimations)stage.getAnimations().forEach(animation=>animation.cancel());
+      const amount=shakeAmplitude(progress);
+      stage.animate([
+        {transform:'translateX(0)'},{transform:`translateX(${-amount}px)`},{transform:`translateX(${amount}px)`},
+        {transform:`translateX(${-amount*.65}px)`},{transform:`translateX(${amount*.35}px)`},{transform:'translateX(0)'}
+      ],{duration:180+progress*100,easing:'ease-out'});
+    } catch (_) { /* motion is decorative; keep the tap handler alive */ }
   }
   function finalFlash(){
     if(!flash||!flash.animate)return;
-    flash.getAnimations().forEach(animation=>animation.cancel());
-    flash.animate([{opacity:0},{opacity:.92,offset:.18},{opacity:0}],{duration:260,easing:'ease-out'});
+    try {
+      if(flash.getAnimations)flash.getAnimations().forEach(animation=>animation.cancel());
+      flash.animate([{opacity:0},{opacity:.92,offset:.18},{opacity:0}],{duration:260,easing:'ease-out'});
+    } catch (_) { /* final flash is optional */ }
   }
-  if (typeof module !== 'undefined' && module.exports) module.exports={isCheatDay,localKey,phasePath,randomTarget,advanceTap,generateGlass,crackFraction,fillOpacity,strokeScale,facetOpacity,visibleSegmentCount,visibleFacetCount,terminalPalette,shakeAmplitude,impactFlash};
+  if (typeof module !== 'undefined' && module.exports) module.exports={isCheatDay,localKey,phasePath,randomTarget,advanceTap,generateGlass,crackFraction,fillOpacity,renderProgress,strokeScale,facetOpacity,visibleSegmentCount,visibleFacetCount,terminalPalette,shakeAmplitude,impactFlash};
   if (moonButton) moonButton.addEventListener('click', function () {
     if (!tracker || !state || state.done) return;
     state=Object.assign(state,advanceTap(tracker));
@@ -322,7 +332,7 @@
     shakeForProgress(state.progress);
     if(state.done)finalFlash();
     setProgress(state.progress);
-    moonSvg.animate([{transform:'scale(.88)'},{transform:'scale(1)'}],{duration:220,easing:'cubic-bezier(.2,.8,.2,1)'});
+    try { if(moonSvg.animate)moonSvg.animate([{transform:'scale(.88)'},{transform:'scale(1)'}],{duration:220,easing:'cubic-bezier(.2,.8,.2,1)'}); } catch (_) { /* phase and progress remain functional without WAAPI */ }
   });
   if(window.addEventListener)window.addEventListener('resize', function () { if(state && state.active){ const size=prepareCanvases();system=generateGlass(size.w,size.h,seed);lastDrawQ=-1;drawGlass(shown); } });
   window.NovelMoonLock = { isUnlocked, canDismiss:() => unlockReady, startSession, onUnlocked:null, isCheatDay };

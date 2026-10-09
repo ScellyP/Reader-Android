@@ -18,7 +18,9 @@ assert.equal(moon.isCheatDay(d('2026-10-10')), true, 'listed holiday overrides S
 
 assert.equal(moon.phasePath(0, 60, 60, 50), '', 'new moon has no lit path');
 assert.ok([1,2,3,4,5,6,7].every(i => moon.phasePath(i,60,60,50).length > 0), 'lit phases draw paths');
-assert.ok(Array.from({length:50}, () => moon.randomTarget()).every(t => t >= 1 && t <= 100), 'target stays in 1..100');
+assert.ok(Array.from({length:50}, () => moon.randomTarget()).every(t => t >= 50 && t <= 100), 'target stays in 50..100');
+assert.equal(moon.renderProgress(.999),.975,'render quantization cannot enter terminal mode early');
+assert.equal(moon.renderProgress(1),1,'terminal frame is preserved exactly');
 
 const taps = { count: 0, target: 3 };
 assert.equal(moon.advanceTap(taps).progress, 1/3, 'tap progress is count divided by target');
@@ -26,6 +28,9 @@ moon.advanceTap(taps);
 assert.equal(moon.advanceTap(taps).done, true, 'target tap completes progress');
 assert.equal(moon.advanceTap(taps).count, 3, 'extra taps do not overshoot target');
 assert.equal(moon.advanceTap(taps).phaseIndex, 3, 'phase index follows tap count');
+const lowerBoundTarget={count:0,target:50};
+for(let i=0;i<50;i++)moon.advanceTap(lowerBoundTarget);
+assert.equal(moon.advanceTap(lowerBoundTarget).done,true,'50 taps reaches the minimum target cleanly');
 
 const width = 390, height = 844, sys = moon.generateGlass(width, height, 20261010);
 assert.deepEqual(sys.webs.map(w => w.side), ['top','right','bottom','left'], 'one impact is placed on each side');
@@ -38,7 +43,7 @@ assert.ok(sys.webs.every(w => w.rmax >= Math.hypot(width/2,height/2)*1.14), 'web
 assert.deepEqual(sys, moon.generateGlass(width,height,20261010), 'geometry is deterministic for a seed');
 assert.ok(sys.segs.every(s => s.start >= 0 && s.end <= 1 && s.end > s.start), 'segment progress windows are valid');
 assert.ok(sys.segs.length < 10000 && sys.facets.length < 10000, 'phone-sized geometry stays bounded for canvas redraws');
-assert.ok(sys.facets.length > 0 && sys.facets.every(f => f.points.length === 3 && f.level >= 0 && f.level <= 2), 'facets are shaded triangles in three levels');
+assert.ok(sys.facets.length > 0 && sys.facets.every(f => f.points.length === 6 && f.level >= 0 && f.level <= 2), 'facets are compact shaded triangles in three levels');
 assert.deepEqual(new Set(sys.facets.map(f => f.level)), new Set([0,1,2]), 'all three facet brightness levels are generated');
 assert.ok(moon.visibleSegmentCount(sys,.2) <= moon.visibleSegmentCount(sys,.5), 'crack count grows with progress');
 assert.ok(moon.visibleFacetCount(sys,.2) <= moon.visibleFacetCount(sys,.5), 'facet count grows with progress');

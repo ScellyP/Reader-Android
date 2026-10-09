@@ -167,8 +167,8 @@ Between **12:00 AM and 6:00 AM** the app locks itself: a full-screen
 "Time to sleep" screen covers everything, music is paused, and the Android
 back button just leaves the app. It lifts by itself at 6:00 AM. On Sundays,
 the 1st/3rd/5th Saturdays, and the listed holidays, tapping the moon advances
-its phase and spreads cracks across the lock screen. Reaching the hidden tap
-target unlocks the app for one hour. The unlock is saved locally and also
+its phase and spreads cracks across the lock screen. Reaching the hidden
+50–100 tap target unlocks the app for one hour. The unlock is saved locally and also
 allows native background audio; after it expires, the night lock returns if
 it is still before 6:00 AM. Other days show an inactive full moon. The lock
 window is set by `NIGHT_LOCK_START` / `NIGHT_LOCK_END` in `reader.js` and

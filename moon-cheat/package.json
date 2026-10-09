@@ -1,0 +1,13 @@
+{
+  "name": "moon-lock-cheat",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.ts",
+  "scripts": { "test": "npx tsx test/cheatDay.test.ts && npx tsx test/visual.test.ts" },
+  "peerDependencies": {
+    "@react-native-async-storage/async-storage": "*",
+    "react-native-svg": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}
