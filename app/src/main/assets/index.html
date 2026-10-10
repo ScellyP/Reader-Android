@@ -1824,19 +1824,17 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
 .recent-swatch:active { transform: scale(.88); }
 
 /* ---- Colour wheel picker (color-wheel.js) ---- */
-/* While the picker is open, recolouring must be instant: no transitions or blur on the whole UI. */
-body.cw-open *, body.cw-open *::before, body.cw-open *::after { transition: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
-.cw-backdrop { position: fixed; inset: 0; z-index: 1100; display: none; align-items: flex-end; justify-content: center; background: transparent; }
+.cw-backdrop { position: fixed; inset: 0; z-index: 1100; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.6); padding: 16px; }
 .cw-backdrop.open { display: flex; }
 .cw-sheet {
-  width: min(100%, 380px); margin: 0 10px calc(10px + env(safe-area-inset-bottom, 0px)); padding: 14px 18px 16px;
+  width: min(100%, 360px); max-height: 100%; overflow-y: auto; padding: 14px 18px 16px;
   background: var(--panel); color: var(--text); border: 1px solid var(--border-strong); border-radius: var(--r-md, 14px);
   box-shadow: 0 24px 60px rgba(0,0,0,.6); display: flex; flex-direction: column; align-items: center; gap: 14px;
 }
 .cw-head { width: 100%; display: flex; align-items: center; justify-content: space-between; }
 .cw-title { font-size: 15px; font-weight: 600; color: var(--muted); }
 .cw-preview { width: 64px; height: 30px; border-radius: 10px; border: 1px solid var(--border-strong); }
-.cw-wheel-wrap { position: relative; width: min(250px, calc(100vw - 110px)); aspect-ratio: 1; touch-action: none; cursor: crosshair; flex-shrink: 0; }
+.cw-wheel-wrap { position: relative; width: min(250px, calc(100vw - 110px), 38vh); aspect-ratio: 1; margin-top: 30px; touch-action: none; cursor: crosshair; flex-shrink: 0; }
 .cw-wheel, .cw-shade { position: absolute; inset: 0; border-radius: 50%; }
 .cw-wheel {
   background: radial-gradient(closest-side, #fff, rgba(255,255,255,0)), conic-gradient(from 90deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00);
@@ -1853,7 +1851,8 @@ body.cw-open *, body.cw-open *::before, body.cw-open *::after { transition: none
 .cw-sheet .cw-slider::-webkit-slider-runnable-track { background: transparent !important; box-shadow: none !important; border: 0 !important; height: 100%; }
 .cw-sheet .cw-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 34px; height: 34px; margin-top: -5px; border-radius: 50%; background: #fff; border: 3px solid rgba(0,0,0,.55); box-shadow: 0 1px 5px rgba(0,0,0,.55); }
 .cw-foot { width: 100%; display: flex; gap: 10px; }
-.cw-hex { flex: 1; min-width: 0; padding: 10px 12px; font: inherit; font-size: 16px; letter-spacing: .04em; color: var(--text); background: transparent; border: 1px solid var(--border-strong); border-radius: var(--r-sm); }
+.cw-hex { flex: 1 1 90px; min-width: 0; padding: 10px 12px; font: inherit; font-size: 16px; letter-spacing: .04em; color: var(--text); background: transparent; border: 1px solid var(--border-strong); border-radius: var(--r-sm); }
+.cw-cancel { flex: 0 0 auto; padding: 12px 14px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: transparent; color: var(--muted); font-size: 15px; cursor: pointer; }
 .cw-done { flex: 1; padding: 12px; border: 0; border-radius: var(--r-sm); background: var(--accent); color: var(--accent-ink); font-size: 15px; font-weight: 700; cursor: pointer; }
 
 /* ---- Reading timer ----------------------------------------------------------------- */

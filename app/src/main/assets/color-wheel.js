@@ -2,18 +2,13 @@
    The native inputs stay in the page as the source of truth (.value + 'input'/'change' events),
    so reader.js, recent swatches and presets keep working unchanged.
 
-   Performance notes:
-   - The wheel is pure CSS (conic + radial gradient); brightness is a black overlay's opacity.
-     Nothing is drawn per pixel in JS.
-   - Dragging only moves the marker (transform) once per animation frame.
-   - The app-wide recolour (applyReadingColors + saving) is debounced: it runs when the finger
-     pauses (or every 0.5 s at most) and once more on release, not on every pointer move.
-   - Transitions/blur are switched off while the sheet is open so recolouring is instant. */
+   Nothing in the app changes while you pick: the choice is only applied when you tap Done
+   (Cancel, tapping outside or Escape discards it). The wheel itself is pure CSS (conic + radial
+   gradient) and only the marker moves while dragging, so it stays smooth. */
 (function () {
   'use strict';
-  const IDLE_MS = 100, MAX_WAIT_MS = 500;   // recolour the app when the finger pauses, or at most every 0.5 s
-  let sheet = null, p = null, active = null, dirty = false;
-  let rect = null, raf = 0, px = 0, py = 0, applyTimer = 0, firstQueued = 0;
+  let sheet = null, p = null, active = null;
+  let rect = null, raf = 0, px = 0, py = 0;
   const hsv = { h: 0, s: 0, v: 1 };
 
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
@@ -55,18 +50,19 @@
         '<label class="cw-row"><span>Saturation</span><input class="cw-slider cw-sat" type="range" min="0" max="100" step="1"></label>' +
         '<label class="cw-row"><span>Brightness</span><input class="cw-slider cw-val" type="range" min="0" max="100" step="1"></label>' +
         '<div class="cw-foot"><input class="cw-hex" type="text" maxlength="7" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Hex colour">' +
-          '<button type="button" class="cw-done">Done</button></div>' +
+          '<button type="button" class="cw-cancel">Cancel</button><button type="button" class="cw-done">Done</button></div>' +
       '</div>';
     document.body.appendChild(back);
     const q = s => back.querySelector(s);
     p = { back, title: q('.cw-title'), preview: q('.cw-preview'), wrap: q('.cw-wheel-wrap'), shade: q('.cw-shade'),
-          marker: q('.cw-marker'), bubble: q('.cw-bubble'), sat: q('.cw-sat'), val: q('.cw-val'), hex: q('.cw-hex'), done: q('.cw-done') };
+          marker: q('.cw-marker'), bubble: q('.cw-bubble'), sat: q('.cw-sat'), val: q('.cw-val'), hex: q('.cw-hex'), done: q('.cw-done'), cancel: q('.cw-cancel') };
     sheet = back;
 
     // Taps inside must not reach the document-level "tap outside closes the panel" handlers.
     ['click', 'pointerdown', 'touchstart'].forEach(t => back.addEventListener(t, e => e.stopPropagation()));
-    back.addEventListener('click', e => { if (e.target === back) close(); });
-    p.done.addEventListener('click', close);
+    back.addEventListener('click', e => { if (e.target === back) close(false); });
+    p.done.addEventListener('click', () => close(true));
+    p.cancel.addEventListener('click', () => close(false));
 
     p.sat.addEventListener('input', () => { hsv.s = p.sat.value / 100; update(); });
     p.val.addEventListener('input', () => { hsv.v = p.val.value / 100; update(); });
@@ -91,10 +87,10 @@
       px = e.clientX; py = e.clientY;
       if (!raf) raf = requestAnimationFrame(frame);
     });
-    const end = () => { rect = null; p.wrap.classList.remove('dragging'); flushApply(); };
+    const end = () => { rect = null; p.wrap.classList.remove('dragging'); };
     p.wrap.addEventListener('pointerup', end);
     p.wrap.addEventListener('pointercancel', end);
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet.classList.contains('open')) close(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet.classList.contains('open')) close(false); });
   }
 
   function frame() {
@@ -112,54 +108,34 @@
     p.marker.style.transform = 'translate(' + (Math.cos(a) * hsv.s * R).toFixed(1) + 'px,' + (Math.sin(a) * hsv.s * R).toFixed(1) + 'px)';
     p.marker.style.color = hex;
     p.preview.style.background = hex;
-    p.shade.style.opacity = (1 - hsv.v).toFixed(3);
     p.sat.value = Math.round(hsv.s * 100);
     p.val.value = Math.round(hsv.v * 100);
     p.sat.style.background = 'linear-gradient(to right,' + toHex(hsvToRgb(hsv.h, 0, hsv.v)) + ',' + toHex(hsvToRgb(hsv.h, 1, hsv.v)) + ')';
     p.val.style.background = 'linear-gradient(to right,#000,' + toHex(hsvToRgb(hsv.h, hsv.s, 1)) + ')';
     if (!fromHex) p.hex.value = hex;
-    queueApply();
-  }
-
-  // Debounced hand-off to the app: applyReadingColors repaints the whole UI, so it must not run
-  // on every pointer move. It runs once the finger pauses, and at least every MAX_WAIT_MS.
-  function queueApply() {
-    if (!active) return;
-    const now = performance.now();
-    if (!firstQueued) firstQueued = now;
-    clearTimeout(applyTimer);
-    applyTimer = setTimeout(flushApply, Math.min(IDLE_MS, Math.max(0, MAX_WAIT_MS - (now - firstQueued))));
-  }
-  function flushApply() {
-    clearTimeout(applyTimer); applyTimer = 0; firstQueued = 0;
-    if (!active) return;
-    const hex = currentHex();
-    if (active.value.toLowerCase() === hex) return;
-    active.value = hex; dirty = true;
-    active.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   function open(input) {
     if (!sheet) build();
-    active = input; dirty = false; firstQueued = 0;
+    active = input;
     const rgb = parseHex(input.value) || [0, 0, 0], next = rgbToHsv(rgb[0], rgb[1], rgb[2]);
     hsv.h = next.h; hsv.s = next.s; hsv.v = next.v;
     const label = document.querySelector('label[for="' + input.id + '"]');
     p.title.textContent = (label ? label.textContent : 'Colour') + ' colour';
-    document.body.classList.add('cw-open');
     sheet.classList.add('open');
     update();
-    clearTimeout(applyTimer); applyTimer = 0; firstQueued = 0;   // opening must not re-apply the colour it started with
   }
 
-  function close() {
+  // apply = true only for Done: that is the single moment the app's colours change.
+  function close(apply) {
     if (!sheet || !sheet.classList.contains('open')) return;
-    flushApply();
     sheet.classList.remove('open');
-    document.body.classList.remove('cw-open');
-    const input = active, changed = dirty;
-    active = null; dirty = false; rect = null;
-    if (input && changed) input.dispatchEvent(new Event('change', { bubbles: true })); // remembers it in recents
+    const input = active, hex = currentHex();
+    active = null; rect = null;
+    if (!apply || !input || input.value.toLowerCase() === hex) return;
+    input.value = hex;
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));   // remembers it in recent colours
   }
 
   function attach(input) {
