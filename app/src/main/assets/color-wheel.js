@@ -1,10 +1,19 @@
-/* Colour wheel picker: replaces the native <input type="color"> dialog for the Reading panel.
-   The native inputs stay in the DOM as the source of truth (their .value, 'input' and 'change'
-   events are what reader.js already uses), so everything else keeps working unchanged. */
+/* Colour wheel picker for the Reading panel (replaces the native <input type="color"> dialog).
+   The native inputs stay in the page as the source of truth (.value + 'input'/'change' events),
+   so reader.js, recent swatches and presets keep working unchanged.
+
+   Performance notes:
+   - The wheel is pure CSS (conic + radial gradient); brightness is a black overlay's opacity.
+     Nothing is drawn per pixel in JS.
+   - Dragging only moves the marker (transform) once per animation frame.
+   - The app-wide recolour (applyReadingColors + saving) is debounced: it runs when the finger
+     pauses (or every 0.5 s at most) and once more on release, not on every pointer move.
+   - Transitions/blur are switched off while the sheet is open so recolouring is instant. */
 (function () {
   'use strict';
-  const SIZE = 232;                 // CSS px
-  let sheet = null, parts = null, active = null, dirty = false;
+  const IDLE_MS = 100, MAX_WAIT_MS = 500;   // recolour the app when the finger pauses, or at most every 0.5 s
+  let sheet = null, p = null, active = null, dirty = false;
+  let rect = null, raf = 0, px = 0, py = 0, applyTimer = 0, firstQueued = 0;
   const hsv = { h: 0, s: 0, v: 1 };
 
   const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
@@ -40,101 +49,116 @@
     back.className = 'cw-backdrop';
     back.innerHTML =
       '<div class="cw-sheet" role="dialog" aria-modal="true" aria-label="Colour wheel">' +
-        '<div class="cw-title"></div>' +
-        '<div class="cw-wheel-wrap"><canvas class="cw-wheel"></canvas><div class="cw-marker"></div></div>' +
-        '<label class="cw-row"><span>Brightness</span><input class="cw-val" type="range" min="0" max="100" step="1"></label>' +
-        '<div class="cw-row"><span class="cw-preview"></span>' +
-          '<input class="cw-hex" type="text" maxlength="7" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Hex colour"></div>' +
-        '<button type="button" class="cw-done">Done</button>' +
+        '<div class="cw-head"><span class="cw-title"></span><span class="cw-preview"></span></div>' +
+        '<div class="cw-wheel-wrap"><div class="cw-wheel"></div><div class="cw-shade"></div>' +
+          '<div class="cw-marker"><span class="cw-bubble"></span></div></div>' +
+        '<label class="cw-row"><span>Saturation</span><input class="cw-slider cw-sat" type="range" min="0" max="100" step="1"></label>' +
+        '<label class="cw-row"><span>Brightness</span><input class="cw-slider cw-val" type="range" min="0" max="100" step="1"></label>' +
+        '<div class="cw-foot"><input class="cw-hex" type="text" maxlength="7" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Hex colour">' +
+          '<button type="button" class="cw-done">Done</button></div>' +
       '</div>';
     document.body.appendChild(back);
-    parts = {
-      back, sheet: back.firstChild, title: back.querySelector('.cw-title'),
-      wrap: back.querySelector('.cw-wheel-wrap'), canvas: back.querySelector('.cw-wheel'),
-      marker: back.querySelector('.cw-marker'), val: back.querySelector('.cw-val'),
-      preview: back.querySelector('.cw-preview'), hex: back.querySelector('.cw-hex'), done: back.querySelector('.cw-done')
-    };
+    const q = s => back.querySelector(s);
+    p = { back, title: q('.cw-title'), preview: q('.cw-preview'), wrap: q('.cw-wheel-wrap'), shade: q('.cw-shade'),
+          marker: q('.cw-marker'), bubble: q('.cw-bubble'), sat: q('.cw-sat'), val: q('.cw-val'), hex: q('.cw-hex'), done: q('.cw-done') };
     sheet = back;
-    // Clicks here must not reach the document-level "tap outside closes the panel" handlers.
+
+    // Taps inside must not reach the document-level "tap outside closes the panel" handlers.
     ['click', 'pointerdown', 'touchstart'].forEach(t => back.addEventListener(t, e => e.stopPropagation()));
     back.addEventListener('click', e => { if (e.target === back) close(); });
-    parts.done.addEventListener('click', close);
-    parts.val.addEventListener('input', () => { hsv.v = parts.val.value / 100; drawWheel(); commit(true); });
-    parts.hex.addEventListener('input', () => {
-      const rgb = parseHex(parts.hex.value);
+    p.done.addEventListener('click', close);
+
+    p.sat.addEventListener('input', () => { hsv.s = p.sat.value / 100; update(); });
+    p.val.addEventListener('input', () => { hsv.v = p.val.value / 100; update(); });
+    p.hex.addEventListener('input', () => {
+      const rgb = parseHex(p.hex.value);
       if (!rgb) return;
       const next = rgbToHsv(rgb[0], rgb[1], rgb[2]);
       hsv.h = next.s ? next.h : hsv.h; hsv.s = next.s; hsv.v = next.v;
-      drawWheel(); commit(true, true);
+      update(true);
     });
-    const R = SIZE / 2;
-    function pick(e) {
-      const rect = parts.wrap.getBoundingClientRect();
-      const dx = e.clientX - rect.left - R, dy = e.clientY - rect.top - R, r = Math.hypot(dx, dy);
-      hsv.h = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
-      hsv.s = clamp(r / (R - 1), 0, 1);
-      commit(true);
-    }
-    parts.wrap.addEventListener('pointerdown', e => { parts.wrap.setPointerCapture(e.pointerId); parts.wrap.dataset.drag = '1'; pick(e); e.preventDefault(); });
-    parts.wrap.addEventListener('pointermove', e => { if (parts.wrap.dataset.drag) pick(e); });
-    const end = e => { delete parts.wrap.dataset.drag; };
-    parts.wrap.addEventListener('pointerup', end);
-    parts.wrap.addEventListener('pointercancel', end);
-    document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet && sheet.classList.contains('open')) close(); });
+
+    p.wrap.addEventListener('pointerdown', e => {
+      p.wrap.setPointerCapture(e.pointerId);
+      const r = p.wrap.getBoundingClientRect();         // measured once per touch, not per move
+      rect = { cx: r.left + r.width / 2, cy: r.top + r.height / 2, R: r.width / 2 };
+      p.wrap.classList.add('dragging');
+      px = e.clientX; py = e.clientY; frame();
+      e.preventDefault();
+    });
+    p.wrap.addEventListener('pointermove', e => {
+      if (!rect) return;
+      px = e.clientX; py = e.clientY;
+      if (!raf) raf = requestAnimationFrame(frame);
+    });
+    const end = () => { rect = null; p.wrap.classList.remove('dragging'); flushApply(); };
+    p.wrap.addEventListener('pointerup', end);
+    p.wrap.addEventListener('pointercancel', end);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet.classList.contains('open')) close(); });
   }
 
-  function drawWheel() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2), px = Math.round(SIZE * dpr), c = parts.canvas;
-    if (c.width !== px) { c.width = px; c.height = px; c.style.width = c.style.height = SIZE + 'px'; }
-    const ctx = c.getContext('2d'), img = ctx.createImageData(px, px), d = img.data, R = px / 2;
-    for (let y = 0; y < px; y++) {
-      for (let x = 0; x < px; x++) {
-        const dx = x + .5 - R, dy = y + .5 - R, r = Math.hypot(dx, dy);
-        if (r > R) continue;
-        const rgb = hsvToRgb((Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360, Math.min(1, r / (R - 1)), hsv.v), i = (y * px + x) * 4;
-        d[i] = rgb[0]; d[i + 1] = rgb[1]; d[i + 2] = rgb[2]; d[i + 3] = Math.round(255 * clamp(R - r, 0, 1));
-      }
-    }
-    ctx.putImageData(img, 0, 0);
+  function frame() {
+    raf = 0;
+    if (!rect) return;
+    const dx = px - rect.cx, dy = py - rect.cy;
+    hsv.h = (Math.atan2(dy, dx) * 180 / Math.PI + 360) % 360;
+    hsv.s = clamp(Math.hypot(dx, dy) / rect.R, 0, 1);
+    update();
   }
 
-  function syncUi(skipHex) {
-    const R = SIZE / 2, hex = currentHex(), a = hsv.h * Math.PI / 180;
-    parts.marker.style.left = (R + Math.cos(a) * hsv.s * (R - 1)) + 'px';
-    parts.marker.style.top = (R + Math.sin(a) * hsv.s * (R - 1)) + 'px';
-    parts.marker.style.background = hex;
-    parts.val.value = Math.round(hsv.v * 100);
-    parts.val.style.background = 'linear-gradient(to right,#000,' + toHex(hsvToRgb(hsv.h, hsv.s, 1)) + ')';
-    parts.preview.style.background = hex;
-    if (!skipHex) parts.hex.value = hex;
+  // Cheap, per-frame UI sync (marker transform + a few style strings).
+  function update(fromHex) {
+    const hex = currentHex(), a = hsv.h * Math.PI / 180, R = p.wrap.offsetWidth / 2;
+    p.marker.style.transform = 'translate(' + (Math.cos(a) * hsv.s * R).toFixed(1) + 'px,' + (Math.sin(a) * hsv.s * R).toFixed(1) + 'px)';
+    p.marker.style.color = hex;
+    p.preview.style.background = hex;
+    p.shade.style.opacity = (1 - hsv.v).toFixed(3);
+    p.sat.value = Math.round(hsv.s * 100);
+    p.val.value = Math.round(hsv.v * 100);
+    p.sat.style.background = 'linear-gradient(to right,' + toHex(hsvToRgb(hsv.h, 0, hsv.v)) + ',' + toHex(hsvToRgb(hsv.h, 1, hsv.v)) + ')';
+    p.val.style.background = 'linear-gradient(to right,#000,' + toHex(hsvToRgb(hsv.h, hsv.s, 1)) + ')';
+    if (!fromHex) p.hex.value = hex;
+    queueApply();
   }
 
-  function commit(live, skipHex) {
-    syncUi(skipHex);
+  // Debounced hand-off to the app: applyReadingColors repaints the whole UI, so it must not run
+  // on every pointer move. It runs once the finger pauses, and at least every MAX_WAIT_MS.
+  function queueApply() {
+    if (!active) return;
+    const now = performance.now();
+    if (!firstQueued) firstQueued = now;
+    clearTimeout(applyTimer);
+    applyTimer = setTimeout(flushApply, Math.min(IDLE_MS, Math.max(0, MAX_WAIT_MS - (now - firstQueued))));
+  }
+  function flushApply() {
+    clearTimeout(applyTimer); applyTimer = 0; firstQueued = 0;
     if (!active) return;
     const hex = currentHex();
     if (active.value.toLowerCase() === hex) return;
-    active.value = hex;
-    dirty = true;
+    active.value = hex; dirty = true;
     active.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
   function open(input) {
     if (!sheet) build();
-    active = input; dirty = false;
+    active = input; dirty = false; firstQueued = 0;
     const rgb = parseHex(input.value) || [0, 0, 0], next = rgbToHsv(rgb[0], rgb[1], rgb[2]);
     hsv.h = next.h; hsv.s = next.s; hsv.v = next.v;
     const label = document.querySelector('label[for="' + input.id + '"]');
-    parts.title.textContent = (label ? label.textContent : 'Colour') + ' colour';
+    p.title.textContent = (label ? label.textContent : 'Colour') + ' colour';
+    document.body.classList.add('cw-open');
     sheet.classList.add('open');
-    drawWheel(); syncUi();
+    update();
+    clearTimeout(applyTimer); applyTimer = 0; firstQueued = 0;   // opening must not re-apply the colour it started with
   }
 
   function close() {
     if (!sheet || !sheet.classList.contains('open')) return;
+    flushApply();
     sheet.classList.remove('open');
+    document.body.classList.remove('cw-open');
     const input = active, changed = dirty;
-    active = null; dirty = false;
+    active = null; dirty = false; rect = null;
     if (input && changed) input.dispatchEvent(new Event('change', { bubbles: true })); // remembers it in recents
   }
 
