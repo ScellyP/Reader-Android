@@ -6,7 +6,36 @@ on:
   workflow_dispatch: {}
 
 jobs:
+  # Decides whether a build is wanted. A push only builds when one of its
+  # commit messages contains a version number like v1.04.05 (a leading "v"
+  # followed by three dot-separated numbers; a suffix such as -beta is fine).
+  # Every other commit is skipped, so no APK is built. Running the workflow
+  # by hand from the Actions tab (workflow_dispatch) always builds.
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.decide.outputs.should_build }}
+    steps:
+      - name: Look for a version number in the commit message(s)
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          COMMIT_MESSAGES: ${{ toJson(github.event.commits.*.message) }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Manual run - building."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          elif printf '%s' "$COMMIT_MESSAGES" | grep -Eq 'v[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "Version number found in the commit message - building."
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No version number (like v1.04.05) in the commit message - skipping the build."
+            echo "should_build=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build:
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
     runs-on: ubuntu-latest
 
     steps:
