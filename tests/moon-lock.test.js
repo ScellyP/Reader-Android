@@ -63,5 +63,10 @@ const possibleStarts=new Set(Array.from({length:24},(_,i)=>{
 }));
 assert.deepEqual(possibleStarts,new Set(['top','right','bottom','left']), 'random order can start at every screen side');
 
+const tiltedFacets=sys.facets.filter(f=>f.tilt!==0);
+assert.ok(tiltedFacets.length>0&&tiltedFacets.length<sys.facets.length*.4,'a minority of facets are displaced');
+assert.ok(tiltedFacets.every(f=>Math.abs(f.tilt)<=.15),'displaced facets tilt only slightly');
+assert.ok(sys.facets.every(f=>f.tilt!==0||(f.pushX===0&&f.pushY===0)),'only tilted facets are pushed out of the plane');
+assert.equal(moon.TEST_TARGET,20,'hidden test run uses a short fixed target');
 console.log(`Moon-lock geometry: ${sys.segs.length} segments, ${sys.facets.length} facets at ${width}x${height}.`);
 console.log('Moon-lock state and rendering geometry checks passed.');

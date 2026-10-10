@@ -2340,7 +2340,37 @@
     return ((h % 12) || 12) + ':' + mm + ' ' + (h < 12 ? 'AM' : 'PM');
   }
 
+  // Hidden test run (Reading panel, faint dot at the bottom): shows the lock
+  // with the glass effect on any day, needs 20 taps, and never saves an unlock.
+  const moonTestBtn = document.getElementById('moon-test-btn');
+  const moonTestExitBtn = document.getElementById('night-lock-test-exit');
+  let moonTest = false;
+
+  function startMoonLockTest() {
+    if (moonTest || nightLocked || !window.NovelMoonLock) return;
+    moonTest = true;
+    const readingPanel = document.getElementById('theme-panel');
+    if (readingPanel) readingPanel.classList.add('hidden');
+    nightLockNowEl.textContent = 'Test mode';
+    nightLockOpensEl.textContent = 'Tap the moon';
+    moonTestExitBtn.classList.remove('hidden');
+    nightLockEl.classList.remove('hidden');
+    window.NovelMoonLock.startSession({ test: true });
+  }
+  function endMoonLockTest() {
+    if (!moonTest) return;
+    moonTest = false;
+    window.NovelMoonLock.stopSession();
+    moonTestExitBtn.classList.add('hidden');
+    nightLockEl.classList.add('hidden');
+    updateNightLock(); // a real night lock that began meanwhile takes over
+  }
+  if (moonTestBtn) moonTestBtn.addEventListener('click', startMoonLockTest);
+  if (moonTestExitBtn) moonTestExitBtn.addEventListener('click', endMoonLockTest);
+  if (window.NovelMoonLock) window.NovelMoonLock.onTestFinished = endMoonLockTest;
+
   function updateNightLock() {
+    if (moonTest) return; // test run owns the overlay until it ends
     const d = new Date();
     const left = nightLockMinutesLeft(d);
     const unlocked = window.NovelMoonLock && window.NovelMoonLock.isUnlocked();

@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Animated, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
+import { AccessibilityInfo, Animated, Pressable, StyleSheet, Text, View, useColorScheme } from "react-native";
 import { isCheatDay } from "./cheatDay";
 import { TapProgress, TapState } from "./cheatCode";
 import { grantOneHourUnlock } from "./unlockWindow";
 import { MoonPhaseIcon } from "./MoonPhaseIcon";
 import { CrackOverlay } from "./CrackOverlay";
+import { shakeDuration, shakeKeyframes, terminalPalette } from "./cracks";
 import { useTween } from "./useTween";
 
 const MOON = 120;
@@ -26,6 +27,13 @@ export function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
   const seed = useMemo(() => (Math.random() * 2 ** 31) | 0, []);
   const granted = useRef(false);
   const pulse = useRef(new Animated.Value(1)).current;
+  const shakeX = useRef(new Animated.Value(0)).current;     // horizontal screen shake
+  const flash = useRef(new Animated.Value(0)).current;      // blinding flash on the final tap
+  const reduceMotion = useRef(false);
+
+  useEffect(() => {
+    AccessibilityInfo.isReduceMotionEnabled().then((v) => { reduceMotion.current = !!v; }).catch(() => {});
+  }, []);
 
   // Cracks ease toward progress; the last stretch (covering the screen) is slower.
   const shown = useTween(state.progress, state.done ? 900 : 350);
@@ -36,6 +44,22 @@ export function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
     setState(s);
     pulse.setValue(0.88);
     Animated.spring(pulse, { toValue: 1, useNativeDriver: true, friction: 4 }).start();
+    if (!reduceMotion.current) {
+      // Shake harder the more broken the glass is (amplitude and length both scale with progress).
+      const ks = shakeKeyframes(s.progress), step = shakeDuration(s.progress) / (ks.length - 1);
+      shakeX.stopAnimation();
+      shakeX.setValue(0);
+      Animated.sequence(
+        ks.slice(1).map((v) => Animated.timing(shakeX, { toValue: v, duration: step, useNativeDriver: true }))
+      ).start();
+      if (s.done) {
+        flash.setValue(0);
+        Animated.sequence([
+          Animated.timing(flash, { toValue: 0.92, duration: 47, useNativeDriver: true }),
+          Animated.timing(flash, { toValue: 0, duration: 213, useNativeDriver: true }),
+        ]).start();
+      }
+    }
     if (s.done && !granted.current) {
       granted.current = true;
       grantOneHourUnlock(); // persisted immediately; UI hand-off waits for the animation
@@ -58,6 +82,7 @@ export function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
       style={[StyleSheet.absoluteFill, { backgroundColor: bg }]}
       onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
     >
+      <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ translateX: shakeX }] }]}>
       <Text style={[styles.clock, { color: text, top: size.h * 0.18 }]}>12:00 - Locked</Text>
 
       {/* Moon stays a plain static icon on non-cheat days (no handler, no animation). */}
@@ -74,6 +99,14 @@ export function LockScreen({ onUnlocked }: { onUnlocked: () => void }) {
 
       {tracker && (
         <CrackOverlay w={size.w} h={size.h} seed={seed} progress={shown} dark={dark} />
+      )}
+      </Animated.View>
+
+      {tracker && (
+        <Animated.View
+          pointerEvents="none"
+          style={[StyleSheet.absoluteFill, { backgroundColor: terminalPalette(dark).fill, opacity: flash }]}
+        />
       )}
     </View>
   );

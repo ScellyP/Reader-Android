@@ -1,7 +1,7 @@
 // Run: npx tsx tools/preview.ts  -> writes preview.svg (open in a browser)
 import { writeFileSync } from "fs";
 import { MOON_PHASES, moonLitPath } from "../src/moonPhase";
-import { generateGlass, crackLayers } from "../src/cracks";
+import { generateGlass, crackLayers, facetAlpha, renderProgress, terminalPalette } from "../src/cracks";
 
 const W = 390, H = 844;
 const sys = generateGlass(W, H, 20261010);
@@ -15,20 +15,25 @@ MOON_PHASES.forEach((name, k) => {
   out += `<text x="${cx}" y="${cy + 70}" fill="#ddd" font-size="12" text-anchor="middle" font-family="sans-serif">${k} ${name}</text>`;
 });
 
+const q_ = renderProgress;
 const frames = [0.05, 0.2, 0.4, 0.6, 0.8, 0.92, 1];
 for (const dark of [true, false]) {
-  const bg = dark ? "#0b0b10" : "#f6f4ee", inv = dark ? "#fff" : "#000", base = dark ? "#000" : "#fff";
+  const bg = dark ? "#0b0b10" : "#f6f4ee";
   frames.forEach((p, i) => {
-    const q = Math.round(p * 120) / 120, L = crackLayers(sys, q), s = L.scale;
+    const term = q_(p) >= 1 ? terminalPalette(dark) : null;
+    const inv = term ? term.fill : dark ? "#fff" : "#000", base = term ? term.crack : dark ? "#000" : "#fff";
+    const q = renderProgress(p), L = crackLayers(sys, q), s = L.scale;
     out += `<svg x="${10 + i * 148}" y="${y}" width="${fw}" height="${fh}" viewBox="0 0 ${W} ${H}">`;
     out += `<defs><radialGradient id="pool${dark ? "d" : "l"}${i}"><stop offset="0" stop-color="${inv}" stop-opacity="1"/><stop offset=".55" stop-color="${inv}" stop-opacity=".8"/><stop offset="1" stop-color="${inv}" stop-opacity="0"/></radialGradient></defs>`;
     out += `<rect width="${W}" height="${H}" fill="${bg}"/><circle cx="${W / 2}" cy="${H / 2}" r="50" fill="${dark ? "#f3efe0" : "#1c1c28"}"/>`;
     for (const o of L.pools) out += `<circle cx="${o.cx}" cy="${o.cy}" r="${o.r}" fill="url(#pool${dark ? "d" : "l"}${i})" opacity="${o.alpha}"/>`;
     if (L.fillOpacity) out += `<rect width="${W}" height="${H}" fill="${inv}" opacity="${L.fillOpacity}"/>`;
+    for (let lv = 0; lv < 3; lv++) if (L.facets[lv]) out += `<path d="${L.facets[lv]}" fill="${inv}" fill-opacity="${facetAlpha(lv, dark) * L.facetFade}"/>`;
     const st = (c: string, w: number, o: number) => `<path d="${L.lines}" stroke="${c}" stroke-width="${w}" stroke-opacity="${o}" fill="none" stroke-linecap="round"/>`;
     out += st(inv, 7 * s, .1) + st(inv, 2.6 * s, .45) + st(inv, 1.2 * s, .95);
     out += `<path d="${L.shards}" fill="${inv}" fill-opacity=".45"/><path d="${L.scratches}" stroke="${inv}" stroke-width=".6" stroke-opacity=".3" fill="none"/>`;
     out += st(base, .9 * s, L.coreOpacity) + `<path d="${L.shards}" fill="${base}" fill-opacity="${.5 * L.coreOpacity}"/><path d="${L.scratches}" stroke="${base}" stroke-width=".6" stroke-opacity="${.5 * L.coreOpacity}" fill="none"/>`;
+    for (const f of L.flashes) out += `<path d="${f.path}" stroke="${inv}" stroke-width="${f.width * 2}" stroke-opacity="${f.opacity}" fill="none"/>`;
     out += `<rect width="${W}" height="${H}" fill="none" stroke="#888" stroke-width="3"/></svg>`;
     out += `<text x="${10 + i * 148 + fw / 2}" y="${y + fh + 14}" fill="#ddd" font-size="12" text-anchor="middle" font-family="sans-serif">${dark ? "dark" : "light"} p=${p}</text>`;
   });

@@ -1,5 +1,8 @@
 import { MOON_PHASES, moonLitPath, phaseIndexForCount } from "../src/moonPhase";
-import { generateGlass, crackLayers, crackFraction, fillOpacity, quadPoint, strokeScale } from "../src/cracks";
+import {
+  generateGlass, crackLayers, crackFraction, fillOpacity, quadPoint, strokeScale, renderProgress, facetOpacity,
+  terminalPalette, shakeAmplitude, impactFlash, visibleSegmentCount, visibleFacetCount,
+} from "../src/cracks";
 import { TapProgress } from "../src/cheatCode";
 
 let fail = 0;
@@ -20,6 +23,14 @@ const sys = generateGlass(W, H, 20261010);
 ok("deterministic per seed", JSON.stringify(sys) === JSON.stringify(generateGlass(W, H, 20261010)));
 ok("different seed differs", JSON.stringify(sys) !== JSON.stringify(generateGlass(W, H, 7)));
 ok("impacts are on the screen edges", sys.webs.every(w => Math.min(w.cx, W - w.cx, w.cy, H - w.cy) <= 9));
+ok("exactly 4 webs, 26 rays each", sys.webs.length === 4 && sys.rayCount === 26);
+ok("one impact per side, in top/right/bottom/left slots",
+  sys.webs.map(w => w.side).join() === "top,right,bottom,left" &&
+  sys.webs.every(w => w.side === "top" ? w.cy <= 8 : w.side === "right" ? W - w.cx <= 8 : w.side === "bottom" ? H - w.cy <= 8 : w.cx <= 8));
+ok("stagger ranks are a permutation of 0..3", sys.webs.map(w => w.stagger).sort().join() === "0,1,2,3");
+ok("first crack can come from any side",
+  new Set(Array.from({ length: 24 }, (_, i) => generateGlass(120, 180, 100 + i).webs.find(w => w.stagger === 0)!.side)).size === 4);
+ok("each web reaches past the screen diagonal", sys.webs.every(w => w.rmax >= Math.hypot(W / 2, H / 2) * 1.14));
 ok("impacts spread over all four sides",
   [sys.webs.some(w => w.cy < 10), sys.webs.some(w => W - w.cx < 10), sys.webs.some(w => H - w.cy < 10), sys.webs.some(w => w.cx < 10)].every(Boolean));
 ok("segment windows valid (0<=start<end<=1)", sys.segs.every(s => s.start >= 0 && s.end <= 1 && s.end > s.start));
@@ -57,6 +68,27 @@ ok("segment count grows", n(0.2) <= n(0.5) && n(0.5) <= n(0.9) && n(0.9) <= n(1)
 ok("strokes bolder with progress", strokeScale(0.2) < strokeScale(0.8));
 ok("fill 0 early, 1 at the end", fillOpacity(0.5) === 0 && fillOpacity(1) === 1);
 ok("glass layer string size ok at p=1", crackLayers(sys, 1).lines.length < 150000, `${crackLayers(sys,1).lines.length} chars, ${sys.segs.length} segs`);
+
+// ---- facets ----
+ok("facets exist in all three brightness levels", new Set(sys.facets.map(f => f.level)).size === 3, `${sys.facets.length} facets`);
+ok("facet count stays bounded", sys.facets.length < 10000 && sys.segs.length < 10000);
+ok("facets pop in with progress", visibleFacetCount(sys, .2) <= visibleFacetCount(sys, .5) && visibleFacetCount(sys, .5) <= visibleFacetCount(sys, 1));
+ok("segment count grows (helper)", visibleSegmentCount(sys, .2) <= visibleSegmentCount(sys, .6));
+ok("facets are hidden under the terminal fill", sys.facets.every(f => facetOpacity(f, 1, true) === 0) && crackLayers(sys, 1).facetCount === 0);
+const mid = crackLayers(sys, .5);
+ok("batched tiers all populated at p=.5", mid.facets.every(t => t.length > 0));
+const tilted = sys.facets.filter(f => f.tilt !== 0);
+ok("some, not most, facets are displaced", tilted.length > 0 && tilted.length < sys.facets.length * 0.4 && tilted.every(f => Math.abs(f.tilt) <= 0.15));
+
+// ---- feedback + terminal ----
+ok("renderProgress never reaches 1 early, keeps 1 exact", renderProgress(.999) < 1 && renderProgress(1) === 1);
+ok("terminal palette: dark = white+black, light = black+white",
+  terminalPalette(true).fill === "#ffffff" && terminalPalette(true).crack === "#000000" &&
+  terminalPalette(false).fill === "#000000" && terminalPalette(false).crack === "#ffffff");
+ok("shake grows with progress", shakeAmplitude(.8) > shakeAmplitude(.2) && shakeAmplitude(0) > 0);
+const w0 = sys.webs.find(w => w.stagger === 0)!;
+ok("impact flash waits for its stagger, then scales", impactFlash(w0, 0) === null && impactFlash(w0, .5)!.radius > impactFlash(w0, .1)!.radius);
+ok("flash count follows the staggered webs", crackLayers(sys, .05).flashes.length <= crackLayers(sys, .9).flashes.length && crackLayers(sys, .9).flashes.length === 4);
 
 // ---- progress drives both ----
 const tp = new TapProgress(10);

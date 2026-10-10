@@ -5,6 +5,7 @@
 
   const UNLOCK_KEY = 'moon_lock_cheat_unlock_until';
   const UNLOCK_MS = 60 * 60 * 1000;
+  const TEST_TARGET = 20; // hidden settings test run: short, ignores the date, never saves an unlock
   const holidays = new Set([
     '2026-08-26', '2026-08-29', '2026-09-05', '2026-09-14', '2026-09-19',
     '2026-09-26', '2026-10-02', '2026-10-03', '2026-10-10', '2026-10-17',
@@ -139,7 +140,9 @@
         if(!a||!b||!c)return;
         const reach=Math.max(...[a,b,c].map(p=>Math.hypot(p.x-cx,p.y-cy)));
         const span=(1-delay)*.94;
-        facets.push({points:new Float32Array([a.x,a.y,b.x,b.y,c.x,c.y]),cx:(a.x+b.x+c.x)/3,cy:(a.y+b.y+c.y)/3,at:Math.min(.98,delay+span*reach/rmax),level:Math.floor(rnd()*3),seed:rnd()});
+        const fx=(a.x+b.x+c.x)/3,fy=(a.y+b.y+c.y)/3,level=Math.floor(rnd()*3),seedValue=rnd(),roll=rnd(),spin=rnd()-.5,kick=.6+rnd()*1.4,tilted=roll<.18,away=Math.atan2(fy-cy,fx-cx);
+        // About 1 in 5 shards is displaced: tilted up to ~8 degrees and nudged away from the impact.
+        facets.push({points:new Float32Array([a.x,a.y,b.x,b.y,c.x,c.y]),cx:fx,cy:fy,at:Math.min(.98,delay+span*reach/rmax),level,seed:seedValue,tilt:tilted?spin*.28:0,pushX:tilted?Math.cos(away)*kick:0,pushY:tilted?Math.sin(away)*kick:0});
       };
       for (let ri=0; ri<rings.length; ri++) for (let ray=0; ray<rayCount; ray++) {
         if (ri) add(rings[ri-1][ray],rings[ri][ray]);
@@ -213,9 +216,12 @@
       const ids=system.visibleFacets[level];facets.beginPath();
       for(let j=0;j<count;j++){
         const facet=system.facets[ids[j]],pop=clamp((progress-facet.at)/.075),scale=.84+.16*pop,p=facet.points;
-        facets.moveTo(facet.cx+(p[0]-facet.cx)*scale,facet.cy+(p[1]-facet.cy)*scale);
-        facets.lineTo(facet.cx+(p[2]-facet.cx)*scale,facet.cy+(p[3]-facet.cy)*scale);
-        facets.lineTo(facet.cx+(p[4]-facet.cx)*scale,facet.cy+(p[5]-facet.cy)*scale);facets.closePath();
+        const cs=facet.tilt?Math.cos(facet.tilt):1,sn=facet.tilt?Math.sin(facet.tilt):0,ox=facet.cx+facet.pushX*pop,oy=facet.cy+facet.pushY*pop;
+        for(let k=0;k<6;k+=2){
+          const rx=(p[k]-facet.cx)*scale,ry=(p[k+1]-facet.cy)*scale,x=ox+rx*cs-ry*sn,y=oy+rx*sn+ry*cs;
+          if(k)facets.lineTo(x,y);else facets.moveTo(x,y);
+        }
+        facets.closePath();
       }
       facets.globalAlpha=levelAlpha[level]*(1-fill);facets.fillStyle=inverse;facets.fill();facets.globalAlpha=1;
     }
@@ -277,6 +283,7 @@
     render();
     if (t < 1) frame = requestAnimationFrame(animate);
     else if (state && state.done) finishTimer = setTimeout(() => {
+      if (state.test) { if (window.NovelMoonLock && window.NovelMoonLock.onTestFinished) window.NovelMoonLock.onTestFinished(); return; }
       if (isUnlocked()) {
         unlockReady = true;
         if (window.NovelMoonLock && window.NovelMoonLock.onUnlocked) window.NovelMoonLock.onUnlocked();
@@ -289,10 +296,12 @@
     clearTimeout(finishTimer); lastProgressFrom=shown; lastProgressTo=to; lastProgressAt=performance.now();
     frame=requestAnimationFrame(animate);
   }
-  function startSession() {
-    const active=isCheatDay(new Date());
-    tracker=active ? {target:randomTarget(),count:0} : null;
-    state={active,count:active ? 0 : 4,done:false}; shown=0;
+  function startSession(options) {
+    const test=!!(options && options.test), active=test || isCheatDay(new Date());
+    if (frame) { cancelAnimationFrame(frame); frame=0; }
+    clearTimeout(finishTimer);
+    tracker=active ? {target:test ? TEST_TARGET : randomTarget(),count:0} : null;
+    state={active,count:active ? 0 : 4,done:false,test}; shown=0;
     unlockReady=false;
     lastDrawQ=-1;
     seed=(Math.random()*0x7fffffff)|0; system=null;
@@ -324,16 +333,22 @@
       flash.animate([{opacity:0},{opacity:.92,offset:.18},{opacity:0}],{duration:260,easing:'ease-out'});
     } catch (_) { /* final flash is optional */ }
   }
-  if (typeof module !== 'undefined' && module.exports) module.exports={isCheatDay,localKey,phasePath,randomTarget,advanceTap,generateGlass,crackFraction,fillOpacity,renderProgress,strokeScale,facetOpacity,visibleSegmentCount,visibleFacetCount,terminalPalette,shakeAmplitude,impactFlash};
+  if (typeof module !== 'undefined' && module.exports) module.exports={TEST_TARGET,isCheatDay,localKey,phasePath,randomTarget,advanceTap,generateGlass,crackFraction,fillOpacity,renderProgress,strokeScale,facetOpacity,visibleSegmentCount,visibleFacetCount,terminalPalette,shakeAmplitude,impactFlash};
   if (moonButton) moonButton.addEventListener('click', function () {
     if (!tracker || !state || state.done) return;
     state=Object.assign(state,advanceTap(tracker));
-    if (state.done) grantUnlock();
+    if (state.done && !state.test) grantUnlock();
     shakeForProgress(state.progress);
     if(state.done)finalFlash();
     setProgress(state.progress);
     try { if(moonSvg.animate)moonSvg.animate([{transform:'scale(.88)'},{transform:'scale(1)'}],{duration:220,easing:'cubic-bezier(.2,.8,.2,1)'}); } catch (_) { /* phase and progress remain functional without WAAPI */ }
   });
   if(window.addEventListener)window.addEventListener('resize', function () { if(state && state.active){ const size=prepareCanvases();system=generateGlass(size.w,size.h,seed);lastDrawQ=-1;drawGlass(shown); } });
-  window.NovelMoonLock = { isUnlocked, canDismiss:() => unlockReady, startSession, onUnlocked:null, isCheatDay };
+  function stopSession() {
+    if (frame) { cancelAnimationFrame(frame); frame=0; }
+    clearTimeout(finishTimer);
+    try { clearCanvases(); } catch (_) { /* nothing to clear */ }
+    state=null; tracker=null; system=null; shown=0; lastDrawQ=-1;
+  }
+  window.NovelMoonLock = { isUnlocked, canDismiss:() => unlockReady, startSession, stopSession, onUnlocked:null, onTestFinished:null, isCheatDay };
 })();

@@ -5,7 +5,10 @@
  * each drawn as a slightly bent quadratic curve with fracture shards and fine scratches.
  *
  * Differences for the lock screen:
- *  - impacts sit on the SCREEN EDGES and the web grows inward,
+ *  - four impacts, one centred on each SCREEN EDGE (top/right/bottom/left), 26 rays each,
+ *    started in a shuffled order so the first crack can come from any side,
+ *  - the gaps between neighbouring rays are filled with triangular glass FACETS in three
+ *    brightness levels that pop in as the cracks reach them (some are tilted/displaced),
  *  - every segment has a progress window [start, end], so the cracks scale with
  *    progress = taps / target and reach everywhere at progress 1,
  *  - everything is batched into a few SVG path strings (cheap for react-native-svg).
@@ -20,8 +23,18 @@ export interface Seg {
   shards: Piece[];
   scratches: Piece[];
 }
-export interface Web { cx: number; cy: number; rmax: number; delay: number }
-export interface GlassSystem { w: number; h: number; webs: Web[]; segs: Seg[] }
+export type Side = "top" | "right" | "bottom" | "left";
+export interface Web { cx: number; cy: number; rmax: number; delay: number; side: Side; stagger: number }
+/** Triangular glass shard between neighbouring cracks. */
+export interface Facet {
+  pts: [number, number, number, number, number, number];
+  cx: number; cy: number;       // centroid (pop-in scales and tilt rotates around it)
+  at: number;                   // progress at which the shard starts to appear
+  level: 0 | 1 | 2;             // brightness tier
+  tilt: number;                 // radians; 0 = flat, otherwise a shard pushed out of the pane
+  push: Pt;                     // outward displacement (px) applied with the tilt
+}
+export interface GlassSystem { w: number; h: number; webs: Web[]; segs: Seg[]; facets: Facet[]; rayCount: number }
 
 export function mulberry32(seed: number) {
   let a = seed >>> 0;
@@ -119,11 +132,15 @@ function makeSeg(rnd: () => number, p1: Pt, p2: Pt, web: number, wb: Web, level:
 }
 
 /** Deterministic glass web for a w x h screen. Impacts are on the edges, cracks grow inward. */
-export function generateGlass(w: number, h: number, seed: number, webCount = 7, rays = 18): GlassSystem {
-  const rnd = mulberry32(seed);
-  const perimeter = 2 * (w + h);
+export const WEB_COUNT = 4;
+export const RAY_COUNT = 26;
+const SIDES: Side[] = ["top", "right", "bottom", "left"];
 
-  // shuffled start order so the first cracks appear on different sides
+export function generateGlass(w: number, h: number, seed: number, webCount = WEB_COUNT, rays = RAY_COUNT): GlassSystem {
+  const rnd = mulberry32(seed);
+  const facets: Facet[] = [];
+
+  // shuffled start order so the first crack can come from any of the four sides
   const order = Array.from({ length: webCount }, (_, i) => i);
   for (let i = order.length - 1; i > 0; i--) {
     const j = Math.floor(rnd() * (i + 1));
@@ -133,17 +150,35 @@ export function generateGlass(w: number, h: number, seed: number, webCount = 7, 
   const webs: Web[] = [];
   const segs: Seg[] = [];
 
-  for (let wi = 0; wi < webCount; wi++) {
-    const d = ((wi + 0.15 + rnd() * 0.7) / webCount) * perimeter;
-    const inset = 3 + rnd() * 5;
-    let cx: number, cy: number, inward: number; // inward = angle of the edge's inward normal
-    if (d < w) { cx = d; cy = inset; inward = 90; }
-    else if (d < w + h) { cx = w - inset; cy = d - w; inward = 180; }
-    else if (d < 2 * w + h) { cx = w - (d - w - h); cy = h - inset; inward = 270; }
-    else { cx = inset; cy = h - (d - 2 * w - h); inward = 0; }
+  const addFacet = (p1: Pt, p2: Pt, p3: Pt, wb: Web, _wi: number) => {
+    const area = Math.abs((p2.x - p1.x) * (p3.y - p1.y) - (p3.x - p1.x) * (p2.y - p1.y)) / 2;
+    const level = Math.floor(rnd() * 3) as 0 | 1 | 2;
+    const roll = rnd(), spin = rnd() - 0.5, kick = 0.6 + rnd() * 1.4;   // always drawn so seeds stay stable
+    if (area < 12) return;                                              // slivers add cost, not glass
+    const cx = (p1.x + p2.x + p3.x) / 3, cy = (p1.y + p2.y + p3.y) / 3;
+    const reach = Math.max(Math.hypot(p1.x - wb.cx, p1.y - wb.cy), Math.hypot(p2.x - wb.cx, p2.y - wb.cy), Math.hypot(p3.x - wb.cx, p3.y - wb.cy));
+    const at = Math.min(0.98, wb.delay + (1 - wb.delay) * 0.94 * (reach / wb.rmax));
+    const tilted = roll < 0.18;                                          // ~1 in 5 shards is displaced
+    const away = Math.atan2(cy - wb.cy, cx - wb.cx);
+    facets.push({
+      pts: [p1.x, p1.y, p2.x, p2.y, p3.x, p3.y], cx, cy, at, level,
+      tilt: tilted ? spin * 0.28 : 0,                                    // up to ~8 degrees either way
+      push: tilted ? { x: Math.cos(away) * kick, y: Math.sin(away) * kick } : { x: 0, y: 0 },
+    });
+  };
 
-    const rmax = Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy)) * 1.05;
-    const wb: Web = { cx, cy, rmax, delay: order[wi] * 0.06 };
+  for (let wi = 0; wi < webCount; wi++) {
+    const side = SIDES[wi % 4];
+    const inset = 3 + rnd() * 5, along = 0.3 + rnd() * 0.4;     // impact sits on its own edge, off-centre
+    let cx: number, cy: number, inward: number;                    // inward = angle of the edge's inward normal
+    if (side === "top") { cx = w * along; cy = inset; inward = 90; }
+    else if (side === "right") { cx = w - inset; cy = h * along; inward = 180; }
+    else if (side === "bottom") { cx = w * along; cy = h - inset; inward = 270; }
+    else { cx = inset; cy = h * along; inward = 0; }
+
+    // larger than the old 1.05: each web must reach the far corner of the screen on its own
+    const rmax = Math.hypot(Math.max(cx, w - cx), Math.max(cy, h - cy)) * 1.14;
+    const wb: Web = { cx, cy, rmax, delay: order[wi] * 0.18, side, stagger: order[wi] };
     webs.push(wb);
 
     // ring radii (the pen grows r multiplicatively), last ring reaches rmax
@@ -177,6 +212,13 @@ export function generateGlass(w: number, h: number, seed: number, webCount = 7, 
       for (let g = 0; g < rays; g++) {
         const a = rings[l - 1][g], b = rings[l][g];
         if (!a || !b) continue;
+        if (g + 1 < rays) {                                              // glass facets between rays g and g+1
+          const c = rings[l][g + 1], d = rings[l - 1][g + 1];
+          if (c && d) {
+            addFacet(a.pt, b.pt, c.pt, wb, wi);
+            addFacet(a.pt, c.pt, d.pt, wb, wi);
+          }
+        }
         const s1 = makeSeg(rnd, a.pt, b.pt, wi, wb, l);                 // radial line
         if (s1) segs.push(s1);
         if (b.out) continue;
@@ -191,7 +233,7 @@ export function generateGlass(w: number, h: number, seed: number, webCount = 7, 
       }
     }
   }
-  return { w, h, webs, segs };
+  return { w, h, webs, segs, facets, rayCount: rays };
 }
 
 /** Grown fraction (0..1) of a segment at overall progress p, eased. */
@@ -208,20 +250,82 @@ export const coreOpacity = (p: number) => 0.15 + 0.85 * smoothstep(0.3, 0.9, p);
 export const strokeScale = (p: number) => 1 + 1.2 * p;
 
 export interface Pool { cx: number; cy: number; r: number; alpha: number }
+export interface Flash { cx: number; cy: number; radius: number; opacity: number; width: number; path: string }
+
+/** Quantise progress so path strings are rebuilt at most this many times over 0..1 (1 stays exact). */
+export const RENDER_STEPS = 40;
+export const renderProgress = (p: number) => (p >= 1 ? 1 : Math.floor(clamp01(p) * RENDER_STEPS) / RENDER_STEPS);
+
+/** Facet brightness per tier; multiplied by the facet's pop-in and faded under the terminal fill. */
+const FACET_ALPHA_DARK = [0.09, 0.16, 0.23];
+const FACET_ALPHA_LIGHT = [0.07, 0.13, 0.19];
+export const facetAlpha = (level: number, dark: boolean) => (dark ? FACET_ALPHA_DARK : FACET_ALPHA_LIGHT)[level];
+/** 0..1 pop-in of a facet (cubic ease-out over 7.5% of progress). */
+export const facetPop = (f: { at: number }, p: number) => 1 - Math.pow(1 - clamp01((p - f.at) / 0.075), 3);
+export const facetOpacity = (f: { at: number; level: number }, p: number, dark: boolean) =>
+  facetAlpha(f.level, dark) * facetPop(f, p) * (1 - fillOpacity(p));
+
+/** 100% = inverted theme: dark -> white glass + black cracks, light -> black glass + white cracks. */
+export const terminalPalette = (dark: boolean) => (dark ? { fill: "#ffffff", crack: "#000000" } : { fill: "#000000", crack: "#ffffff" });
+
+/** Horizontal shake amplitude in px for a tap at progress p: harder the more broken the glass is. */
+export const shakeAmplitude = (p: number) => 2 + 10 * clamp01(p);
+export const shakeDuration = (p: number) => 180 + 100 * clamp01(p);
+/** Keyframe offsets (px) for one shake; apply as translateX over shakeDuration(p) ms. */
+export const shakeKeyframes = (p: number) => {
+  const a = shakeAmplitude(p);
+  return [0, -a, a, -a * 0.65, a * 0.35, 0];
+};
+
+export const visibleSegmentCount = (sys: GlassSystem, p: number) => sys.segs.reduce((n, s) => n + (crackFraction(s, p) > 0 ? 1 : 0), 0);
+export const visibleFacetCount = (sys: GlassSystem, p: number) => sys.facets.reduce((n, f) => n + (p > f.at ? 1 : 0), 0);
+
+/** Starburst at an impact: grows with the web's own progress, brightest right as it lands. */
+export function impactFlash(web: Web, p: number): Flash | null {
+  const g = clamp01((p - web.delay) / (1 - web.delay));
+  if (g <= 0) return null;
+  const radius = 5 + 19 * g, opacity = 0.16 + 0.74 * (1 - g);
+  let path = "";
+  for (let i = 0; i < 8; i++) {                                    // 4 long + 4 short rays
+    const dx = Math.cos((i * Math.PI) / 4), dy = Math.sin((i * Math.PI) / 4);
+    const inner = radius * (i % 2 ? 0.16 : 0.28), outer = radius * (i % 2 ? 0.72 : 1.2);
+    path += `M${f1(web.cx + dx * inner)} ${f1(web.cy + dy * inner)}L${f1(web.cx + dx * outer)} ${f1(web.cy + dy * outer)}`;
+  }
+  return { cx: web.cx, cy: web.cy, radius, opacity, width: 1 + g, path };
+}
+
 export interface GlassLayers {
-  lines: string;       // all grown segments, one path
-  shards: string;      // fracture kites
-  scratches: string;   // fine hairlines
-  pools: Pool[];       // soft inverse-colour glow spreading from each impact
+  lines: string;                 // all grown segments, one path
+  shards: string;                // fracture kites
+  scratches: string;             // fine hairlines
+  facets: [string, string, string]; // flat glass facets per brightness tier (batched, one path each)
+  facetFade: number;             // 1 - terminal fill; multiply facetAlpha(level, dark) by this
+  pools: Pool[];                 // soft inverse-colour glow spreading from each impact
+  flashes: Flash[];              // starbursts
   fillOpacity: number;
   coreOpacity: number;
   scale: number;
   segCount: number;
+  facetCount: number;
 }
+
+const facetPath = (f: Facet, p: number) => {
+  const pop = clamp01((p - f.at) / 0.075), k = 0.84 + 0.16 * pop;   // snap from 84% to full size
+  const c = f.tilt ? Math.cos(f.tilt) : 1, sn = f.tilt ? Math.sin(f.tilt) : 0;
+  const ox = f.push.x * pop, oy = f.push.y * pop;                    // displaced shards slide out as they settle
+  let d = "";
+  for (let i = 0; i < 6; i += 2) {
+    const rx = (f.pts[i] - f.cx) * k, ry = (f.pts[i + 1] - f.cy) * k;
+    const x = f.cx + ox + rx * c - ry * sn, y = f.cy + oy + rx * sn + ry * c;
+    d += `${i ? "L" : "M"}${f1(x)} ${f1(y)}`;
+  }
+  return d + "Z";
+};
 
 export function crackLayers(sys: GlassSystem, p: number): GlassLayers {
   const lines: string[] = [], shards: string[] = [], scratches: string[] = [];
-  let n = 0;
+  const tiers: [string[], string[], string[]] = [[], [], []];
+  let n = 0, nf = 0;
   for (const s of sys.segs) {
     const f = crackFraction(s, p);
     if (f <= 0) continue;
@@ -230,14 +334,22 @@ export function crackLayers(sys: GlassSystem, p: number): GlassLayers {
     for (const sh of s.shards) if (f >= sh.u) shards.push(sh.d);
     for (const sc of s.scratches) if (f >= sc.u) scratches.push(sc.d);
   }
-  const pools: Pool[] = [];
+  const fill = fillOpacity(p);
+  if (fill < 1) {                                                    // facets sit beneath the terminal fill
+    for (const f of sys.facets) if (p > f.at) { tiers[f.level].push(facetPath(f, p)); nf++; }
+  }
+  const pools: Pool[] = [], flashes: Flash[] = [];
   for (const w of sys.webs) {
     const g = clamp01((p - w.delay) / (1 - w.delay));
     if (g <= 0) continue;
-    pools.push({ cx: w.cx, cy: w.cy, r: g * w.rmax * 0.62, alpha: 0.9 * smoothstep(0.05, 0.85, g) });
+    pools.push({ cx: w.cx, cy: w.cy, r: g * w.rmax * 0.5, alpha: 0.65 * smoothstep(0.05, 0.85, g) });
+    const fl = impactFlash(w, p);
+    if (fl) flashes.push(fl);
   }
   return {
     lines: lines.join(""), shards: shards.join(""), scratches: scratches.join(""),
-    pools, fillOpacity: fillOpacity(p), coreOpacity: coreOpacity(p), scale: strokeScale(p), segCount: n,
+    facets: [tiers[0].join(""), tiers[1].join(""), tiers[2].join("")],
+    facetFade: 1 - fill,
+    pools, flashes, fillOpacity: fill, coreOpacity: coreOpacity(p), scale: strokeScale(p), segCount: n, facetCount: nf,
   };
 }
