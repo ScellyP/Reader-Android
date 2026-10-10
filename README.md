@@ -50,35 +50,6 @@ the app at a different location, that requires changing the path in
 
 ### Option A — From your phone, using GitHub Actions (no laptop needed)
 
-1. Create a free account at [github.com](https://github.com) if you
-   don't have one.
-2. On github.com (use "Desktop site" in your phone browser if the
-   mobile view is limited), tap **+ → New repository**, name it
-   (e.g. `novel-reader`), and create it.
-3. On the new repo's page, use **Add file → Upload files**. Your
-   phone's file picker will open — select **all the files inside the
-   unzipped `novelreader` folder** (some file-manager apps let you
-   select a whole folder to drag in; if yours only lets you pick
-   individual files, that's fine too, just make sure you keep the
-   subfolders like `app/`, `.github/`, `gradle/` intact when
-   selecting — most Android/iOS file browsers preserve folder
-   structure when you drag a folder onto the GitHub upload box).
-4. Scroll down, add a commit message, tap **Commit changes**.
-5. GitHub Actions kicks off automatically because of the included
-   `.github/workflows/build-apk.yml` — go to the repo's **Actions**
-   tab to watch it (or trigger manually there via **Run workflow**).
-6. Wait 3-5 minutes for the green checkmark.
-7. Open the completed run → scroll to **Artifacts** → download
-   **novel-reader-debug-apk** (a zip containing `app-debug.apk`).
-8. Unzip that on your phone and tap the `.apk` to install (Android
-   will prompt you to allow "install unknown apps" for your browser
-   or file manager the first time — that's normal for anything not
-   installed via the Play Store).
-
-If your phone's browser won't let you upload a whole folder in one
-go, the most reliable phone-only alternative is the **Working Copy**
-app (iOS) or **Termux + git** (Android) to push the folder as a real
-git repository instead of using the web uploader.
 
 ### Option B — On a computer with Android Studio
 
@@ -245,13 +216,13 @@ capitals) naming which playlist it came from.
 
 | Feature | Status | What's missing |
 | --- | --- | --- |
-| Crossfade between tracks | 🟡 Planned | The trigger hook exists, but neither engine implements the overlap. |
-| Volume normalisation (ReplayGain) | 🟡 Framework | `MainActivity.listAudioFiles()` needs to read the ReplayGain tags. Until then it changes nothing. |
-| Audio delay / sync adjustment | 🟡 Stub | It only stores an offset and nothing uses it. |
-| A-B repeat | 🟡 Logic ready | The logic works, but there are no buttons or seek-bar markers. |
-| Likes | 🟡 Logic ready | Recorded, but there is no heart button. |
-| Recently played | 🟡 Logic ready | Recorded, but there is no picker entry for `@recent`. |
-| Custom playlist editor | 🟡 Logic ready | Create, rename and delete work in JS, but there is no editor UI. |
+| A-B repeat | 🟡 Currently Testing | The logic works, but there are no buttons or seek-bar markers. |
+| Likes | 🟡 Currently Testing | Recorded, but there is no heart button. |
+| Audio delay / sync adjustment | 🟡 Currently Testing | It only stores an offset and nothing uses it. |
+| Crossfade between tracks | 🟡 Under Development | The trigger hook exists, but neither engine implements the overlap. |
+| Volume normalisation (ReplayGain) | 🟡 Under Development | `MainActivity.listAudioFiles()` needs to read the ReplayGain tags. Until then it changes nothing. |
+| Recently played | 🟡 Under Development | Recorded, but there is no picker entry for `@recent`. |
+| Custom playlist editor | 🟡 Logic ready | Playlist Editor UI Is still being worked on. |
 
 > Full internal architecture, engine details, native bridge, footnotes and
 > tests are in [Agents.md](Agents.md#audio-player-architecture).
