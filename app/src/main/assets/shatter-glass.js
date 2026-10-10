@@ -118,14 +118,14 @@
       add(im.x, im.y, 0.1);
       var r = 5 + rng() * 4, k = 0;
       while (r < im.power * 1.7) {
-        var cnt = Math.max(4, Math.round((7 + k * 1.0) * density));
+        var cnt = Math.max(4, Math.round((5 + k * 0.7) * density));
         var off = rng() * 6.2832;
         for (var j = 0; j < cnt; j++) {
           var a = off + ((j + (rng() - 0.5) * 0.75) / cnt) * 6.2832;
           var rr = r * (0.75 + rng() * 0.5);
-          add(im.x + Math.cos(a) * rr, im.y + Math.sin(a) * rr, Math.max(2.5, r * 0.24));
+          add(im.x + Math.cos(a) * rr, im.y + Math.sin(a) * rr, Math.max(3.5, r * 0.3));
         }
-        r *= 1.27 + rng() * 0.14; k++;
+        r *= 1.36 + rng() * 0.18; k++;
       }
     });
 
@@ -188,9 +188,10 @@
       }
       glow = Math.min(glow, 1.2);
 
-      var dark = rng() < 0.2;
-      var L = dark ? 10 + rng() * 20 : 30 + rng() * 50 + glow * 150;
-      var alpha = dark ? 0.2 + rng() * 0.2 : 0.07 + rng() * 0.15 + glow * 0.42;
+      var TONES = [54, 64, 78, 94, 114, 142, 178];
+      var ti = Math.floor(rng() * rng() * 5.2 + glow * 3.2 + rng() * 1.2);
+      var L = TONES[Math.min(TONES.length - 1, ti)];
+      var alpha = 0.17 + (ti / 6) * 0.26 + rng() * 0.05;
       var s0 = Math.floor(rng() * 3), vs = [A, B, C], V0 = vs[s0], V1 = vs[(s0 + 1) % 3], V2 = vs[(s0 + 2) % 3];
       facets.push({
         x0: A[0], y0: A[1], x1: B[0], y1: B[1], x2: C[0], y2: C[1],
@@ -198,9 +199,9 @@
         t0: tReveal + rng() * 0.04,
         // gradient: light at one vertex, dark toward the opposite edge
         gx0: V0[0], gy0: V0[1], gx1: (V1[0] + V2[0]) / 2, gy1: (V1[1] + V2[1]) / 2,
-        L0: L * (1.1 + rng() * 0.3), L1: L * (0.42 + rng() * 0.2), a0: alpha, a1: alpha * 0.7,
-        hl: rng() < 0.13 + glow * 0.22 ? Math.floor(rng() * 3) : -1,
-        ha: 0.22 + glow * 0.35 + rng() * 0.15
+        L0: L * 1.05, L1: L * 0.95, a0: alpha, a1: alpha,
+        hl: rng() < 0.24 + glow * 0.25 ? Math.floor(rng() * 3) : -1,
+        ha: 0.3 + glow * 0.35 + rng() * 0.2
       });
     }
 
@@ -264,7 +265,7 @@
     });
     var dim = c.createRadialGradient(VW / 2, VH / 2, 90, VW / 2, VH / 2, 520);
     dim.addColorStop(0, 'rgba(4,5,8,0.06)');
-    dim.addColorStop(1, 'rgba(2,3,6,0.42)');
+    dim.addColorStop(1, 'rgba(2,3,6,0.2)');
     this.dim = dim;
     this.stats.facets = this.geo.facets.length;
     this.stats.cracks = this.geo.cracks.length;
@@ -309,7 +310,7 @@
     var keep = 1 - fill;
 
     // facets: translucent gradient fill + dark edge
-    c.lineWidth = lw; c.lineJoin = 'round'; c.strokeStyle = '#05060a';
+    c.lineWidth = lw * 1.25; c.lineJoin = 'miter'; c.strokeStyle = '#12141a';
     var F = geo.facets;
     for (i = 0; i < F.length; i++) {
       f = F[i];
@@ -320,7 +321,7 @@
       c.fillStyle = f.g;
       c.beginPath(); c.moveTo(f.x0, f.y0); c.lineTo(f.x1, f.y1); c.lineTo(f.x2, f.y2); c.closePath();
       c.fill();
-      c.globalAlpha = a * 0.5 * keep;
+      c.globalAlpha = a * 0.7 * keep;
       c.stroke();
     }
 
@@ -345,10 +346,10 @@
       var s = C[i], ra = (T - s.t0) / 0.06;
       if (ra <= 0) continue;
       if (ra > 1) ra = 1;
-      c.globalAlpha = ra * s.a * 0.8 * keep;
+      c.globalAlpha = ra * s.a * 0.35 * keep;
       c.strokeStyle = '#000'; c.lineWidth = lw * 1.7 * s.w;
       c.beginPath(); c.moveTo(s.x0, s.y0); c.lineTo(s.x1, s.y1); c.stroke();
-      c.globalAlpha = ra * s.a * 0.75 * keep;
+      c.globalAlpha = ra * s.a * 0.4 * keep;
       c.strokeStyle = '#e8edff'; c.lineWidth = lw * 0.6 * s.w;
       c.beginPath(); c.moveTo(s.x0 + off, s.y0 + off); c.lineTo(s.x1 + off, s.y1 + off); c.stroke();
     }

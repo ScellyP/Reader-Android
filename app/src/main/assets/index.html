@@ -1353,7 +1353,7 @@ input[type="range"]:disabled::-webkit-slider-thumb { background: var(--faint); }
 #night-lock-glass canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 /* Hidden moon-lock test trigger: a faint dot at the bottom of the Reading panel. */
 #moon-test-btn { display: block; width: 28px; height: 28px; margin: 6px auto 0; padding: 0; border: 0; background: transparent; opacity: .22; cursor: pointer; position: relative; }
-#moon-test-btn::after { content: ""; position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px 0 0 -3px; border-radius: 50%; background: var(--text); }
+#moon-test-btn::after { content: ""; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: transparent; box-shadow: inset -2.5px -1px 0 0 var(--text); transform: rotate(-20deg); } /* tiny crescent moon */
 #moon-test-btn:hover, #moon-test-btn:focus-visible { opacity: .7; }
 #night-lock-test-exit { position: absolute; top: max(12px, env(safe-area-inset-top)); right: 12px; z-index: 4; padding: 6px 12px; font-size: 12px; color: var(--text); background: var(--panel-2, rgba(128,128,128,.2)); border: 1px solid var(--border-strong, rgba(128,128,128,.4)); border-radius: 999px; opacity: .6; }
 #night-lock-test-exit.hidden { display: none; }
@@ -1714,6 +1714,9 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px 
 /* ---- Scrollbars: slimmer, quieter ---------------------------------------- */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; }
+/* Reading panel scrolls without a visible scrollbar so nothing hints at the hidden control below. */
+#theme-panel { scrollbar-width: none; -ms-overflow-style: none; }
+#theme-panel::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
 /* ---- Sidebar -------------------------------------------------------------- */
 #sidebar-header { padding: 18px 18px 16px; padding-top: calc(18px + var(--status-bar-height)); }
