@@ -375,7 +375,8 @@ the project root: `node tests/moon-lock.test.js`.
 builds a seeded, irregular low-poly glass layout (Delaunay facets around four
 staggered impact points plus long branching cracks) once per lock session, then
 only redraws when tap progress changes (the existing 40-step quantisation).
-The last 18% of progress turns the glass into the inverse-colour terminal fill.
+The last 18% of progress turns the glass into a plain inverse-colour fill
+(cracks fade out, no lines in the final frame).
 If the module or canvas is unavailable, `moon-lock.js` falls back to its older
 layered renderer. Run `node tests/shatter-glass.test.js` for its geometry checks.
 

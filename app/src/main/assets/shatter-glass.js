@@ -293,7 +293,7 @@
     if (T <= 0) return;
 
     // Progress mode (tap-driven): p in [0,1]; the last 18% turns the glass into the
-    // inverse-colour terminal fill (white in dark theme, black in light) with contrast cracks.
+    // inverse-colour terminal fill (white in dark theme, black in light); cracks fade out with it, leaving a plain frame.
     var pm = o.progressMode && this._prog, fill = 0, dark = true;
     if (pm) {
       var ft = clamp((pm.p - 0.82) / 0.18, 0, 1);
@@ -345,8 +345,8 @@
       var s = C[i], ra = (T - s.t0) / 0.06;
       if (ra <= 0) continue;
       if (ra > 1) ra = 1;
-      c.globalAlpha = Math.min(1, ra * s.a * 0.8 + fill * ra * 0.9);
-      c.strokeStyle = dark ? '#000' : '#fff'; c.lineWidth = lw * (1.7 + 0.9 * fill) * s.w;
+      c.globalAlpha = ra * s.a * 0.8 * keep;
+      c.strokeStyle = '#000'; c.lineWidth = lw * 1.7 * s.w;
       c.beginPath(); c.moveTo(s.x0, s.y0); c.lineTo(s.x1, s.y1); c.stroke();
       c.globalAlpha = ra * s.a * 0.75 * keep;
       c.strokeStyle = '#e8edff'; c.lineWidth = lw * 0.6 * s.w;
