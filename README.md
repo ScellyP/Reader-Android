@@ -370,6 +370,11 @@ phases, tap completion, four-side impact geometry, 26-ray density, random web
 staggering, facet progression, screen shake, and terminal contrast. Run it from
 the project root: `node tests/moon-lock.test.js`.
 
+**Colour wheel.** The Page and Text colour swatches in the Reading panel open a
+colour wheel (`color-wheel.js`: hue/saturation wheel, brightness slider, hex field)
+instead of the system colour dialog. The native colour inputs stay in the page as
+the source of truth, so saving, recent colours and presets work as before.
+
 **Shattered-glass renderer.** The moon-lock glass is drawn by
 `app/src/main/assets/shatter-glass.js`: a dependency-free Canvas 2D module that
 builds a seeded, irregular low-poly glass layout (Delaunay facets around four
