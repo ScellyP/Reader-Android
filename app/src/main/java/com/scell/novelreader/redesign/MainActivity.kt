@@ -15,9 +15,14 @@ import android.os.Looper
 import android.provider.Settings
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.JsResult
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -25,6 +30,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.webkit.WebViewAssetLoader
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -42,6 +48,10 @@ import com.google.common.util.concurrent.MoreExecutors
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
+import java.io.FileInputStream
+import java.io.FilterInputStream
+import java.io.InputStream
+import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -104,6 +114,9 @@ class MainActivity : ComponentActivity() {
     private val moonUnlock by lazy { MoonUnlockStore(this) }
     private val moonUnlockMs = 60 * 60 * 1000L
 
+    // Upper limit for settings.txt (read and write); see readSettingsFile().
+    private val MAX_SETTINGS_BYTES = 256 * 1024
+
     // Night lock, native side. reader.js draws the lock between 12:00 AM and
     // 6:00 AM. This also stops background playback if WebView timers pause.
     // Respect the moon lock's one-hour unlock so a successful cheat works for
@@ -157,6 +170,10 @@ class MainActivity : ComponentActivity() {
     // launch. The second step is chained here because Android can't show
     // two permission screens at once.
     private var pageLoaded = false
+
+    // Set once the WebView's renderer process has died and the view has been
+    // thrown away (see onRenderProcessGone); the activity is then rebuilt.
+    private var webViewGone = false
     private var lastBackPressMs = 0L
     private var permissionFlowActive = false
     private var permissionFlowStarted = false
@@ -231,16 +248,34 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * The crash log lives in this app's own folder,
+     * /storage/emulated/0/Android/data/<package>/files/crash_log.txt, not in the
+     * shared Novel/ folder: other apps can't read it there, yet a file manager
+     * can often still open it. Falls back to the private files dir if the
+     * external one isn't available.
+     */
+    private fun crashLogFile(): File =
+        File(getExternalFilesDir(null) ?: filesDir, "crash_log.txt")
+
+    /**
      * Writes any uncaught crash to a plain text file that can be opened
      * with any file manager (no logcat/adb needed) — useful for
      * diagnosing crashes on locked-down OEM Android builds (e.g. MIUI)
      * that restrict logcat access for non-debuggable apps.
      */
     private fun installCrashLogger() {
+        // Older versions wrote the log into the shared Novel/ folder, where
+        // other apps could read it. Remove that copy (best effort).
+        try {
+            val old = File("/storage/emulated/0/Novel/crash_log.txt")
+            if (old.exists()) old.delete()
+        } catch (e: Exception) {
+            // No storage access yet: nothing to remove.
+        }
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
-                val crashFile = File("/storage/emulated/0/Novel/crash_log.txt")
+                val crashFile = crashLogFile()
                 crashFile.parentFile?.mkdirs()
                 crashFile.writeText(
                     "Crash at ${java.util.Date()}\n" +
@@ -252,6 +287,18 @@ class MainActivity : ComponentActivity() {
             }
             defaultHandler?.uncaughtException(thread, throwable)
         }
+    }
+
+    // The page is served from this https origin (not file://), so the WebView
+    // needs no file access at all. The app's own files come from assets/ via
+    // WebViewAssetLoader; local music is served by serveAudio() below.
+    private val appHost = "appassets.androidplatform.net"
+    private val appUrl = "https://$appHost/assets/index.html"
+    private val assetLoader by lazy {
+        WebViewAssetLoader.Builder()
+            .setDomain(appHost)
+            .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(this))
+            .build()
     }
 
     private val manageStorageLauncher = registerForActivityResult(
@@ -284,20 +331,87 @@ class MainActivity : ComponentActivity() {
 
         webView.settings.javaScriptEnabled = true
         webView.settings.domStorageEnabled = true
-        // The audio player (audio-player.js) plays tracks directly from
-        // file:// URIs handed out by scanAudio() below — allowFileAccess
-        // is what lets a WebView-loaded page's <audio src="file://...">
-        // actually load local files. mediaPlaybackRequiresUserGesture is
-        // turned off so that programmatic calls to play() (next/prev,
-        // auto-advance to the following track, resuming after a reading
-        // break) aren't silently blocked for not originating from a
-        // fresh tap — the *first* play always does come from a genuine
-        // tap on the ▶ button, which is what actually matters for
-        // autoplay-abuse prevention; it's everything downstream of that
-        // first tap that this setting unblocks.
-        webView.settings.allowFileAccess = true
+        // Lock the WebView down. The page comes from the https origin above, so
+        // it never needs file:// or content:// access, and nothing it loads
+        // may be mixed (http) content. Local music is not read from file://
+        // by the page; it is requested from this same origin under /audio/
+        // and served by serveAudio(), which only hands out real audio files
+        // inside Novel/Audio.
+        webView.settings.allowFileAccess = false
+        webView.settings.allowContentAccess = false
+        @Suppress("DEPRECATION")
+        webView.settings.allowFileAccessFromFileURLs = false
+        @Suppress("DEPRECATION")
+        webView.settings.allowUniversalAccessFromFileURLs = false
+        webView.settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+        // mediaPlaybackRequiresUserGesture is turned off so that programmatic
+        // calls to play() (next/prev, auto-advance to the following track,
+        // resuming after a reading break) aren't silently blocked for not
+        // originating from a fresh tap — the *first* play always does come
+        // from a genuine tap on the play button.
         webView.settings.mediaPlaybackRequiresUserGesture = false
         webView.webViewClient = object : WebViewClient() {
+            // The only page this WebView may show is the app itself. A link
+            // the user taps that points at http/https goes to the external
+            // browser; every other navigation (and anything a script starts
+            // without a tap) is dropped.
+            override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                val target = request.url
+                if (isAppUrl(target)) return false
+                val scheme = target.scheme
+                if (request.hasGesture() && (scheme == "https" || scheme == "http")) {
+                    openInExternalBrowser(target)
+                }
+                return true
+            }
+
+            // Everything the page requests is answered here: its own assets
+            // through the asset loader, music through serveAudio(), and every
+            // other host or path is refused (no network from the page).
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                val target = request.url
+                if (target.scheme != "https" || target.host != appHost) return plainResponse(403)
+                if (request.method != "GET") return plainResponse(405)
+                val path = target.path ?: return plainResponse(404)
+                if (path.startsWith("/audio/")) {
+                    return serveAudio(path.removePrefix("/audio/"), request.requestHeaders)
+                }
+                if (!path.startsWith("/assets/")) return plainResponse(404)
+                val response = assetLoader.shouldInterceptRequest(target) ?: return plainResponse(404)
+                return if (path.endsWith(".woff2")) {
+                    WebResourceResponse("font/woff2", null, response.data)
+                } else {
+                    response
+                }
+            }
+
+            // Android can kill the WebView's separate renderer process while the
+            // app is in the background (typically after the phone has been locked
+            // for a while and memory is needed elsewhere), and a renderer can also
+            // crash. If the app does not handle that, the whole app is shut down
+            // the next time it is opened. Handle it: drop the dead WebView and
+            // rebuild the screen; saved settings are re-read on startup.
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                if (webViewGone) return true
+                webViewGone = true
+                pageLoaded = false
+                try {
+                    (view.parent as? ViewGroup)?.removeView(view)
+                    view.destroy()
+                } catch (e: Exception) {
+                    // Already gone; nothing to clean up.
+                }
+                val now = System.currentTimeMillis()
+                if (now - lastRendererGoneAt < 5_000L) {
+                    // Died again right after a rebuild: stop instead of looping.
+                    finish()
+                } else {
+                    lastRendererGoneAt = now
+                    recreate()
+                }
+                return true
+            }
+
             override fun onPageFinished(view: WebView, url: String?) {
                 super.onPageFinished(view, url)
                 // The page (and reader.js, which defines window.onFolderPicked
@@ -369,7 +483,7 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        webView.loadUrl("file:///android_asset/index.html")
+        webView.loadUrl(appUrl)
 
         setupImmersiveMode()
 
@@ -769,7 +883,7 @@ class MainActivity : ComponentActivity() {
         super.onPause()
         screenHandler.removeCallbacks(releaseScreenRunnable)
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        if (::webView.isInitialized) {
+        if (::webView.isInitialized && !webViewGone) {
             webView.onPause()
         }
     }
@@ -779,7 +893,7 @@ class MainActivity : ComponentActivity() {
         keepScreenAwake()
         nightLockHandler.removeCallbacks(nightLockCheck)
         nightLockHandler.post(nightLockCheck)
-        if (::webView.isInitialized) {
+        if (::webView.isInitialized && !webViewGone) {
             webView.onResume()
         }
         // Only (re)load novels on resume if we haven't successfully loaded
@@ -789,7 +903,7 @@ class MainActivity : ComponentActivity() {
         // shouldn't re-scan the whole folder and rebuild the chapter list
         // every time; reader.js keeps its own state and scroll position
         // intact across a simple resume.
-        if (::webView.isInitialized && webView.progress == 100 && hasStoragePermission() && !hasLoadedOnce) {
+        if (::webView.isInitialized && !webViewGone && webView.progress == 100 && hasStoragePermission() && !hasLoadedOnce) {
             listNovels()
         }
     }
@@ -851,7 +965,14 @@ class MainActivity : ComponentActivity() {
         fun readSettingsFile(): String? {
             if (!hasStoragePermission()) return null
             return try {
-                if (settingsFile.exists()) settingsFile.readText() else ""
+                // A real settings file is about a kilobyte. Anything far larger
+                // is not ours (or was tampered with): ignore it and let it be
+                // rewritten from the app's current settings.
+                if (settingsFile.exists() && settingsFile.length() <= MAX_SETTINGS_BYTES) {
+                    settingsFile.readText()
+                } else {
+                    ""
+                }
             } catch (e: Exception) {
                 null
             }
@@ -860,6 +981,7 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun writeSettingsFile(text: String): Boolean {
             if (!hasStoragePermission()) return false
+            if (text.length > MAX_SETTINGS_BYTES) return false
             return try {
                 novelRoot.mkdirs()
                 settingsFile.writeText(text)
@@ -1300,6 +1422,12 @@ class MainActivity : ComponentActivity() {
                     val obj = JSONObject()
                     obj.put("id", f.absolutePath)
                     obj.put("path", Uri.fromFile(f).toString()) // percent-encodes spaces etc. correctly
+                    // Address the page's <audio> element uses (see serveAudio()).
+                    obj.put(
+                        "webUrl",
+                        "https://$appHost/audio/" +
+                            Uri.encode(f.toRelativeString(audioRoot).replace(File.separatorChar, '/'), "/")
+                    )
 
                     // The first path segment under Audio/ is the playlist
                     // name; a file with no '/' in its relative path sits
@@ -1468,8 +1596,122 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun isAppUrl(u: Uri): Boolean =
+        u.scheme == "https" && u.host == appHost && (u.path ?: "").startsWith("/assets/")
+
+    private fun openInExternalBrowser(u: Uri) {
+        try {
+            startActivity(
+                Intent(Intent.ACTION_VIEW, u)
+                    .addCategory(Intent.CATEGORY_BROWSABLE)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (e: Exception) {
+            // No browser installed: nothing to open.
+        }
+    }
+
+    private fun plainResponse(code: Int): WebResourceResponse {
+        val reason = when (code) {
+            403 -> "Forbidden"
+            404 -> "Not Found"
+            405 -> "Method Not Allowed"
+            416 -> "Range Not Satisfiable"
+            else -> "Error"
+        }
+        return WebResourceResponse(
+            "text/plain", "utf-8", code, reason, emptyMap(), ByteArrayInputStream(ByteArray(0))
+        )
+    }
+
+    private fun audioMimeType(ext: String): String = when (ext.lowercase()) {
+        "mp3" -> "audio/mpeg"
+        "m4a" -> "audio/mp4"
+        "aac" -> "audio/aac"
+        "flac" -> "audio/flac"
+        "ogg" -> "audio/ogg"
+        "opus" -> "audio/ogg"
+        "wav" -> "audio/wav"
+        else -> "application/octet-stream"
+    }
+
+    /**
+     * Serves one music file to the page's <audio> element from
+     * https://appassets.androidplatform.net/audio/<path relative to Audio/>.
+     * Goes through resolveAudioFile(), so only existing audio files that really
+     * lie inside Novel/Audio can be read. Supports HTTP Range requests, which
+     * the WebView's media player needs for seeking. Runs on a WebView
+     * background thread.
+     */
+    private fun serveAudio(relativePath: String, headers: Map<String, String>): WebResourceResponse {
+        val file = resolveAudioFile(File(audioRoot, relativePath).path) ?: return plainResponse(404)
+        return try {
+            val length = file.length()
+            var start = 0L
+            var end = length - 1
+            var status = 200
+            val rangeHeader = headers.entries.firstOrNull { it.key.equals("Range", ignoreCase = true) }?.value
+            val match = rangeHeader?.let { Regex("^bytes=(\\d*)-(\\d*)$").matchEntire(it.trim()) }
+            if (match != null && length > 0) {
+                val first = match.groupValues[1]
+                val last = match.groupValues[2]
+                if (first.isNotEmpty() || last.isNotEmpty()) {
+                    try {
+                        if (first.isEmpty()) {
+                            start = maxOf(0L, length - last.toLong())      // "last N bytes"
+                        } else {
+                            start = first.toLong()
+                            if (last.isNotEmpty()) end = minOf(last.toLong(), length - 1)
+                        }
+                    } catch (e: NumberFormatException) {
+                        return plainResponse(416)
+                    }
+                    if (start >= length || start > end) return plainResponse(416)
+                    status = 206
+                }
+            }
+            val count = if (length == 0L) 0L else end - start + 1
+            val input = FileInputStream(file)
+            input.channel.position(start)
+            val responseHeaders = mutableMapOf(
+                "Accept-Ranges" to "bytes",
+                "Content-Length" to count.toString()
+            )
+            if (status == 206) responseHeaders["Content-Range"] = "bytes $start-$end/$length"
+            WebResourceResponse(
+                audioMimeType(file.extension), null, status,
+                if (status == 206) "Partial Content" else "OK",
+                responseHeaders, LimitedInputStream(input, count)
+            )
+        } catch (e: Exception) {
+            plainResponse(404)
+        }
+    }
+
     private fun notifyError(message: String) {
         val msg = JSONObject.quote(message)
         webView.evaluateJavascript("window.onFolderPickError && window.onFolderPickError($msg);", null)
     }
 }
+
+/** Reads at most [remaining] bytes of [source] (used for HTTP Range responses). */
+private class LimitedInputStream(source: InputStream, private var remaining: Long) : FilterInputStream(source) {
+    override fun read(): Int {
+        if (remaining <= 0) return -1
+        val b = super.read()
+        if (b >= 0) remaining--
+        return b
+    }
+
+    override fun read(b: ByteArray, off: Int, len: Int): Int {
+        if (remaining <= 0) return -1
+        val n = super.read(b, off, minOf(len.toLong(), remaining).toInt())
+        if (n > 0) remaining -= n
+        return n
+    }
+
+    override fun available(): Int = minOf(super.available().toLong(), remaining).toInt()
+}
+
+/** When a WebView renderer last died; survives recreate() so a crash loop can be stopped. */
+private var lastRendererGoneAt = 0L

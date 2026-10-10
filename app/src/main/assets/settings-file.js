@@ -98,17 +98,75 @@
   }
 
   /* ---------- text -> localStorage ---------- */
+  // settings.txt sits in shared storage, so any app with storage access (and
+  // the user, by hand) can change it. Nothing in it is trusted: only the keys
+  // listed below are read, every value must have the expected type and range,
+  // and anything else is ignored (that setting just keeps its current value).
+  var MAX_LINES = 5000;
+  var BAD_KEYS = { '__proto__': 1, 'constructor': 1, 'prototype': 1 };
+
   function parseValue(raw) {
     raw = raw.trim();
-    try { return JSON.parse(raw); } catch (e) { return raw; } // tolerate hand-typed bare words
+    // Drop prototype-polluting keys from any parsed object.
+    try { return JSON.parse(raw, function (k, v) { return BAD_KEYS[k] ? undefined : v; }); }
+    catch (e) { return raw; } // tolerate hand-typed bare words
   }
+
+  function isBool(v) { return typeof v === 'boolean'; }
+  function numIn(min, max) {
+    return function (v) { return typeof v === 'number' && isFinite(v) && v >= min && v <= max; };
+  }
+  function strMatch(re) { return function (v) { return typeof v === 'string' && re.test(v); }; }
+  function oneOf(list) { return function (v) { return typeof v === 'string' && list.indexOf(v) !== -1; }; }
+  var NO_CTRL = /^[^\u0000-\u001f\u007f]*$/;
+  // A novel folder name or chapter file name: 1-255 characters, no control
+  // characters, no path separators.
+  function isName(v) {
+    return typeof v === 'string' && v.length >= 1 && v.length <= 255 && NO_CTRL.test(v) && !/[\/\\]/.test(v);
+  }
+  var HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+  var eqNum = numIn(-12, 12);
+
+  // Allowed fields of each object-valued setting, with their checks
+  // (ranges match the sliders in the app).
+  var FIELD_RULES = {
+    appearance: {
+      audioVolumeKeys: isBool, smartScroll: isBool, volumeScroll: isBool,
+      fontSize: numIn(13, 32), lineHeight: numIn(1.2, 2.6), letterSpacing: numIn(-0.5, 3),
+      flipDuration: numIn(200, 3000), tapScrollLines: numIn(3, 30),
+      fontFamily: strMatch(/^[A-Za-z0-9 ,'"._-]{1,200}$/),
+      readBg: strMatch(HEX_COLOR), readText: strMatch(HEX_COLOR),
+      themePreset: strMatch(/^[a-z0-9_-]{1,32}$/)
+    },
+    audio: {
+      volume: numIn(0, 1), speed: numIn(0.25, 4), shuffle: isBool,
+      repeat: oneOf(['off', 'all', 'one']),
+      activePlaylist: function (v) { return typeof v === 'string' && v.length <= 255 && NO_CTRL.test(v); },
+      eqBands: function (v) { return Array.isArray(v) && v.length === 10 && v.every(eqNum); },
+      eqPreampDb: eqNum,
+      // Nested per-feature state: must be a plain object of modest size
+      // (its own fields are checked again by the audio player when restored).
+      features: function (v) {
+        return v !== null && typeof v === 'object' && !Array.isArray(v) && JSON.stringify(v).length <= 8192;
+      }
+    }
+  };
+  // Plain-string settings (value as it is stored in localStorage).
+  var STRING_RULES = {
+    sessionLimitMode: oneOf(['off', 'time', 'duration']),
+    sessionLimitTime: strMatch(/^(?:|(?:[01]\d|2[0-3]):[0-5]\d)$/),
+    sessionLimitSeconds: strMatch(/^\d{1,7}$/),
+    currentNovel: isName
+  };
 
   // Returns true if any stored value actually changed.
   function applyText(text) {
     var objs = {};   // prefix -> {field: value}
     var strs = {};   // name -> string
     var lasts = {};  // novel name -> chapter file name
-    text.split(/\r?\n/).forEach(function (line) {
+    var lines = text.split(/\r?\n/);
+    if (lines.length > MAX_LINES) lines.length = MAX_LINES;
+    lines.forEach(function (line) {
       line = line.trim();
       if (!line || line.charAt(0) === '#') return;
       var eq = line.indexOf('=');
@@ -116,15 +174,22 @@
       var key = line.slice(0, eq).trim();
       var val = parseValue(line.slice(eq + 1));
       if (key.indexOf(LAST_CHAPTER_FILE_PREFIX) === 0) {
-        lasts[unescName(key.slice(LAST_CHAPTER_FILE_PREFIX.length))] = typeof val === 'string' ? val : String(val);
+        var novel = unescName(key.slice(LAST_CHAPTER_FILE_PREFIX.length));
+        if (isName(novel) && isName(val)) lasts[novel] = val;
         return;
       }
       var dot = key.indexOf('.');
       if (dot > 0) {
         var prefix = key.slice(0, dot), field = key.slice(dot + 1);
+        var rules = Object.prototype.hasOwnProperty.call(FIELD_RULES, prefix) ? FIELD_RULES[prefix] : null;
+        if (!rules || !Object.prototype.hasOwnProperty.call(rules, field)) return; // unknown setting
+        if (!rules[field](val)) return;                                           // wrong type or range
         (objs[prefix] = objs[prefix] || {})[field] = val;
       } else {
-        strs[key] = typeof val === 'string' ? val : String(val);
+        if (!Object.prototype.hasOwnProperty.call(STRING_RULES, key)) return;
+        var str = typeof val === 'number' ? String(val) : val;
+        if (typeof str !== 'string' || !STRING_RULES[key](str)) return;
+        strs[key] = str;
       }
     });
 

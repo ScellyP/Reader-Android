@@ -1,63 +1,12 @@
 name: Build APK
 
-# A build is NOT started by every commit. A push only builds when it is
-# "opted in" (see the `gate` job below). Opt-ins, any one is enough:
-#   1. A commit message containing a version number, e.g.  "v1.04.02: fix volume keys"
-#   2. A commit message containing the toggle              "[build]"
-#   3. Pushing a git tag that starts with "v"              (e.g. v1.04.02)
-#   4. Running it by hand: Actions -> Build APK -> Run workflow
-# Opt-out, wins over 1 and 2:  put "[skip build]" in the commit message.
-# (GitHub's own "[skip ci]" also still works and skips the whole run.)
-
 on:
   push:
     branches: [ main, master ]
-    tags: [ 'v*' ]
   workflow_dispatch: {}
 
 jobs:
-  # Cheap check (a few seconds) that decides whether the real build should run.
-  gate:
-    runs-on: ubuntu-latest
-    outputs:
-      build: ${{ steps.decide.outputs.build }}
-    steps:
-      - name: Decide whether to build
-        id: decide
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          REF: ${{ github.ref }}
-          # Commit messages go through env vars (never pasted into the script)
-          # so a message can't inject shell commands.
-          HEAD_MSG: ${{ github.event.head_commit.message }}
-          ALL_MSGS: ${{ toJSON(github.event.commits.*.message) }}
-        run: |
-          MSGS="$HEAD_MSG
-          $ALL_MSGS"
-          build=false
-          reason="no version number or [build] in the commit message"
-
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            build=true; reason="manual run"
-          elif [[ "$REF" == refs/tags/v* ]]; then
-            build=true; reason="version tag ${REF#refs/tags/}"
-          elif echo "$MSGS" | grep -qiF "[skip build]"; then
-            build=false; reason="[skip build] in the commit message"
-          elif echo "$MSGS" | grep -qiF "[build]"; then
-            build=true; reason="[build] in the commit message"
-          elif echo "$MSGS" | grep -Eq '(^|[^A-Za-z0-9])v[0-9]+\.[0-9]+\.[0-9]+'; then
-            ver=$(echo "$MSGS" | grep -Eo 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
-            build=true; reason="version number $ver in the commit message"
-          fi
-
-          echo "build=$build" >> "$GITHUB_OUTPUT"
-          echo "### Build gate: build=$build" >> "$GITHUB_STEP_SUMMARY"
-          echo "Reason: $reason" >> "$GITHUB_STEP_SUMMARY"
-          echo "Build gate: build=$build ($reason)"
-
   build:
-    needs: gate
-    if: needs.gate.outputs.build == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -108,10 +57,16 @@ jobs:
             echo "::warning::Signing secrets are not set - building with the default debug key (this APK cannot update an app signed with the real key)."
           fi
 
-      - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace
+      - name: Build release and debug APKs
+        run: ./gradlew assembleRelease assembleDebug --stacktrace
 
-      - name: Upload APK artifact
+      - name: Upload release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: novel-reader-release-apk
+          path: app/build/outputs/apk/release/app-release.apk
+
+      - name: Upload debug APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: novel-reader-debug-apk

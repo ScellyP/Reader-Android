@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Backup rules for Android 11 and older (android:fullBackupContent).
+     Automatic backup stays enabled, but nothing private leaves the phone:
+       - sharedpref/moon_unlock.xml : the signed moon-lock unlock record
+       - root/app_webview           : the page's saved data (bookmarks, scroll
+                                      positions, reading-session state, ...)
+       - and every other app-private area (preferences, files, databases,
+         external app files), so nothing private is added later by accident.
+     The user's own files live in /storage/emulated/0/Novel/ (outside app
+     data), and the settings mirror Novel/settings.txt stays there. -->
+<full-backup-content>
+    <exclude domain="sharedpref" path="moon_unlock.xml" />
+    <exclude domain="root" path="app_webview" />
+    <exclude domain="sharedpref" path="." />
+    <exclude domain="file" path="." />
+    <exclude domain="database" path="." />
+    <exclude domain="external" path="." />
+</full-backup-content>

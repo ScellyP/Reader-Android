@@ -417,11 +417,14 @@ window.NovelAudio = (function () {
   /* =======================================================================
      5. LOCAL AUDIO ENGINE (WebView <audio> element)
      =======================================================================
-     IMPLEMENTATION: a plain HTML <audio> element, given a direct
-     file:// URL to each track. Works because MainActivity.kt hands back
-     proper file:// URIs (via Uri.fromFile, which percent-encodes spaces
-     etc. correctly) and the WebView is configured with allowFileAccess +
-     mediaPlaybackRequiresUserGesture = false.
+     IMPLEMENTATION: a plain HTML <audio> element, given the track's
+     `webUrl` (https://appassets.androidplatform.net/audio/<path under
+     Audio/>), which MainActivity.kt serves from Novel/Audio with Range
+     support so seeking works. The page runs on that same https origin, so
+     the Web Audio equalizer can process the sound, and the WebView needs
+     no file:// access at all. (`path`, the file:// URI, is still what the
+     native engine and artwork lookups use.) mediaPlaybackRequiresUserGesture
+     is false so programmatic play() calls aren't blocked.
 
      WHAT THIS GETS YOU: play/pause/seek/volume/speed, resume-at-position,
      shuffle/repeat, auto-skip past a file that fails to decode, and (new)
@@ -517,7 +520,7 @@ window.NovelAudio = (function () {
       if (!isAlreadyLoaded) {
         state.currentTrackId = id;
         PlaybackQueue.jumpTo(id);
-        this._el.src = track.path;
+        this._el.src = track.webUrl || track.path;
         state.durationSec = track.durationSec || 0;
         state.positionSec = 0;
         // Always starts from the beginning — no resume-from-last-position.
@@ -693,7 +696,7 @@ window.NovelAudio = (function () {
       if (!nextId || nextId === this._preloadedTrackId) return;
       const track = MediaLibrary.getTrack(nextId);
       if (!track) return;
-      this._preloadEl.src = track.path;
+      this._preloadEl.src = track.webUrl || track.path;
       this._preloadEl.load();
       this._preloadedTrackId = nextId;
     },

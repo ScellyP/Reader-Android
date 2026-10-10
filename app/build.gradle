@@ -30,7 +30,7 @@ android {
     // If any of them is missing (e.g. a build from Android Studio), the build
     // falls back to Android's default debug key: that APK installs, but it
     // cannot update an app that was installed from a build signed with the
-    // real key (see "Signing and updates" in README.md).
+    // real key (see UPDATE_SIGNING.md).
     def signingPath = System.getenv("ANDROID_KEYSTORE_PATH")
     def signingStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
     def signingAlias = System.getenv("ANDROID_KEY_ALIAS")
@@ -55,7 +55,10 @@ android {
         }
         release {
             signingConfig hasSharedKey ? signingConfigs.shared : signingConfigs.debug
-            minifyEnabled false
+            // R8 removes unused code and optimises the rest. It does NOT rename
+            // anything (-dontobfuscate in proguard-rules.pro), so stack traces in
+            // crash_log.txt stay readable. Resource shrinking is not enabled.
+            minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
@@ -74,6 +77,12 @@ dependencies {
     implementation 'androidx.activity:activity-ktx:1.9.2'
     implementation 'androidx.documentfile:documentfile:1.0.1'
     implementation 'androidx.core:core-ktx:1.13.1'
+
+    // Serves the app's own page from an https origin
+    // (https://appassets.androidplatform.net/) instead of file:// — see
+    // MainActivity.kt's WebViewAssetLoader setup. 1.11.0 builds against
+    // compileSdk 34, matching this project.
+    implementation 'androidx.webkit:webkit:1.11.0'
 
     // Real background audio playback (PlaybackService.kt): ExoPlayer for
     // decoding/playback, media3-session for the MediaSession that gives
