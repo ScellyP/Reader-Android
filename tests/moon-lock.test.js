@@ -68,5 +68,21 @@ assert.ok(tiltedFacets.length>0&&tiltedFacets.length<sys.facets.length*.4,'a min
 assert.ok(tiltedFacets.every(f=>Math.abs(f.tilt)<=.15),'displaced facets tilt only slightly');
 assert.ok(sys.facets.every(f=>f.tilt!==0||(f.pushX===0&&f.pushY===0)),'only tilted facets are pushed out of the plane');
 assert.equal(moon.TEST_TARGET,20,'hidden test run uses a short fixed target');
+// Unlock state (patch 5): native bridge inside the app, memory only outside it.
+assert.equal(moon.isUnlocked(), false, 'starts locked');
+moon.grantUnlock();
+assert.equal(moon.isUnlocked(), true, 'outside the app the unlock is held in memory');
+assert.equal(moon.isUnlocked(Date.now() + 61 * 60 * 1000), false, 'in-memory unlock ends after an hour');
+let nativeRemaining = 0, grantCalls = 0;
+global.AndroidBridge = { moonUnlockRemainingMs: () => nativeRemaining, moonUnlockGrant: () => { grantCalls++; nativeRemaining = 3600000; return true; } };
+assert.equal(moon.isUnlocked(), false, 'inside the app only the native record counts, not the page memory');
+moon.grantUnlock();
+assert.equal(grantCalls, 1, 'granting goes through the native bridge');
+assert.equal(moon.isUnlocked(), true, 'native time left means unlocked');
+nativeRemaining = 0;
+assert.equal(moon.isUnlocked(), false, 'native record expired means locked');
+global.AndroidBridge = { moonUnlockRemainingMs: () => { throw new Error('boom'); }, moonUnlockGrant: () => false };
+assert.equal(moon.isUnlocked(), false, 'a failing bridge fails closed');
+delete global.AndroidBridge;
 console.log(`Moon-lock geometry: ${sys.segs.length} segments, ${sys.facets.length} facets at ${width}x${height}.`);
 console.log('Moon-lock state and rendering geometry checks passed.');

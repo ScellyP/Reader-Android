@@ -15,9 +15,9 @@ let n = 0; const t = (name, fn) => { fn(); n++; console.log('ok  ' + name); };
 S.tracks = ['a','b','c','d'].map(x => ({ id: '/m/' + x + '.mp3', path: 'file:///m/' + x + '.mp3', title: x, durationSec: 100 }));
 S.queue = S.tracks.map(x => x.id);
 
-t('registry lists all nine modules', () => {
+t('registry lists all eight modules', () => {
   assert.deepStrictEqual(F.describe().map(d => d.id),
-    ['abRepeat','replayGain','audioDelay','crossfade','history','likes','customPlaylists','search','nativeEffects']);
+    ['abRepeat','replayGain','audioDelay','crossfade','history','likes','customPlaylists','nativeEffects']);
 });
 t('defaults are deep-copied (not shared with module defaults)', () => {
   F.likes.toggle('/m/a.mp3');
@@ -102,7 +102,7 @@ t('persistence round-trip through the real Prefs', () => {
   F.replayGain.setMode('track'); M.Prefs.save();
   const saved = JSON.parse(store.novelReader_audioPrefs);
   assert.ok(saved.features.likes && saved.features.history && saved.features.customPlaylists);
-  assert.ok(!saved.features.abRepeat && !saved.features.search && !saved.features.nativeEffects);
+  assert.ok(!saved.features.abRepeat && !saved.features.nativeEffects);
   S.features.likes.ids = []; S.features.customPlaylists.lists = []; S.features.audioDelay.offsetMs = 0;
   M.Prefs.load();
   assert.deepStrictEqual(S.features.likes.ids.slice(0, 1), ['/m/b.mp3']);
@@ -132,10 +132,6 @@ t('crossfade: inert without engine support, fires once with it', () => {
   F.emit('progress', { positionSec: 96, durationSec: 100 }); F.emit('progress', { positionSec: 97, durationSec: 100 });
   assert.deepStrictEqual(got, [['/m/b.mp3', 5]]);
   delete M.LocalAudioEngine.beginCrossfade;
-});
-t('search queues only the matches', () => {
-  S.tracks[2].title = 'Rainy Night';
-  assert.strictEqual(F.search.queueResults('rainy'), 1); assert.deepStrictEqual(S.queue, ['/m/c.mp3']);
 });
 t('a throwing module cannot break the others', () => {
   const orig = console.error; console.error = () => {};

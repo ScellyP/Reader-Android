@@ -98,22 +98,23 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // The moon lock's one-hour unlock: signed record in app-private storage,
+    // timed on the monotonic clock (see MoonUnlockStore). The page asks for it
+    // through AndroidBridge.moonUnlockRemainingMs() / moonUnlockGrant().
+    private val moonUnlock by lazy { MoonUnlockStore(this) }
+    private val moonUnlockMs = 60 * 60 * 1000L
+
     // Night lock, native side. reader.js draws the lock between 12:00 AM and
     // 6:00 AM. This also stops background playback if WebView timers pause.
-    // Respect the moon lock's persisted one-hour unlock so a successful cheat
-    // works for native audio as well as the WebView UI.
+    // Respect the moon lock's one-hour unlock so a successful cheat works for
+    // native audio as well as the WebView UI. Checked natively, so it does not
+    // depend on the page being loaded.
     private val nightLockHandler = Handler(Looper.getMainLooper())
     private val nightLockCheck = object : Runnable {
         override fun run() {
             val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-            if (hour < 6) {
-                if (pageLoaded) {
-                    webView.evaluateJavascript(
-                        "!!(window.NovelMoonLock && window.NovelMoonLock.isUnlocked())"
-                    ) { unlocked -> if (unlocked != "true") mediaController?.pause() }
-                } else {
-                    mediaController?.pause()
-                }
+            if (hour < 6 && moonUnlock.remainingMs() <= 0L) {
+                mediaController?.pause()
             }
             nightLockHandler.postDelayed(this, 15_000L)
         }
@@ -201,6 +202,33 @@ class MainActivity : ComponentActivity() {
     // documented in the README's "Audio player" section.
     private val audioRoot = File("/storage/emulated/0/Novel/Audio")
     private val audioExtensions = setOf("mp3", "m4a", "aac", "flac", "ogg", "opus", "wav")
+
+    /**
+     * The only way a path coming from the page (the JavaScript bridge) may
+     * turn into a File. The page is not trusted: it must not be able to make
+     * the app read, decode or play arbitrary files, and this app holds
+     * all-files access. A path is accepted only when it is a file:// URI (or
+     * a plain absolute path), the real file after resolving "..", symlinks and
+     * percent-encoding lies inside the Audio folder, it exists, and it has a
+     * recognised audio extension. Returns the resolved File, or null.
+     */
+    private fun resolveAudioFile(path: String?): File? {
+        return try {
+            if (path.isNullOrBlank()) return null
+            val uri = Uri.parse(path)
+            val scheme = uri.scheme
+            if (scheme != null && !scheme.equals("file", ignoreCase = true)) return null
+            val raw = (if (scheme == null) path else uri.path) ?: return null
+            val file = File(raw).canonicalFile
+            val root = audioRoot.canonicalFile
+            if (!file.path.startsWith(root.path + File.separator)) return null
+            if (!file.isFile) return null
+            if (!audioExtensions.contains(file.extension.lowercase())) return null
+            file
+        } catch (e: Exception) {
+            null
+        }
+    }
 
     /**
      * Writes any uncaught crash to a plain text file that can be opened
@@ -841,6 +869,14 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Moon-lock unlock (see MoonUnlockStore): the page can only start the
+        // hour and ask how much is left; the record itself stays native.
+        @JavascriptInterface
+        fun moonUnlockGrant(): Boolean = moonUnlock.grant(moonUnlockMs)
+
+        @JavascriptInterface
+        fun moonUnlockRemainingMs(): Long = moonUnlock.remainingMs()
+
         // Keeps the native window in step with the reading theme: the
         // WebView's backdrop colour (visible during overscroll/resizes) and
         // whether the system bar icons are drawn dark (light theme) or
@@ -899,6 +935,17 @@ class MainActivity : ComponentActivity() {
         fun nativeAudioLoad(path: String, title: String, artist: String, album: String) {
             // Extract cover art here (we're on the bridge thread, not the
             // UI thread) so the notification and lock screen can show it.
+            // Refuse anything that is not a real audio file inside Audio/.
+            val audioFile = resolveAudioFile(path) ?: run {
+                // Same path as a decoder error, so the player skips the track.
+                runOnUiThread {
+                    val msg = JSONObject.quote("That file can't be played.")
+                    webView.evaluateJavascript(
+                        "window.onNativeAudioError && window.onNativeAudioError($msg);", null
+                    )
+                }
+                return
+            }
             val art = loadArtworkBytes(path)
             runOnUiThread {
                 val metadata = MediaMetadata.Builder()
@@ -910,7 +957,7 @@ class MainActivity : ComponentActivity() {
                     }
                     .build()
                 val item = MediaItem.Builder()
-                    .setUri(path)
+                    .setUri(Uri.fromFile(audioFile))
                     .setMediaId(path)
                     .setMediaMetadata(metadata)
                     .build()
@@ -1292,8 +1339,7 @@ class MainActivity : ComponentActivity() {
      */
     private fun loadArtworkBytes(path: String): ByteArray? {
         return try {
-            val file = File(Uri.parse(path).path ?: return null)
-            if (!file.exists()) return null
+            val file = resolveAudioFile(path) ?: return null
             val dir = File(cacheDir, "art").apply { mkdirs() }
             val key = (file.absolutePath + file.lastModified()).hashCode().toString()
             val cached = File(dir, "$key.jpg")

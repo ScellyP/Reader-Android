@@ -168,9 +168,14 @@ Between **12:00 AM and 6:00 AM** the app locks itself: a full-screen
 back button just leaves the app. It lifts by itself at 6:00 AM. On Sundays,
 the 1st/3rd/5th Saturdays, and the listed holidays, tapping the moon advances
 its phase and spreads cracks across the lock screen. Reaching the hidden
-50–100 tap target unlocks the app for one hour. The unlock is saved locally and also
-allows native background audio; after it expires, the night lock returns if
-it is still before 6:00 AM. Other days show an inactive full moon. The lock
+50–100 tap target unlocks the app for one hour. The unlock is kept by the app
+natively (`MoonUnlockStore.kt`): a record in app-private storage, signed with
+a key in the Android Keystore and timed on the phone's monotonic clock, so
+editing the page's storage or changing the phone's date/time cannot stretch the
+hour. It also allows native background audio. After it expires, the night lock
+returns if it is still before 6:00 AM. A restart of the phone ends an unlock in
+progress, and if the record cannot be saved or verified the app stays locked.
+(The 12:00 AM to 6:00 AM window itself still follows the phone's clock.) Other days show an inactive full moon. The lock
 window is set by `NIGHT_LOCK_START` / `NIGHT_LOCK_END` in `reader.js` and
 follows the phone's local clock. On active days, four edge impacts (one per
 side) grow in randomized order with 26 rays each. Shaded triangular facets,
@@ -214,7 +219,6 @@ top-of-file comment for the architecture, and `PlaybackService.kt` /
 | --- | --- |
 | Library scan (native folder scan + tags) | **Working** |
 | Playlists via folders (a subfolder in Audio/ = a playlist) | **Working** |
-| Search (`NovelAudio.features.search`; no search box in the UI yet) | Logic ready |
 | Curated playlists (hand-picked, not tied to a folder) | Logic ready — create/rename/delete/add in JS; no editor UI yet |
 | Visible "up next" queue | **Working** |
 | Shuffle (real Fisher-Yates) + repeat (off / all / one) | **Working** |
@@ -338,7 +342,6 @@ data or native support), `stub` (stores a value, nothing consumes it),
 | `history` | logic-ready | Newest-first, deduped, capped at 100, persisted; virtual playlist `@recent` | Playlist picker entry |
 | `likes` | logic-ready | `toggle(id?)`, `isLiked()`, `getIds()`; virtual playlist `@liked` | Heart button on the now-playing card (needs an `i-heart` icon in the sprite) |
 | `customPlaylists` | logic-ready | `create/rename/remove/addTracks/removeTrack/list`; virtual playlist `@list:<id>` | Editor UI + picker entries |
-| `search` | logic-ready | `run(q)`, `queueResults(q)` | The search box |
 | `nativeEffects` | framework | Pushes the EQ curve + preamp + replay-gain boost to the native side on engine switch, track start and every slider change | Verify on a device (see footnote ²) |
 
 **Virtual playlists.** `state.activePlaylist` may be `'all'`, a folder name,
@@ -386,7 +389,8 @@ If the module or canvas is unavailable, `moon-lock.js` falls back to its older
 layered renderer. Run `node tests/shatter-glass.test.js` for its geometry checks.
 
 Chapter files are read either in the original `chapter_downloader.py`
-format (title / `Source:` line / `====` separator / body) or as plain
+format (title / `Source:` line / `====` separator / body; the `Source:`
+line is skipped and never shown) or as plain
 text files — either works.
 
 **Chapter order** comes from the chapter number in each file's actual
@@ -423,7 +427,8 @@ unless music is playing.
 
 ## Updating the installed app
 
-Builds are signed with the fixed key `app/novelreader.keystore` and the
+Builds are signed with a fixed key that is supplied through GitHub secrets
+(see `UPDATE_SIGNING.md`; no keystore is kept in the repo) and the
 version code is the GitHub Actions run number, so each new APK installs as an
 update over the previous one (data is kept). The very first build with this
 key cannot update an app installed from an older build signed with a different

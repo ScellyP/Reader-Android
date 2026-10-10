@@ -10,7 +10,7 @@
 (function () {
   // In-memory reading state. `chapters` is rebuilt every time a novel is
   // (re)loaded; `currentIndex` is this novel's position within it.
-  let chapters = [];      // {title, source, text, filename}
+  let chapters = [];      // {title, text, filename}
   let currentIndex = -1;
   let fontSize = 19;
   let flipTimer = null;        // pending timeout that clears the flip animation class
@@ -25,7 +25,6 @@
   const welcomeEl = document.getElementById('welcome');
   const readerEl = document.getElementById('reader');
   const chapterTitleEl = document.getElementById('chapter-title');
-  const chapterSourceEl = document.getElementById('chapter-source');
   const chapterTextEl = document.getElementById('chapter-text');
 
   // Prev/next navigation (top bar + bottom-of-chapter buttons).
@@ -319,7 +318,7 @@
   /* ---------------------------------------------------------------------
      Parse the standard chapter-file format:
        Line 1: title
-       Line 2: "Source: <url>" (optional)
+       Line 2: "Source: <url>" (optional; skipped, never shown or stored)
        Line 3: "======..." separator (optional)
        Line 4: blank
        rest: chapter text
@@ -328,14 +327,10 @@
   function parseChapterFile(filename, raw) {
     const lines = raw.split(/\r?\n/);
     let title = filename.replace(/\.txt$/i, "");
-    let source = "";
     let bodyStart = 0;
 
     if (lines.length > 0 && lines[0].trim()) {
       title = lines[0].trim();
-    }
-    if (lines.length > 1 && /^Source:/i.test(lines[1].trim())) {
-      source = lines[1].trim().replace(/^Source:\s*/i, "");
     }
     let sepIndex = lines.findIndex(l => /^=+$/.test(l.trim()));
     if (sepIndex !== -1) {
@@ -349,7 +344,7 @@
     }
 
     const text = lines.slice(bodyStart).join("\n").trim() || raw.trim();
-    return { title, source, text, filename };
+    return { title, text, filename };
   }
 
   // Sorts "chapter2.txt" before "chapter10.txt" (plain string sort would
@@ -898,10 +893,6 @@
     readerEl.style.display = 'block';
 
     chapterTitleEl.textContent = ch.title;
-    chapterSourceEl.innerHTML = ch.source
-      ? `Source: <a href="${ch.source}" target="_blank" rel="noopener">${ch.source}</a>`
-      : '';
-
     chapterTextEl.innerHTML = '';
     let paraIndex = 0;
     ch.text.split(/\n\s*\n/).forEach(para => {

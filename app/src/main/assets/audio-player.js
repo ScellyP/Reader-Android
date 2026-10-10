@@ -252,22 +252,6 @@ window.NovelAudio = (function () {
       if (!sel || sel === 'all') return state.tracks.map(t => t.id);
       return this.tracksInPlaylist(sel).map(t => t.id);
     },
-
-    /* Spotify-style search across title/artist/album. Not wired to a
-     * search box in the UI yet (there isn't one in the panel), but the
-     * queue-building/filtering logic is ready for one — feed its result
-     * into PlaybackQueue.buildFrom() to make "search" also become "play
-     * only these results". Normalising once per track at scan time
-     * (rather than on every keystroke) is what keeps this fast on a
-     * large library. */
-    search(query) {
-      const q = (query || '').toLowerCase().trim();
-      if (!q) return state.tracks;
-      return state.tracks.filter(t => {
-        const key = t.searchKey || [t.title, t.artist, t.album].filter(Boolean).join(' ').toLowerCase();
-        return key.includes(q);
-      });
-    },
   };
 
   /* =======================================================================
@@ -1382,24 +1366,6 @@ window.NovelAudio = (function () {
     },
   });
 
-  /* ---- Search ----------------------------------------------------------------
-     The matching lives in MediaLibrary.search(); this is the seam a search
-     box plugs into. run() just returns matches; queueResults() makes the
-     queue "play only these" (a later rescan or playlist switch rebuilds the
-     queue from the selected playlist again, as usual). */
-  AudioFeatures.register({
-    id: 'search', label: 'Search', status: 'logic-ready',
-    defaults: {},
-    persistKeys: [],
-    run(query) { return MediaLibrary.search(query); },
-    queueResults(query) {
-      const ids = MediaLibrary.search(query).map(t => t.id);
-      PlaybackQueue.buildFrom(ids);
-      AudioUI.render();
-      return ids.length;
-    },
-  });
-
   /* ---- Native effects (equalizer + replay-gain boost) --------------------------
      Bridges the UI's 10 EQ sliders to android.media.audiofx.Equalizer on
      ExoPlayer's audio session, so the EQ is audible for background playback
@@ -2004,7 +1970,7 @@ window.NovelAudio = (function () {
     },
 
     // Optional-feature registry and modules: NovelAudio.features.abRepeat,
-    // .replayGain, .history, .likes, .customPlaylists, .search, .describe()...
+    // .replayGain, .history, .likes, .customPlaylists, .describe()...
     features: AudioFeatures,
 
     // Exposed for debugging and for the tests. `AudioEngine` is exposed

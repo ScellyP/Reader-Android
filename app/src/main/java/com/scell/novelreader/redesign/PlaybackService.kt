@@ -217,6 +217,11 @@ class PlaybackService : MediaSessionService() {
         // How long the service may sit with nothing playing before it
         // shuts itself (and its notification) down.
         private const val IDLE_STOP_MS = 10 * 60 * 1000L
+
+        // Wear OS controllers allowed to connect to the media session (see
+        // isAllowedController). Only the Google Wear OS companion app is
+        // listed; add the package of any other watch app you use.
+        private val WEAR_CONTROLLER_PACKAGES = setOf("com.google.android.wearable.app")
     }
 
     private var mediaSession: MediaSession? = null
@@ -266,6 +271,19 @@ class PlaybackService : MediaSessionService() {
         )
         mediaSession = MediaSession.Builder(this, QueueAwarePlayer(player))
             .setSessionActivity(openAppIntent)
+            .setCallback(object : MediaSession.Callback {
+                // Second gate (onGetSession is the first): a controller that
+                // is not on the allow-list is turned away here as well.
+                override fun onConnect(
+                    session: MediaSession,
+                    controller: MediaSession.ControllerInfo
+                ): MediaSession.ConnectionResult =
+                    if (isAllowedController(session, controller)) {
+                        MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
+                    } else {
+                        MediaSession.ConnectionResult.reject()
+                    }
+            })
             .build()
 
         // Close the service (and remove its notification) after 10 minutes
@@ -296,10 +314,35 @@ class PlaybackService : MediaSessionService() {
         if (!isPlaybackActive(p)) idleHandler.postDelayed(idleStopRunnable, IDLE_STOP_MS)
     }
 
-    /** Grants every controller — our own MainActivity's, and the
-     * system's notification/lock-screen controller — access to this
-     * session. */
-    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = mediaSession
+    /**
+     * The service is exported (the system and Bluetooth/Android Auto must be
+     * able to bind to it), so any app on the phone can try to connect and
+     * control playback or see what is playing. Only these callers get the
+     * session; everything else is refused:
+     *   - this app itself (its MainActivity's MediaController);
+     *   - the system's media notification / lock-screen controller;
+     *   - other trusted system controllers (media buttons, Bluetooth,
+     *     system UI) as decided by Media3's `isTrusted`;
+     *   - Android Auto (phone-side companion and the car/automotive side);
+     *   - Wear OS controllers, recognised by the package names listed in
+     *     WEAR_CONTROLLER_PACKAGES below.
+     */
+    @OptIn(UnstableApi::class)
+    private fun isAllowedController(
+        session: MediaSession,
+        controller: MediaSession.ControllerInfo
+    ): Boolean =
+        controller.packageName == packageName ||
+            controller.isTrusted ||
+            session.isMediaNotificationController(controller) ||
+            session.isAutoCompanionController(controller) ||
+            session.isAutomotiveController(controller) ||
+            WEAR_CONTROLLER_PACKAGES.contains(controller.packageName)
+
+    override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? {
+        val session = mediaSession ?: return null
+        return if (isAllowedController(session, controllerInfo)) session else null
+    }
 
     /**
      * Called when the user swipes the app away from recents. If nothing

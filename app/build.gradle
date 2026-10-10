@@ -19,26 +19,42 @@ android {
         versionName "1.0.${runNumber}"
     }
 
-    // A fixed signing key kept in the repo. Android only lets a new APK
-    // update an installed app when both are signed with the SAME key. The
-    // default debug key is regenerated on every fresh CI runner, which is
-    // why each build used to say "App not installed" over the old one.
-    // Keep this repo private: anyone with this keystore can sign updates.
+    // The signing key is NOT stored in the repo. Android only lets a new APK
+    // update an installed app when both are signed with the SAME key, so CI
+    // supplies it through four environment variables (filled from the GitHub
+    // secrets by .github/workflows/build-apk.yml):
+    //   ANDROID_KEYSTORE_PATH      path of the decoded keystore file
+    //   ANDROID_KEYSTORE_PASSWORD  keystore password
+    //   ANDROID_KEY_ALIAS          key alias
+    //   ANDROID_KEY_PASSWORD       key password
+    // If any of them is missing (e.g. a build from Android Studio), the build
+    // falls back to Android's default debug key: that APK installs, but it
+    // cannot update an app that was installed from a build signed with the
+    // real key (see UPDATE_SIGNING.md).
+    def signingPath = System.getenv("ANDROID_KEYSTORE_PATH")
+    def signingStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+    def signingAlias = System.getenv("ANDROID_KEY_ALIAS")
+    def signingKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+    def hasSharedKey = signingPath && signingStorePassword && signingAlias && signingKeyPassword &&
+            file(signingPath).isFile()
+
     signingConfigs {
-        shared {
-            storeFile file('novelreader.keystore')
-            storePassword 'novelreader'
-            keyAlias 'novelreader'
-            keyPassword 'novelreader'
+        if (hasSharedKey) {
+            shared {
+                storeFile file(signingPath)
+                storePassword signingStorePassword
+                keyAlias signingAlias
+                keyPassword signingKeyPassword
+            }
         }
     }
 
     buildTypes {
         debug {
-            signingConfig signingConfigs.shared
+            signingConfig hasSharedKey ? signingConfigs.shared : signingConfigs.debug
         }
         release {
-            signingConfig signingConfigs.shared
+            signingConfig hasSharedKey ? signingConfigs.shared : signingConfigs.debug
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }

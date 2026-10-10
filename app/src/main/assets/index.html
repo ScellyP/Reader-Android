@@ -1204,12 +1204,9 @@ input[type="range"]:disabled::-webkit-slider-thumb { background: var(--faint); }
   font-family: var(--font-book);
   font-size: 34px; font-weight: 500; line-height: 1.18; letter-spacing: -.2px;
   color: var(--read-text, inherit);
-  margin: 0 0 8px;
+  margin: 0 0 20px;
   text-wrap: balance;
 }
-#chapter-source { font-size: 12px; color: var(--faint); margin-bottom: 36px; word-break: break-all; }
-#chapter-source:empty { margin-bottom: 20px; }
-#chapter-source a { color: var(--faint); }
 
 #chapter-text {
   font-family: var(--font-book);
@@ -2477,7 +2474,6 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
       </div>
       <div id="reader" style="display:none;">
         <h2 id="chapter-title"></h2>
-        <div id="chapter-source"></div>
         <div id="chapter-text"></div>
         <div id="bottom-nav">
           <button id="bottom-prev" disabled><svg class="ico"><use href="#i-chev-left"/></svg>Previous</button>

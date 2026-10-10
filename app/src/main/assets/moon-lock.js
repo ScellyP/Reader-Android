@@ -45,14 +45,27 @@
     return holidays.has(localKey(d)) || d.getDay() === 0 ||
       (d.getDay() === 6 && Math.ceil(d.getDate() / 7) % 2 === 1);
   }
-  function unlockUntil() {
-    try { return Math.max(memoryUnlockUntil,Number(localStorage.getItem(UNLOCK_KEY) || 0) || 0); } catch (_) { return memoryUnlockUntil; }
+  // Inside the Android app the unlock lives natively (MoonUnlockStore.kt): a
+  // signed record in private storage, timed on the monotonic clock. The page
+  // can only start it and ask whether it is still running. Outside the app
+  // (a plain browser, the Node tests) it is held in memory only, never in
+  // localStorage, so there is nothing to edit.
+  function nativeBridge() {
+    const b = window.AndroidBridge;
+    return b && typeof b.moonUnlockRemainingMs === 'function' && typeof b.moonUnlockGrant === 'function' ? b : null;
   }
-  function isUnlocked(now) { return unlockUntil() > (now === undefined ? Date.now() : now); }
+  function isUnlocked(now) {
+    const b = nativeBridge();
+    if (b) { try { return Number(b.moonUnlockRemainingMs()) > 0; } catch (_) { return false; } }
+    return memoryUnlockUntil > (now === undefined ? Date.now() : now);
+  }
   function grantUnlock() {
+    const b = nativeBridge();
+    if (b) { try { b.moonUnlockGrant(); } catch (_) { /* not saved: the app stays locked */ } return; }
     memoryUnlockUntil=Date.now()+UNLOCK_MS;
-    try { localStorage.setItem(UNLOCK_KEY, String(memoryUnlockUntil)); } catch (_) { /* in-memory unlock still lets this session finish */ }
   }
+  // The old localStorage value is no longer read; remove any leftover copy.
+  try { localStorage.removeItem(UNLOCK_KEY); } catch (_) { /* storage unavailable */ }
   function randomTarget() {
     const a = new Uint32Array(1);
     const crypt=window.crypto;
@@ -344,7 +357,7 @@
       flash.animate([{opacity:0},{opacity:.92,offset:.18},{opacity:0}],{duration:260,easing:'ease-out'});
     } catch (_) { /* final flash is optional */ }
   }
-  if (typeof module !== 'undefined' && module.exports) module.exports={TEST_TARGET,isCheatDay,localKey,phasePath,randomTarget,advanceTap,generateGlass,crackFraction,fillOpacity,renderProgress,strokeScale,facetOpacity,visibleSegmentCount,visibleFacetCount,terminalPalette,shakeAmplitude,impactFlash};
+  if (typeof module !== 'undefined' && module.exports) module.exports={isUnlocked,grantUnlock,TEST_TARGET,isCheatDay,localKey,phasePath,randomTarget,advanceTap,generateGlass,crackFraction,fillOpacity,renderProgress,strokeScale,facetOpacity,visibleSegmentCount,visibleFacetCount,terminalPalette,shakeAmplitude,impactFlash};
   if (moonButton) moonButton.addEventListener('click', function () {
     if (!tracker || !state || state.done) return;
     state=Object.assign(state,advanceTap(tracker));
