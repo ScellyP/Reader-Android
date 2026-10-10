@@ -223,7 +223,7 @@ capitals) naming which playlist it came from.
 | Now-playing bar with artwork, seek scrubber | ✅ Working |
 | Broad format support (mp3, m4a/aac, flac, ogg, opus, wav) | ✅ Working |
 | Near-gapless playback (next track pre-buffered) | ✅ Working |
-| 10-band equalizer + preamp | ✅ Working (native engine built — see below) |
+| 10-band equalizer + preamp | ✅ Working |
 | Sleep timer (fixed minutes, or end-of-track), with a fade-out | ✅ Working |
 | Auto-pause when a reading-break reminder appears, and resume on dismiss | ✅ Working |
 | True background playback (screen off, app switched away) | ✅ Working |
@@ -249,12 +249,9 @@ capitals) naming which playlist it came from.
 | Volume normalisation (ReplayGain) | 🟡 Framework | `MainActivity.listAudioFiles()` needs to read the ReplayGain tags. Until then it changes nothing. |
 | Audio delay / sync adjustment | 🟡 Stub | It only stores an offset and nothing uses it. |
 | A-B repeat | 🟡 Logic ready | The logic works, but there are no buttons or seek-bar markers. |
-| Search | 🟡 Logic ready | The logic is ready, but there is no search box. |
 | Likes | 🟡 Logic ready | Recorded, but there is no heart button. |
 | Recently played | 🟡 Logic ready | Recorded, but there is no picker entry for `@recent`. |
 | Custom playlist editor | 🟡 Logic ready | Create, rename and delete work in JS, but there is no editor UI. |
-| Native equalizer | 🟡 Needs device test | The Kotlin was written without being compiled or run, so it needs a device test. |
-| Release pipeline | 🔴 Not started | `UPDATE_SIGNING.md` describes `app-release.apk` and signing secrets, but the workflow only runs `assembleDebug` and has no secrets handling. |
 
 > Full internal architecture, engine details, native bridge, footnotes and
 > tests are in [Agents.md](Agents.md#audio-player-architecture).
