@@ -160,6 +160,23 @@ reinstall.
 5. Reading colours (🎨), bookmarks (🔖) and the session timer (⏱) live
    together in the sidebar header, next to the "Novels" title.
 
+### Chapter files and order
+
+Chapter files can be plain `.txt`, or the `chapter_downloader.py` format (a
+title line, an optional `Source:` line, a `====` separator, then the text).
+Reading order comes from the chapter number in each file's **title** (the first
+line, e.g. `Chapter 2004: Seeds of Rebellion`), not from the file name, so
+renaming files or a differently sorted Files app won't shuffle your novel.
+Chapters with no number (a Prologue or Epilogue) go after all numbered ones, in
+file-name order.
+
+### First launch
+
+The app asks for **notification access** on Android 13+ (so the music
+notification can show) and for **all-files access** via the *Grant storage
+access* button. A short splash plays, then a "Your library is loading" screen
+shows until your chapters are ready.
+
 ### Gestures
 
 | Gesture | What it does |
@@ -190,10 +207,45 @@ it off, and they keep scrolling the page even while the audio player is open (an
 other open menu still gives them to the volume). The setting is saved in
 `settings.txt` as `audioVolumeKeys`.
 
-How far a tap-to-scroll moves the page is adjustable: 🎨 → "Tap-to-scroll
-amount" (in the same panel as the reading colours), measured in lines of
+How far a tap-to-scroll moves the page is adjustable: 🎨 → **Tap scroll** (in the same panel as the reading colours), measured in lines of
 the current text rather than a fixed screen fraction, so it stays
 consistent across font sizes and devices.
+
+### Reading panel (🎨)
+
+Open it with the 🎨 button in the sidebar header. The font family is chosen
+separately from the dropdown in the top bar.
+
+| Control | What it does |
+| --- | --- |
+| **Preset** (Dark / Light) | One-tap colour schemes for the page and text |
+| **Page** / **Text** | Open a colour wheel (hue and saturation, brightness slider, hex field). The six most recent colours for each are kept as swatches under it |
+| **Line height** | Space between lines (1.2 to 2.6) |
+| **Letter spacing** | Space between letters (-0.5 to 3) |
+| **Page turn** | How long the page-flip animation takes when you change chapter (0.2 s to 3 s); jumping several chapters flips a little longer |
+| **Smart scroll** | Off by default. A tap scrolls just far enough to bring the paragraph cut off at the screen edge fully into view, so you never stop mid-sentence. While it is on, **Tap scroll** is greyed out |
+| **Volume keys in audio player** | See [Volume buttons](#volume-buttons) |
+| **Volume button scroll** | See [Volume buttons](#volume-buttons) |
+| **Tap scroll** | How many lines a tap moves the page (3 to 30) |
+| **Reset to default** | Puts the reading settings back to their defaults |
+
+The menu and button colours follow your page and text colours. While you drag
+any slider in this panel (or the reading-timer panel), everything else fades
+out so you can see the text change underneath; letting go brings it back.
+
+### Bookmarks (🔖)
+
+Bookmarks are kept per novel. Open the panel with the 🔖 button in the sidebar
+header, then tap **Bookmark this chapter** to save the chapter you're on, or
+**press and hold any paragraph** while reading to save that exact spot. Saved
+bookmarks are listed in the panel.
+
+### End of a novel
+
+When you reach the last chapter, an **Open Termux to fetch new chapters**
+button appears under the chapter. It opens the Termux app if it is installed
+(for running a chapter downloader); otherwise the app tells you Termux isn't
+installed.
 
 ### Reading session limit
 
@@ -232,8 +284,15 @@ starts on the former and switches to the latter automatically the moment
 it's ready — mid-playback, at the same position, inaudibly.
 
 Audio files are expected in `/storage/emulated/0/Novel/Audio` (created
-automatically on first scan if it doesn't exist). Tap 🎧 → "Scan
-folder" to load it, then 🎧 → "Equalizer ▾" for the 10-band EQ.
+automatically on first scan if it doesn't exist). Tap 🎧 → **Rescan** to load
+it. Once a track is loaded, a 🎧 shortcut also appears in the top bar, between
+the next-chapter button and the font dropdown. The panel has the playlist
+list, shuffle, previous/play/next, repeat, a seek bar and a volume slider.
+
+> **Currently hidden:** the **Sleep timer** and the **Equalizer** controls are
+> switched off in the music panel (the code is kept, so they can be shown
+> again). The feature tables below describe what is built, not what is
+> visible today.
 
 **Playlists** are just subfolders of `Audio/` — no separate playlist
 file or in-app "create playlist" step. A folder's name becomes the
@@ -273,8 +332,8 @@ capitals) naming which playlist it came from.
 | Now-playing bar with artwork, seek scrubber | ✅ Working |
 | Broad format support (mp3, m4a/aac, flac, ogg, opus, wav) | ✅ Working |
 | Near-gapless playback (next track pre-buffered) | ✅ Working |
-| 10-band equalizer + preamp | ✅ Working |
-| Sleep timer (fixed minutes, or end-of-track), with a fade-out | ✅ Working |
+| 10-band equalizer + preamp | ✅ Built, ⚠️ hidden in the panel |
+| Sleep timer (fixed minutes, or end-of-track), with a fade-out | ✅ Built, ⚠️ hidden in the panel |
 | Auto-pause when a reading-break reminder appears, and resume on dismiss | ✅ Working |
 | True background playback (screen off, app switched away) | ✅ Working |
 | System media notification (artwork, title/artist, play/pause) | ✅ Working |
@@ -302,6 +361,8 @@ capitals) naming which playlist it came from.
 | Volume normalisation (ReplayGain) | 🟡 Under Development | `MainActivity.listAudioFiles()` needs to read the ReplayGain tags. Until then it changes nothing. |
 | Recently played | 🟡 Under Development | Recorded, but there is no picker entry for `@recent`. |
 | Custom playlist editor | 🟡 Logic ready | Playlist Editor UI Is still being worked on. |
+| Search box for the music library | ⚪ Not added | Only the chapter list has a search box today. |
+| Heart / A-B buttons, Recently played and Liked in the playlist picker | ⚪ Not added | The logic is there; none of these has a button or picker entry yet. |
 
 ## Library (novel selector)
 
