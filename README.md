@@ -1,4 +1,4 @@
-# Novel Reader — Android App
+# Novel Reader — Android App 
 
 A native Android app version of the novel reader, with the layout bugs
 (buttons disappearing/overflowing on small screens) fixed.
