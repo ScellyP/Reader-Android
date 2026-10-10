@@ -370,6 +370,15 @@ phases, tap completion, four-side impact geometry, 26-ray density, random web
 staggering, facet progression, screen shake, and terminal contrast. Run it from
 the project root: `node tests/moon-lock.test.js`.
 
+**Shattered-glass renderer.** The moon-lock glass is drawn by
+`app/src/main/assets/shatter-glass.js`: a dependency-free Canvas 2D module that
+builds a seeded, irregular low-poly glass layout (Delaunay facets around four
+staggered impact points plus long branching cracks) once per lock session, then
+only redraws when tap progress changes (the existing 40-step quantisation).
+The last 18% of progress turns the glass into the inverse-colour terminal fill.
+If the module or canvas is unavailable, `moon-lock.js` falls back to its older
+layered renderer. Run `node tests/shatter-glass.test.js` for its geometry checks.
+
 Chapter files are read either in the original `chapter_downloader.py`
 format (title / `Source:` line / `====` separator / body) or as plain
 text files — either works.

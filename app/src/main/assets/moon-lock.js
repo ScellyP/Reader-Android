@@ -28,6 +28,16 @@
   let shown = 0, frame = 0, lastProgressAt = 0, finishTimer = 0;
   let lastDrawQ = -1;
   let memoryUnlockUntil = 0, drawWarningShown = false;
+  let sgInst = null, shatterOn = false;
+  // New faceted shattered-glass renderer (shatter-glass.js). Falls back to the layered
+  // generateGlass/drawGlass renderer below if the module or a canvas context is unavailable.
+  function shatterReady() {
+    try {
+      if (!glass || typeof window.ShatterGlass !== 'function') return null;
+      if (!sgInst) sgInst = new window.ShatterGlass(glass, {progressMode:true, stagger:true, impacts:4, density:1, maxFacets:650, seed:1});
+      return sgInst;
+    } catch (error) { sgInst = null; return null; }
+  }
 
   const pad = n => String(n).padStart(2, '0');
   function localKey(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
@@ -180,9 +190,10 @@
     ctx.moveTo(a.x,a.y);ctx.quadraticCurveTo(cx,cy,x,y);
   }
   function drawGlass(progress) {
-    if(!glass||!system)return;
+    if(!glass||(!system&&!shatterOn))return;
     progress=renderProgress(progress); // Limit full-canvas redraws to 40 visual steps.
     if(progress===lastDrawQ)return;lastDrawQ=progress;
+    if(shatterOn&&sgInst){sgInst.setProgress(progress,isDarkTheme());return;}
     const dark=isDarkTheme(),terminal=progress>=1?terminalPalette(dark):null;
     const inverse=terminal?terminal.fill:(dark?'#fff':'#000'),base=terminal?terminal.crack:(dark?'#000':'#fff');
     const [refract,reflect,facets,mainline,noise]=contexts;
@@ -304,13 +315,13 @@
     state={active,count:active ? 0 : 4,done:false,test}; shown=0;
     unlockReady=false;
     lastDrawQ=-1;
-    seed=(Math.random()*0x7fffffff)|0; system=null;
+    seed=(Math.random()*0x7fffffff)|0; system=null; shatterOn=false;
     try {
       clearCanvases();
-      if (active) { const size=prepareCanvases();system=generateGlass(size.w,size.h,seed); }
+      if (active) { const sg=shatterReady(); if(sg){sg.begin(seed);shatterOn=true;} else {const size=prepareCanvases();system=generateGlass(size.w,size.h,seed);} }
     } catch (error) {
       // Keep the tap/unlock state machine usable if this device lacks a canvas context.
-      system=null;
+      system=null; shatterOn=false;
       if(!drawWarningShown){drawWarningShown=true;console.warn('Moon-lock canvas setup skipped:',error);}
     }
     render();
@@ -343,11 +354,12 @@
     setProgress(state.progress);
     try { if(moonSvg.animate)moonSvg.animate([{transform:'scale(.88)'},{transform:'scale(1)'}],{duration:220,easing:'cubic-bezier(.2,.8,.2,1)'}); } catch (_) { /* phase and progress remain functional without WAAPI */ }
   });
-  if(window.addEventListener)window.addEventListener('resize', function () { if(state && state.active){ const size=prepareCanvases();system=generateGlass(size.w,size.h,seed);lastDrawQ=-1;drawGlass(shown); } });
+  if(window.addEventListener)window.addEventListener('resize', function () { if(state && state.active && !shatterOn){ const size=prepareCanvases();system=generateGlass(size.w,size.h,seed);lastDrawQ=-1;drawGlass(shown); } });
   function stopSession() {
     if (frame) { cancelAnimationFrame(frame); frame=0; }
     clearTimeout(finishTimer);
-    try { clearCanvases(); } catch (_) { /* nothing to clear */ }
+    try { clearCanvases(); if(sgInst)sgInst.reset(); } catch (_) { /* nothing to clear */ }
+    shatterOn=false;
     state=null; tracker=null; system=null; shown=0; lastDrawQ=-1;
   }
   window.NovelMoonLock = { isUnlocked, canDismiss:() => unlockReady, startSession, stopSession, onUnlocked:null, onTestFinished:null, isCheatDay };
