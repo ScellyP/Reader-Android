@@ -2107,6 +2107,59 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
   #splash.leaving #splash-book { transform: scale(2.2); transition: transform .6s ease-in, opacity .3s ease; }
 }
 </style>
+<style id="fullscreen-panels">
+/* ---------------------------------------------------------------------
+   Full-screen panels: Reading, Reading timer and Bookmarks now open as
+   full-screen pages instead of small floating cards. Same markup, same
+   open/close logic (.hidden toggled by reader.js); this block is geometry
+   and motion only. It sits last in <head> so it wins over the earlier
+   floating-card rules and their mobile overrides. The Music panel is a
+   side drawer and is intentionally untouched.
+   --------------------------------------------------------------------- */
+#theme-panel, #session-settings-panel, #bookmarks-panel {
+  position: fixed;
+  top: 0; right: 0; bottom: 0; left: 0;
+  width: 100%; height: 100%;
+  min-width: 0; max-width: none; max-height: none;
+  border: none; border-radius: 0;
+  box-shadow: none;
+  background-color: var(--panel);
+  background-image: none;
+  z-index: 90;
+  gap: 16px;
+  /* Content stays in a comfortable reading column on wide screens. */
+  padding: 0 max(18px, calc((100vw - 560px) / 2)) calc(24px + var(--nav-bar-height));
+  overflow-y: auto; overscroll-behavior: contain;
+  animation: panelFullIn .3s var(--ease) both;
+}
+@keyframes panelFullIn { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+
+/* Closed state: slide down and fade out. */
+#theme-panel.hidden, #session-settings-panel.hidden, #bookmarks-panel.hidden {
+  transform: translateY(24px);
+}
+
+/* Title row stays pinned at the top (below the status bar) while the
+   page scrolls, so the close button is always reachable. */
+#theme-panel > .panel-title-row, #session-settings-panel > .panel-title-row {
+  position: sticky; top: 0; z-index: 3;
+  margin: 0 calc(-1 * max(18px, calc((100vw - 560px) / 2)));
+  padding: calc(12px + var(--status-bar-height)) max(18px, calc((100vw - 560px) / 2)) 12px;
+  background: var(--panel);
+}
+
+/* Bookmarks: header fixed, list fills the rest of the screen and scrolls. */
+#bookmarks-panel { overflow: hidden; padding-top: calc(12px + var(--status-bar-height)); }
+#bookmarks-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+#bookmarks-list li { padding-top: 14px; padding-bottom: 14px; font-size: 15px; }
+
+/* Bigger touch targets now that there is room. */
+#theme-panel .theme-panel-row, #session-settings-panel .theme-panel-row { min-height: 48px; }
+
+@media (prefers-reduced-motion: reduce) {
+  #theme-panel, #session-settings-panel, #bookmarks-panel { animation-duration: .01s; }
+}
+</style>
 </head>
 <body>
 <!-- Icon sprite: 24x24 grid, 1.75px stroke, round caps/joins (set in .ico). -->
