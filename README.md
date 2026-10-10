@@ -1,31 +1,30 @@
 # Novel Reader — Android App
 
-A native Android app version of the novel reader, with the layout bugs
-(buttons disappearing/overflowing on small screens) fixed.
+A native Android app for reading novels stored as `.txt` chapter files, with a
+built-in music player, reading colours, bookmarks and a reading-session timer.
+Everything stays on your phone: no account, no internet needed.
 
-> **Developer/AI notes** — architecture, audio feature framework, version
-> bump rules, tests and packaging rules — are in [Agents.md](Agents.md).
+**Contents**
 
-## What changed from the HTML template
+- [Quick start](#quick-start)
+- [Setting up your chapters folder](#setting-up-your-chapters-folder)
+- [Getting the APK](#getting-the-apk)
+- [When does a build run?](#when-does-a-build-run)
+- [Signing and updates](#signing-and-updates)
+- [Using the app](#using-the-app)
+- [Audio player](#audio-player)
+- [Library (novel selector)](#library-novel-selector)
+- [Settings, screen timeout and auto-close](#settings-file)
+- [Version number](#version-number)
+- [Security features to add](#security-features-to-add)
+- [For developers](#for-developers)
 
-- **Music player**: the original template's player was removed. An
-  audio player is now being reintroduced as a framework — see
-  "Audio player" below.
-- **Chapters folder is hardcoded** to
-  `/storage/emulated/0/Novel/Chapters` (internal storage → `Novel` →
-  `Chapters`). The app reads directly from this fixed path using
-  Android's "All files access" permission — no folder picker, no
-  per-run selection. Create that folder, drop your `.txt` chapter
-  files in it, grant the permission once, and the app auto-loads it
-  every time it opens. Every other direct subfolder of `Novel/` is
-  also picked up as its own novel in the picker — **except** `Audio/`,
-  which is reserved for music (see "Audio player" below) and is never
-  offered as a novel.
-- **Layout fixes**: topbar buttons now shrink/scroll instead of
-  disappearing off-screen; flex children have `min-width: 0` so they
-  don't get clipped; the font-family dropdown is capped in width on
-  narrow screens; bottom nav buttons wrap instead of overflowing.
-- Dark theme only (matches your saved preference).
+## Quick start
+
+1. [Get the APK](#getting-the-apk) and install it.
+2. Create `Novel/Chapters` on your phone's internal storage and put your
+   `.txt` chapters in it.
+3. Open the app, tap **Grant storage access**, and start reading.
 
 ## Setting up your chapters folder
 
@@ -33,37 +32,117 @@ A native Android app version of the novel reader, with the layout bugs
 2. Go to **Internal storage** (the root of your phone's storage, not
    an SD card).
 3. Create a folder named `Novel`, then inside it a folder named
-   `Chapters` — so the full path is:
+   `Chapters`, so the full path is:
    `/storage/emulated/0/Novel/Chapters`
 4. Put your `.txt` chapter files directly inside `Chapters`.
-5. Open the app and tap **"Grant storage access"** — Android will take
+5. Open the app and tap **"Grant storage access"**. Android will take
    you to a permission screen; enable **"Allow access to manage all
    files"** (or similarly worded) for Novel Reader, then go back.
-6. The app will automatically read every `.txt` file in that folder,
-   every time you open it — no need to pick anything again.
+6. The app reads every `.txt` file in that folder each time you open it, so
+   there is nothing to pick again.
 
-**Note:** because the folder is hardcoded, if you ever want to point
-the app at a different location, that requires changing the path in
-`MainActivity.kt` (search for `chaptersDir`) and rebuilding.
+**Note:** the folder is hardcoded. To point the app somewhere else, change the
+path in `MainActivity.kt` (search for `chaptersDir`) and rebuild.
 
-## How to build the APK
+## Getting the APK
 
-### Option A — From your phone, using GitHub Actions (no laptop needed)
+### Option A — Download from GitHub Actions (no computer needed)
 
+The easiest way to get the app onto your phone. It works once the project is on
+GitHub and at least one build has finished.
 
-### Option B — On a computer with Android Studio
+1. Open the repository on [GitHub](https://github.com/ScellyP/Reader-Android).
+   Use **Desktop site** in your phone browser if the mobile view hides buttons.
+2. Tap the **Actions** tab.
+3. In the left sidebar, tap the workflow named **Build APK**. You will see a
+   list of runs.
+4. Pick a run with a **green checkmark** ✅ that actually built. If the newest
+   run is still yellow, wait a few minutes and refresh.
+5. Open that run and scroll to the **Artifacts** section at the bottom.
+   **No Artifacts section?** That push did not start a build (see
+   [When does a build run?](#when-does-a-build-run)); pick an older run, or
+   start one yourself with **Run workflow**.
+6. Tap **novel-reader-debug-apk** to download it. Your browser saves a `.zip`.
+7. Open your file manager, go to **Downloads**, and unzip it. Inside is
+   `app-debug.apk`.
+8. Tap `app-debug.apk` to install. Android will ask you to allow
+   **"install unknown apps"** for your browser or file manager the first time.
+   Allow it, then finish the install.
+
+If the Actions tab is empty, go to **Actions → Build APK → Run workflow** to
+start a build, then repeat steps 5–8.
+
+### Option B — Build on a computer with Android Studio
 
 1. Unzip this project.
-2. Open Android Studio → **Open** → select the unzipped `novelreader`
-   folder.
-3. Let Android Studio sync Gradle (first time may download the Gradle
-   wrapper + Android SDK components — needs internet).
-4. Plug in your Android phone (with USB debugging enabled) or use an
-   emulator, then click the green **Run ▶** button — or go to
-   **Build → Build Bundle(s)/APK(s) → Build APK(s)** to get an
-   installable `.apk` file you can copy to your phone.
-5. The built APK will be at:
-   `app/build/outputs/apk/debug/app-debug.apk`
+2. Open Android Studio → **Open** → select the unzipped project folder.
+3. Let Android Studio sync Gradle (the first time it downloads the Gradle
+   wrapper and Android SDK components, so it needs internet).
+4. Plug in your phone (with USB debugging on) or use an emulator, then click
+   the green **Run ▶** button, or go to
+   **Build → Build Bundle(s)/APK(s) → Build APK(s)**.
+5. The APK will be at `app/build/outputs/apk/debug/app-debug.apk`.
+
+This method isn't recommended: it is signed with Android's default debug key,
+so it can't update an app installed from a GitHub build. You would have to
+uninstall and reinstall each time.
+
+## When does a build run?
+
+Pushing to GitHub does **not** build the app every time. The workflow first
+runs a quick check and only starts the real build when the push is opted in:
+
+| What you do | Builds? |
+| --- | --- |
+| Commit message contains a version number, e.g. `v1.04.02: fix volume keys` | ✅ Yes |
+| Commit message contains `[build]`, e.g. `tweak splash [build]` | ✅ Yes |
+| Push a git tag starting with `v`, e.g. `v1.04.02` | ✅ Yes |
+| **Actions → Build APK → Run workflow** (manual) | ✅ Yes |
+| Any other commit (e.g. `fix typo in readme`) | ❌ No |
+| Commit message contains `[skip build]` | ❌ No, even with a version number |
+
+Notes:
+
+- A version number means the form `v1.04.02` (a `v`, then three numbers
+  separated by dots). `1.04.02` without the `v` does not count.
+- If you push several commits at once, any one of their messages can opt the
+  push in.
+- A push that doesn't build still shows a short **Build APK** run with a green
+  check; the build step is marked *skipped* and no APK is produced. Open the
+  run's summary to see why.
+- Putting `[skip ci]` in a message skips the whole workflow, which is GitHub's
+  own switch.
+
+## Signing and updates
+
+Android only installs a new APK as an *update* (keeping your data) when it is
+signed with the same key as the installed one and its version code is higher.
+Both are handled for you:
+
+- **Same key:** the workflow signs with a key stored in GitHub secrets. No
+  keystore is kept in the repo.
+- **Higher version code:** the version code is the GitHub Actions run number, so
+  every build is higher than the last. Skipped pushes still use up a run
+  number, so version codes may have gaps; that is harmless.
+
+**One-time setup** (repo → **Settings → Secrets and variables → Actions →
+New repository secret**). Create four secrets:
+
+| Secret | Value |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | your keystore file, base64-encoded (`base64 -w0 my.keystore` on Linux; `base64 -i my.keystore` on macOS) |
+| `ANDROID_KEYSTORE_PASSWORD` | the keystore password |
+| `ANDROID_KEY_ALIAS` | the key alias |
+| `ANDROID_KEY_PASSWORD` | the key password |
+
+If any of the four is missing, the build falls back to Android's debug key and
+shows a warning. That APK installs fine, but it can't update an app installed
+from a build signed with the real key.
+
+The first build with a new key can't update an app installed from an older
+build signed with a different key: uninstall once, and every later build
+updates in place. Your settings come back from `Novel/settings.txt` after that
+reinstall.
 
 ## Using the app
 
@@ -94,7 +173,7 @@ the app at a different location, that requires changing the path in
 
 While any menu is open (the chapter drawer or any popup panel), page
 gestures are suspended. A tap outside an open menu only closes it — it
-never paginates, scrolls or changes chapter.
+never paginates, scrolls, or changes chapter.
 
 ### Volume buttons
 
@@ -107,7 +186,7 @@ buttons always change the volume.
 
 **Volume keys in audio player** (🎨 panel, right under Smart scroll) is on by
 default: with the audio player open, the buttons change the media volume. Switch
-it off and they keep scrolling the page even while the audio player is open (any
+it off, and they keep scrolling the page even while the audio player is open (any
 other open menu still gives them to the volume). The setting is saved in
 `settings.txt` as `audioVolumeKeys`.
 
@@ -218,48 +297,22 @@ capitals) naming which playlist it came from.
 | --- | --- | --- |
 | A-B repeat | 🟡 Currently Testing | The logic works, but there are no buttons or seek-bar markers. |
 | Likes | 🟡 Currently Testing | Recorded, but there is no heart button. |
-| Audio delay / sync adjustment | 🟡 Currently Testing | It only stores an offset and nothing uses it. |
+| Audio delay/sync adjustment | 🟡 Currently Testing | It only stores an offset and nothing uses it. |
 | Crossfade between tracks | 🟡 Under Development | The trigger hook exists, but neither engine implements the overlap. |
 | Volume normalisation (ReplayGain) | 🟡 Under Development | `MainActivity.listAudioFiles()` needs to read the ReplayGain tags. Until then it changes nothing. |
 | Recently played | 🟡 Under Development | Recorded, but there is no picker entry for `@recent`. |
 | Custom playlist editor | 🟡 Logic ready | Playlist Editor UI Is still being worked on. |
 
-> Full internal architecture, engine details, native bridge, footnotes and
-> tests are in [Agents.md](Agents.md#audio-player-architecture).
+## Library (novel selector)
 
-## Security features to add
-
-The following are known gaps to close. None of these are fixed yet.
-
-1. **Chapter `Source:` line runs as HTML.** `reader.js` puts `ch.source`
-   into `innerHTML`. A crafted `.txt` file could run script with access to
-   `AndroidBridge`. Build the link with DOM calls and allow only `http` or
-   `https`.
-2. **Signing keys and passwords are in the repo.** Both keystores are
-   included, and `build.gradle` has the password `novelreader` in plain
-   text. Move them to GitHub secrets and rotate the key.
-3. **Bridge accepts any file path.** `getArtwork` and `nativeAudioLoad`
-   take any path, and the app holds all-files access. Restrict paths to
-   `Novel/Audio` after resolving them.
-4. **Playback service has no caller check.** `PlaybackService` is
-   `exported="true"` and `onGetSession` returns the session to anyone.
-   Validate the controller's package.
-5. **Sleep lock and unlock are easy to bypass.** The unlock time sits in
-   plain `localStorage`, and the lock relies on the phone clock. Changing
-   the clock or clearing app data defeats it. Track time with
-   `SystemClock.elapsedRealtime()` and keep the unlock state on the native
-   side.
-6. **WebView is too open.** Switch to `WebViewAssetLoader` instead of
-   `file://`, turn off `allowFileAccess`, and add a Content-Security-Policy.
-   Also add `shouldOverrideUrlLoading` so links open only in the external
-   browser.
-7. **`allowBackup="true"`.** Set it to `false`, or add backup rules.
-8. **`settings.txt` and `crash_log.txt` sit in shared storage.** Any app
-   with storage access can edit or read them, and the file overrides saved
-   settings on startup. Validate values on load, and move the crash log into
-   app-private storage.
-9. **Release build has `minifyEnabled false`.** Turn on R8 and ship a
-   release build, not debug.
+The app opens on a library screen: one card per novel, cover on top and the
+novel's name underneath (plus the chapter you're on, if any). The cover is an
+image inside that novel's own folder, e.g.
+`/storage/emulated/0/Novel/Shadow Slave/cover.jpg`. Looked-for names (jpg, jpeg,
+png or webp): `cover`, `folder`, `front`, `poster`, `thumbnail`, `thumb`, `art`,
+`image`; if none match, the first image file in the folder is used. Novels with
+no image get a placeholder with the first letter. Use **Switch novel** in the
+chapter list to come back to the library.
 
 ## Settings file
 
@@ -284,29 +337,56 @@ playing on the native player or the WebView fallback player; it simply
 re-checks 10 minutes later. Swiping the app away stops it
 unless music is playing.
 
-## Updating the installed app
-
-Builds are signed with a fixed key that is supplied through GitHub secrets
-(see `UPDATE_SIGNING.md`; no keystore is kept in the repo) and the
-version code is the GitHub Actions run number, so each new APK installs as an
-update over the previous one (data is kept). The very first build with this
-key cannot update an app installed from an older build signed with a different
-key: uninstall once, then every later build updates in place. Settings are
-restored from `Novel/settings.txt` after that one-time reinstall.
-
-## Library (novel selector)
-
-The app opens on a library screen: one card per novel, cover on top and the
-novel's name underneath (plus the chapter you're on, if any). The cover is an
-image inside that novel's own folder, e.g.
-`/storage/emulated/0/Novel/Shadow Slave/cover.jpg`. Looked-for names (jpg, jpeg,
-png or webp): `cover`, `folder`, `front`, `poster`, `thumbnail`, `thumb`, `art`,
-`image`; if none match, the first image file in the folder is used. Novels with
-no image get a placeholder with the first letter. Use **Switch novel** in the
-chapter list to come back to the library.
-
 ## Version number
 
-The current version is shown at the bottom of the side menu (e.g. `v1.00.00`).
-It lives in `app/src/main/assets/version.js` as `APP_VERSION`. For the version
-bump rules used by maintainers/AI, see [Agents.md](Agents.md#version-number).
+The current version is shown at the bottom of the side menu (e.g. `v1.04.01`).
+It lives in one place, `APP_VERSION` in `app/src/main/assets/version.js`, and is
+changed by hand: MAJOR stays until you decide to change it, MID goes up for a
+new feature, MINOR goes up for each bug fix. A failed or redone build never
+changes it.
+
+Use the same number in your commit message (e.g. `v1.04.02: fix volume keys`)
+when you want that commit built; see [When does a build run?](#when-does-a-build-run).
+This number is separate from Android's `versionCode`, which follows the
+Actions run number. The full rules are in [Agent.md](Agent.md#version-number).
+
+## Security features to add
+
+The following are known gaps to close. None of these are fixed yet.
+
+1. **Chapter `Source:` line runs as HTML.** `reader.js` puts `ch.source`
+   into `innerHTML`. A crafted `.txt` file could run script with access to
+   `AndroidBridge`. Build the link with DOM calls and allow only `http` or
+   `https`.
+2. **Keep keystores out of the repo.** Signing now comes from GitHub
+   secrets (see [Signing and updates](#signing-and-updates)) and `*.keystore`
+   is git-ignored, but older keystore files may still sit in your local copy
+   or in git history. Make sure none were ever committed; if one was, rotate
+   the key.
+3. **Bridge accepts any file path.** `getArtwork` and `nativeAudioLoad`
+   take any path, and the app holds all-files access. Restrict paths to
+   `Novel/Audio` after resolving them.
+4. **Playback service has no caller check.** `PlaybackService` is
+   `exported="true"` and `onGetSession` returns the session to anyone.
+   Validate the controller's package.
+5. **Sleep lock and unlock are easy to bypass.** The unlock time sits in
+   plain `localStorage`, and the lock relies on the phone clock. Changing
+   the clock or clearing app data defeats it. Track time with
+   `SystemClock.elapsedRealtime()` and keep the unlock state on the native
+   side.
+6. **WebView is too open.** Switch to `WebViewAssetLoader` instead of
+   `file://`, turn off `allowFileAccess`, and add a Content-Security-Policy.
+   Also add `shouldOverrideUrlLoading` so links open only in the external
+   browser.
+7. **`allowBackup="true"`.** Set it to `false`, or add backup rules.
+8. **`settings.txt` and `crash_log.txt` sit in shared storage.** Any app
+   with storage access can edit or read them, and the file overrides saved
+   settings on startup. Validate values on load, and move the crash log into
+   app-private storage.
+9. **Release build has `minifyEnabled false`.** Turn on R8 and ship a
+   release build, not debug.
+
+## For developers
+
+Architecture, the audio feature framework, the native bridge, versioning rules,
+packaging rules and notes for AI assistants are in [Agent.md](Agent.md).

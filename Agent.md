@@ -52,6 +52,28 @@ it. This is separate from Android's `versionCode`/`versionName` in
 `app/build.gradle`, which follows the GitHub Actions run number so each APK
 installs over the last one.
 
+## Build trigger (GitHub Actions)
+
+`.github/workflows/build-apk.yml` has two jobs. `gate` runs on every push and
+decides; `build` only runs when `gate` outputs `build=true`. A push builds when
+**any** of these holds (checked in this order):
+
+1. manual run (`workflow_dispatch`), or a pushed tag starting with `v`;
+2. otherwise, `[skip build]` in any pushed commit message -> **no build**
+   (beats rules 3 and 4);
+3. `[build]` in any pushed commit message;
+4. a version number matching `v<digits>.<digits>.<digits>` in any pushed commit
+   message (e.g. `v1.04.02: fix volume keys`).
+
+Commit messages are passed to the script through environment variables, never
+interpolated into the shell, so keep it that way. `versionCode` is still
+`GITHUB_RUN_NUMBER`; skipped pushes use up numbers, which only leaves gaps.
+
+When you give the owner a change, suggest a commit message that starts with the
+new `APP_VERSION` number (e.g. `v1.04.02`; a suffix like `-alpha` is optional) so
+the push builds; for docs-only or CI-only changes, suggest a message without a version
+number (or with `[skip build]`).
+
 ## Packaging rule for generated packages
 
 Every zip package generated for this app must contain **one top-level folder
@@ -301,4 +323,5 @@ layered renderer. Run `node tests/shatter-glass.test.js` for its geometry checks
 - **Update `Agents.md`** for internal changes: architecture, feature framework, native bridge, tests, versioning, packaging.
 - **Keep tests updated.** Add or adjust checks in `tests/` when behaviour changes.
 - **Follow the packaging rule.** Generated zips must contain one top-level folder named `novelreader`; GitHub uploads must put `app/src/main/assets/index.html` and `.github/workflows/` at repo root.
-- **Do not commit keystores.** Update signing is handled through GitHub secrets; see `UPDATE_SIGNING.md`.
+- **Suggest a commit message.** Start it with the new version (e.g. `v1.04.02: fix volume keys`) so the push builds. Docs/CI-only changes get a message with no version number, or `[skip build]`. See `Agent.md#build-trigger-github-actions`.
+- **Do not commit keystores.** Update signing is handled through GitHub secrets; see the "Signing and updates" section of `README.md`.

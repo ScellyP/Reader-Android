@@ -30,7 +30,7 @@ android {
     // If any of them is missing (e.g. a build from Android Studio), the build
     // falls back to Android's default debug key: that APK installs, but it
     // cannot update an app that was installed from a build signed with the
-    // real key (see UPDATE_SIGNING.md).
+    // real key (see "Signing and updates" in README.md).
     def signingPath = System.getenv("ANDROID_KEYSTORE_PATH")
     def signingStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
     def signingAlias = System.getenv("ANDROID_KEY_ALIAS")
