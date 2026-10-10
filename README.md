@@ -164,27 +164,6 @@ Open it with the ⏱ button in the sidebar header. Two modes:
   next occurrence. Switching between the two tabs never arms or disarms
   anything; only **Start** / **Set reminder** do.
 
-### Night lock
-
-Between **12:00 AM and 6:00 AM** the app locks itself: a full-screen
-"Time to sleep" screen covers everything, music is paused, and the Android
-back button just leaves the app. It lifts by itself at 6:00 AM. On Sundays,
-the 1st/3rd/5th Saturdays, and the listed holidays, tapping the moon advances
-its phase and spreads cracks across the lock screen. Reaching the hidden
-50–100 tap target unlocks the app for one hour. The unlock is kept by the app
-natively (`MoonUnlockStore.kt`): a record in app-private storage, signed with a
-key in the Android Keystore and timed on the phone's monotonic clock, so
-editing the page's storage or changing the phone's date/time cannot stretch the
-hour. It also allows native background audio. After it expires, the night lock
-returns if it is still before 6:00 AM. A restart of the phone ends an unlock in
-progress, and if the record cannot be saved or verified the app stays locked.
-(The 12:00 AM to 6:00 AM window itself still follows the phone's clock.) Other days show an inactive full moon. The lock
-window is set by `NIGHT_LOCK_START` / `NIGHT_LOCK_END` in `reader.js` and
-follows the phone's local clock. On active days, four edge impacts (one per
-side) grow in randomized order with 26 rays each. Shaded triangular facets,
-impact flashes, and a progress-scaled screen shake deepen the effect; reaching
-100% inverts the screen and leaves contrasting crack lines.
-
 ## Audio player
 
 The audio player is a hybrid: **VLC's playback reliability with Spotify's
