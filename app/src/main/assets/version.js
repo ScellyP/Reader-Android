@@ -37,9 +37,13 @@
      v1.01.07  seven small fixes after that feature
      v2.00.00  you decided it's time for a new MAJOR
    ========================================================================= */
-window.APP_VERSION = 'v1.04.04';
+window.APP_VERSION = 'v1.05.01';
 
 (function () {
   var el = document.getElementById('app-version');
-  if (el) el.textContent = window.APP_VERSION;
+  if (el) {
+    // Always labelled "demo" for now, so this build can't be mistaken for the
+    // real app. (Remove the next line to go back to demo-build-only labelling.)
+    el.textContent = window.APP_VERSION + ' \u00b7 demo';
+  }
 })();

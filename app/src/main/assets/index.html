@@ -2160,6 +2160,499 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
   #theme-panel, #session-settings-panel, #bookmarks-panel { animation-duration: .01s; }
 }
 </style>
+<style id="ampm-toggle">
+/* AM / PM switch on the Daily time tab (same look as the tab switcher). */
+#session-ampm-toggle {
+  display: flex; gap: 2px; align-self: center; width: 160px;
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 4px;
+}
+#session-ampm-toggle button {
+  flex: 1; background: transparent; color: var(--muted); border: none;
+  border-radius: 9px; padding: 11px 6px; font-size: 14px; font-weight: 700;
+  letter-spacing: .5px; cursor: pointer;
+  transition: background .18s ease, color .18s ease;
+}
+#session-ampm-toggle button:hover { color: var(--text); }
+#session-ampm-toggle button.active {
+  color: var(--text); background: var(--raised);
+  box-shadow: 0 1px 4px rgba(0,0,0,.45), inset 0 0 0 1px var(--border-strong);
+}
+</style>
+<style id="playlist-switcher">
+/* ---- Playlist switcher: animated list, sliding highlight, swipe to switch ---- */
+#audio-playlist-btn { touch-action: pan-y; user-select: none; -webkit-user-select: none; overflow: hidden; }
+#audio-playlist-btn-label { flex: 1; min-width: 0; text-align: left; }
+#audio-playlist-btn .ico { transition: transform .34s cubic-bezier(.34, 1.56, .64, 1); }
+#audio-playlist-btn-count, .pl-count {
+  flex-shrink: 0; font-size: 11px; font-weight: 700; line-height: 1;
+  font-variant-numeric: tabular-nums; color: var(--muted);
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 999px; padding: 4px 8px;
+}
+#audio-playlist-btn-count:empty { display: none; }
+
+/* Label slides in from the side you swiped toward; ends give a nudge. */
+@keyframes plSlideNext { from { opacity: 0; transform: translateX(16px); } to { opacity: 1; transform: none; } }
+@keyframes plSlidePrev { from { opacity: 0; transform: translateX(-16px); } to { opacity: 1; transform: none; } }
+.pl-slide-next { animation: plSlideNext .26s var(--ease) both; }
+.pl-slide-prev { animation: plSlidePrev .26s var(--ease) both; }
+@keyframes plNudgeL { 0%, 100% { transform: none; } 40% { transform: translateX(-7px); } }
+@keyframes plNudgeR { 0%, 100% { transform: none; } 40% { transform: translateX(7px); } }
+#audio-playlist-btn.pl-nudge-l { animation: plNudgeL .3s var(--ease); }
+#audio-playlist-btn.pl-nudge-r { animation: plNudgeR .3s var(--ease); }
+
+/* The list: a highlight pill (the ::before) glides between rows. */
+#audio-playlist-list { position: relative; scrollbar-width: none; overscroll-behavior: contain; }
+#audio-playlist-list::-webkit-scrollbar { display: none; width: 0; height: 0; }
+#audio-playlist-list::before {
+  content: ''; position: absolute; top: 0; left: 4px; right: 4px; z-index: 0;
+  height: var(--ind-h, 0px); opacity: var(--ind-o, 0);
+  transform: translateY(var(--ind-y, 0px));
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line); border-left: 3px solid var(--accent);
+  border-radius: 4px 12px 12px 4px;
+  box-shadow: 0 0 18px var(--accent-soft);
+  transition: transform .34s cubic-bezier(.34, 1.3, .64, 1), height .3s var(--ease), opacity .2s ease;
+  pointer-events: none;
+}
+#audio-playlist-list.no-ind-anim::before { transition: none; }
+#audio-playlist-list li { position: relative; z-index: 1; }
+#audio-playlist-list li.active { background: transparent; border-left-color: transparent; }
+#audio-playlist-list li:not(.active):hover { background: var(--panel); }
+#audio-playlist-list li .pl-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#audio-playlist-list li.active .pl-count { color: var(--accent-strong); border-color: var(--accent-line); }
+
+/* Rows pop in one after another when the list opens; it fades out on close. */
+@keyframes plItemIn { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+#audio-playlist-list.open li { animation: plItemIn .34s var(--ease) backwards; animation-delay: calc(var(--i, 0) * 32ms); }
+@keyframes plListOut { to { opacity: 0; transform: translateY(-6px) scale(.985); } }
+#audio-playlist-list.closing { animation: plListOut .19s ease both; pointer-events: none; }
+
+/* Check mark only shows (with a little pop) on the active row. */
+#audio-playlist-list .pl-check { opacity: 0; transform: scale(.3); transition: opacity .2s ease, transform .34s cubic-bezier(.34, 1.56, .64, 1); }
+#audio-playlist-list li.active .pl-check { opacity: 1; transform: none; }
+
+/* Equalizer on the playlist holding the current track; dances while playing. */
+.pl-eq { display: inline-flex; align-items: flex-end; gap: 2px; height: 13px; flex-shrink: 0; }
+.pl-eq i { width: 3px; height: 100%; background: var(--accent); border-radius: 2px; transform-origin: bottom; transform: scaleY(.35); }
+.pl-eq i:nth-child(2) { transform: scaleY(.8); }
+.pl-eq i:nth-child(3) { transform: scaleY(.55); }
+@keyframes plEq { from { transform: scaleY(.25); } to { transform: scaleY(1); } }
+#audio-panel:has(#audio-play-btn.is-playing) .pl-eq i { animation: plEq .8s ease-in-out infinite alternate; }
+#audio-panel:has(#audio-play-btn.is-playing) .pl-eq i:nth-child(2) { animation-duration: .6s; animation-delay: -.2s; }
+#audio-panel:has(#audio-play-btn.is-playing) .pl-eq i:nth-child(3) { animation-duration: .95s; animation-delay: -.45s; }
+
+@media (prefers-reduced-motion: reduce) {
+  #audio-playlist-list.open li, #audio-playlist-list.closing, .pl-slide-next, .pl-slide-prev,
+  #audio-playlist-btn.pl-nudge-l, #audio-playlist-btn.pl-nudge-r { animation: none; }
+  #audio-playlist-list::before { transition: none; }
+}
+</style>
+<style id="audio-extras">
+/* ---- Like / add-to-playlist / A-B repeat / curated playlists ---------------- */
+#audio-np-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+#audio-np-actions button {
+  width: 40px; height: 40px; display: flex; align-items: center; justify-content: center;
+  background: transparent; color: var(--muted); border: 1px solid transparent; border-radius: 50%;
+  cursor: pointer; transition: color .15s ease, background .15s ease, transform .2s var(--ease);
+}
+#audio-np-actions button:hover:not(:disabled) { background: var(--panel); color: var(--text); }
+#audio-np-actions button:active:not(:disabled) { transform: scale(.9); }
+#audio-np-actions button:disabled { opacity: .35; cursor: default; }
+#audio-np-actions .ico { width: 20px; height: 20px; }
+#audio-like-btn.liked { color: var(--danger, #e77a6a); }
+#audio-like-btn.liked .ico { fill: currentColor; animation: likePop .38s cubic-bezier(.34, 1.56, .64, 1); }
+@keyframes likePop { 0% { transform: scale(.6); } 60% { transform: scale(1.25); } 100% { transform: none; } }
+#audio-addto-btn.active { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-line); }
+
+/* A-B row under the seek bar */
+#audio-ab-row { display: flex; align-items: center; gap: 8px; min-height: 36px; }
+#audio-ab-row button {
+  flex-shrink: 0; min-width: 36px; height: 32px; padding: 0 10px;
+  background: var(--panel); color: var(--muted); border: 1px solid var(--border); border-radius: 10px;
+  font-size: 13px; font-weight: 700; cursor: pointer;
+  transition: background .15s ease, color .15s ease, border-color .15s ease, transform .15s var(--ease);
+}
+#audio-ab-row button:active:not(:disabled) { transform: scale(.94); }
+#audio-ab-row button:disabled { opacity: .35; cursor: default; }
+#audio-ab-row button.active { color: var(--accent-strong); background: var(--accent-soft); border-color: var(--accent-line); }
+#audio-ab-row #audio-ab-clear { min-width: 32px; width: 32px; padding: 0; display: flex; align-items: center; justify-content: center; margin-left: auto; }
+#audio-ab-row #audio-ab-clear.hidden { display: none; }
+#audio-ab-row #audio-ab-clear .ico { width: 14px; height: 14px; }
+#audio-ab-readout { flex: 1; min-width: 0; font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#audio-ab-row.looping #audio-ab-readout { color: var(--accent-strong); font-weight: 600; }
+
+/* Add-to-playlist chooser + new playlist name box */
+#audio-addto-list { list-style: none; margin: 0; padding: 6px; flex-shrink: 0; max-height: 220px; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--panel-2); border: 1px solid var(--border); border-radius: 14px; scrollbar-width: none; }
+#audio-addto-list::-webkit-scrollbar { display: none; }
+#audio-addto-list.hidden, #audio-newlist-row.hidden { display: none; }
+#audio-addto-list.open { animation: panelIn .22s var(--ease) both; transform-origin: top center; }
+#audio-addto-list li { display: flex; align-items: center; gap: 10px; padding: 12px 14px; min-height: 46px; border-radius: 12px; font-size: 13.5px; color: var(--muted); cursor: pointer; transition: background .15s ease, color .15s ease, transform .2s var(--ease); }
+#audio-addto-list li:hover { background: var(--panel); color: var(--text); }
+#audio-addto-list li:active { transform: scale(.985); }
+#audio-addto-list li.addto-heading { min-height: 0; padding: 6px 14px 8px; font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--faint, var(--muted)); cursor: default; }
+#audio-addto-list li.addto-heading:hover { background: transparent; color: var(--faint, var(--muted)); }
+#audio-addto-list li.active { color: var(--accent-strong); font-weight: 600; background: var(--accent-soft); }
+#audio-addto-list li .pl-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#audio-addto-list .ico { width: 16px; height: 16px; flex-shrink: 0; }
+#audio-addto-list .pl-check { opacity: 0; transform: scale(.3); transition: opacity .2s ease, transform .34s cubic-bezier(.34, 1.56, .64, 1); }
+#audio-addto-list li.active .pl-check { opacity: 1; transform: none; color: var(--accent); }
+
+#audio-newlist-row { display: flex; gap: 8px; flex-shrink: 0; animation: panelIn .22s var(--ease) both; }
+#audio-newlist-input { flex: 1; min-width: 0; min-height: 44px; padding: 0 14px; font-size: 14px; color: var(--text);
+  background: var(--panel-2); border: 1px solid var(--border-strong); border-radius: 12px; outline: none; }
+#audio-newlist-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+#audio-newlist-save { flex-shrink: 0; min-height: 44px; padding: 0 16px; font-size: 13.5px; font-weight: 700; color: var(--accent-strong);
+  background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: 12px; cursor: pointer; }
+#audio-newlist-save:active { transform: scale(.96); }
+
+/* Picker extras: separator before the virtual playlists, delete button, "New playlist" row */
+#audio-playlist-list li.pl-first-virtual { margin-top: 8px; }
+#audio-playlist-list li.pl-first-virtual::after {
+  content: ''; position: absolute; left: 12px; right: 12px; top: -6px; height: 1px; background: var(--border); pointer-events: none;
+}
+#audio-playlist-list li.pl-new { color: var(--accent-strong); gap: 10px; justify-content: flex-start; }
+#audio-playlist-list li.pl-new .ico { color: var(--accent); }
+.pl-del {
+  flex-shrink: 0; display: inline-flex; align-items: center; justify-content: center; gap: 2px;
+  height: 30px; min-width: 30px; padding: 0 6px; background: transparent; color: var(--faint, var(--muted));
+  border: none; border-radius: 15px; cursor: pointer; font-size: 11px; font-weight: 700;
+  transition: color .15s ease, background .15s ease;
+}
+.pl-del .ico { width: 15px; height: 15px; }
+.pl-del:hover { color: var(--danger, #e77a6a); }
+.pl-del.confirm { color: var(--danger, #e77a6a); background: rgba(231, 122, 106, .14); }
+.pl-del.confirm::after { content: 'Delete?'; padding-right: 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  #audio-like-btn.liked .ico, #audio-addto-list.open, #audio-newlist-row { animation: none; }
+}
+</style>
+<style id="spotify-kit">
+/* =========================================================================
+   Spotify Mobile UI Kit skin for the music panel (#audio-panel only).
+   Screens mapped from the kit:
+     User Library  -> #sp-view-library   (playlists as rows)
+     Album View    -> #sp-view-album     (cover, big green play, song rows)
+     Track View    -> #sp-view-track     (big art, seek, transport controls)
+     Track/Album Control -> #sp-sheet    ("..." sheet)
+     Mini player + bottom tabs -> #sp-mini, #sp-nav
+   View switching, mirroring and the sheet live in spotify-ui.js. Player
+   logic (audio-player.js) is unchanged except the queue rows, which now
+   render title and artist as two lines.
+   ========================================================================= */
+#audio-panel {
+  /* ---- THEME BRIDGE ------------------------------------------------------
+     Nothing in this skin is a fixed colour. Every --sp-* token below is read
+     from the app's own variables, which reader.js (applyUiTheme) rewrites on
+     <html> whenever the reading colours / presets / colour pickers change:
+         --bg  --text  --muted  --accent  --accent-strong  --accent-ink
+     We deliberately do NOT redefine those names here, so the panel always
+     inherits the live value. */
+  --sp-bg: var(--bg);
+  --sp-fg: var(--text);
+  --sp-sub: var(--muted);
+  --sp-accent: var(--accent);
+  --sp-accent-hi: var(--accent-strong);
+  --sp-ink: var(--accent-ink);                                    /* text sitting on the accent */
+  --sp-tint: color-mix(in srgb, var(--accent) 30%, var(--bg));    /* header gradient, replaces artwork tint */
+  --sp-cur: var(--sp-tint);
+
+  /* Translucent surfaces, derived from the text colour so they work on both
+     dark and light presets. These shadow the app tokens inside the panel only. */
+  --panel: color-mix(in srgb, var(--text) 8%, transparent);
+  --panel-2: color-mix(in srgb, var(--text) 10%, transparent);
+  --raised: color-mix(in srgb, var(--text) 30%, transparent);
+  --border: color-mix(in srgb, var(--text) 10%, transparent);
+  --border-strong: color-mix(in srgb, var(--text) 18%, transparent);
+
+  top: 0; left: 0; right: 0; bottom: var(--nav-bar-height);
+  width: 100vw; max-width: none; height: auto;
+  padding: 0; gap: 0;
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 0; border-radius: 0; box-shadow: none;
+  background: var(--bg); background-image: none;
+  color: var(--text); font-family: var(--font-ui);
+}
+#audio-panel.hidden { display: flex; }
+/* tinted gradient behind the content, like every kit screen */
+#audio-panel::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 62%;
+  background: linear-gradient(180deg, var(--sp-cur) 0%, transparent 100%);
+  pointer-events: none; z-index: 0; transition: background .4s ease;
+}
+#audio-panel[data-view="library"] { --sp-cur: color-mix(in srgb, var(--accent) 38%, var(--bg)); }
+
+#sp-views {
+  position: relative; z-index: 1; flex: 1 1 auto; overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: contain; scrollbar-width: none;
+  padding-top: var(--status-bar-height);
+}
+#sp-views::-webkit-scrollbar { display: none; }
+.sp-view { display: none; flex-direction: column; padding-bottom: 16px; }
+#audio-panel[data-view="library"] #sp-view-library,
+#audio-panel[data-view="album"] #sp-view-album,
+#audio-panel[data-view="track"] #sp-view-track { display: flex; animation: spIn .22s var(--ease) both; }
+@keyframes spIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+.sp-topbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; min-height: 52px; }
+.sp-icon-btn {
+  width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  background: none; border: 0; border-radius: 50%; color: var(--text); cursor: pointer;
+  transition: transform .15s var(--ease), background .15s ease;
+}
+.sp-icon-btn .ico { width: 24px; height: 24px; }
+.sp-icon-btn:active { transform: scale(.9); background: color-mix(in srgb, var(--text) 10%, transparent); }
+.sp-icon-btn.active { color: var(--sp-accent); }
+
+/* ---- Library ----------------------------------------------------------- */
+#sp-lib-hero { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 0 20px 24px; }
+#sp-lib-avatar {
+  width: 96px; height: 96px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(145deg, var(--sp-accent-hi), color-mix(in srgb, var(--accent) 45%, var(--bg))); color: var(--sp-ink); box-shadow: 0 8px 28px rgba(0,0,0,.4);
+}
+#sp-lib-avatar .ico { width: 44px; height: 44px; stroke-width: 1.5; }
+.sp-pill, #audio-scan-btn {
+  display: inline-flex; align-items: center; gap: 8px; min-height: 30px; padding: 6px 18px;
+  border: 0; border-radius: 999px; background: color-mix(in srgb, var(--bg) 45%, transparent); color: var(--text);
+  font: 700 12px/1 var(--font-ui); letter-spacing: .2px; cursor: pointer;
+}
+#audio-scan-btn .ico { width: 14px; height: 14px; }
+#audio-scan-btn:active { transform: scale(.95); }
+#sp-lib-stats { display: flex; justify-content: center; gap: 56px; margin-top: 6px; }
+#sp-lib-stats div { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+#sp-lib-stats b { font-size: 13px; font-weight: 600; }
+#sp-lib-stats span { font-size: 10px; letter-spacing: 1px; color: var(--sp-sub); }
+
+#audio-playlists-heading, #audio-song-list-heading { font: 700 20px/1.2 var(--font-ui); letter-spacing: .2px; color: var(--text); margin: 0; }
+#audio-playlists-heading { padding: 0 20px 8px; }
+#audio-song-list-heading { display: none; }
+
+#audio-playlist-row { display: none !important; }       /* dropdown replaced by the rows */
+#audio-playlist-list, #audio-playlist-list.hidden {
+  display: flex !important; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none;
+  background: none; border: 0; box-shadow: none; border-radius: 0; max-height: none; overflow: visible;
+  animation: none !important; opacity: 1 !important; pointer-events: auto !important;
+}
+#audio-playlist-list::before { display: none; }
+#audio-playlist-list li {
+  --c1: color-mix(in srgb, var(--accent) 55%, var(--bg)); --c2: color-mix(in srgb, var(--accent) 22%, var(--bg)); --c3: color-mix(in srgb, var(--accent) 38%, var(--bg)); --c4: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  position: relative; display: grid; grid-template-columns: 56px 1fr auto; grid-template-rows: auto auto;
+  column-gap: 14px; align-items: center; margin: 0; padding: 8px 48px 8px 20px; min-height: 72px;
+  border: 0; border-radius: 0; box-shadow: none; color: var(--text); cursor: pointer;
+  background-color: transparent;
+}
+#audio-playlist-list li:nth-child(4n+2) { --c1: color-mix(in srgb, var(--accent) 40%, var(--bg)); --c2: color-mix(in srgb, var(--accent) 60%, var(--bg)); --c3: color-mix(in srgb, var(--accent) 16%, var(--bg)); --c4: color-mix(in srgb, var(--accent) 30%, var(--bg)); }
+#audio-playlist-list li:nth-child(4n+3) { --c1: color-mix(in srgb, var(--accent) 24%, var(--bg)); --c2: color-mix(in srgb, var(--accent) 48%, var(--bg)); --c3: color-mix(in srgb, var(--accent) 64%, var(--bg)); --c4: color-mix(in srgb, var(--accent) 10%, var(--bg)); }
+#audio-playlist-list li:nth-child(4n+4) { --c1: color-mix(in srgb, var(--accent) 50%, var(--bg)); --c2: color-mix(in srgb, var(--accent) 18%, var(--bg)); --c3: color-mix(in srgb, var(--accent) 34%, var(--bg)); --c4: color-mix(in srgb, var(--accent) 62%, var(--bg)); }
+#audio-playlist-list li::before {                          /* 2x2 mosaic thumbnail */
+  content: ""; grid-column: 1; grid-row: 1 / span 2; width: 56px; height: 56px;
+  background:
+    linear-gradient(var(--sp-bg), var(--sp-bg)) center / 1px 100% no-repeat,
+    linear-gradient(var(--sp-bg), var(--sp-bg)) center / 100% 1px no-repeat,
+    conic-gradient(var(--c1) 0 25%, var(--c2) 0 50%, var(--c3) 0 75%, var(--c4) 0);
+}
+#audio-playlist-list li .pl-name { grid-column: 2; grid-row: 1; align-self: end; font-size: 16px; font-weight: 500; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#audio-playlist-list li .pl-count {
+  grid-column: 2; grid-row: 2; align-self: start; justify-self: start; padding: 0; border: 0; background: none;
+  font-size: 13px; font-weight: 400; color: var(--sp-sub); border-radius: 0;
+}
+#audio-playlist-list li .pl-count::after { content: " songs"; }
+#audio-playlist-list li .pl-eq, #audio-playlist-list li .pl-del { position: static; grid-column: 3; grid-row: 1 / span 2; margin-right: 6px; }
+#audio-playlist-list li .pl-eq i { background: var(--sp-accent); }
+#audio-playlist-list li .pl-check { display: none; }
+/* chevron on playlist rows: a mask painted with the secondary text colour */
+#audio-playlist-list li::after, #audio-playlist-list li.pl-first-virtual::after {
+  content: ""; display: block; position: absolute; left: auto; top: 50%; right: 18px; width: 20px; height: 20px; margin-top: -10px;
+  background: var(--sp-sub); pointer-events: none;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 5l7 7-7 7'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 5l7 7-7 7'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+#audio-playlist-list li.pl-first-virtual { margin-top: 0; }
+#audio-playlist-list li.active { background-color: color-mix(in srgb, var(--text) 7%, transparent); box-shadow: none; border-radius: 0; }
+#audio-playlist-list li.active .pl-name { color: var(--sp-accent); }
+#audio-playlist-list li.active .pl-count { color: var(--sp-sub); border: 0; }
+#audio-playlist-list li:not(.active):hover { background-color: color-mix(in srgb, var(--text) 5%, transparent); }
+#audio-playlist-list li:active { transform: none; background-color: color-mix(in srgb, var(--text) 10%, transparent); }
+
+/* ---- Songs (Album View) ------------------------------------------------- */
+#sp-album-cover {
+  width: min(232px, 62vw); aspect-ratio: 1; margin: 6px auto 0; display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--text) 12%, transparent); color: var(--sp-sub); box-shadow: 0 10px 40px rgba(0,0,0,.5); overflow: hidden;
+}
+#sp-album-cover .ico { width: 64px; height: 64px; stroke-width: 1.2; }
+#sp-album-cover img, #sp-mini-art img, #sp-sheet-art img { width: 100%; height: 100%; object-fit: cover; display: block; }
+#sp-album-title { font: 700 24px/1.2 var(--font-ui); margin: 26px 20px 0; overflow-wrap: anywhere; }
+#sp-album-meta { font-size: 13px; color: var(--sp-sub); margin: 6px 20px 0; }
+#sp-album-actions { display: flex; align-items: center; gap: 12px; padding: 10px 20px 14px; }
+.sp-fab {
+  margin-left: auto; width: 56px; height: 56px; border-radius: 50%; border: 0; cursor: pointer;
+  background: var(--sp-accent); color: var(--sp-ink); display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 6px 18px rgba(0,0,0,.35); transition: transform .15s var(--ease), background .15s ease;
+}
+.sp-fab:active { transform: scale(.92); }
+.sp-fab:disabled { opacity: .4; }
+.sp-fab .ico { width: 28px; height: 28px; }
+.sp-i-pause { display: none; }
+#audio-panel.sp-playing .sp-i-play { display: none; }
+#audio-panel.sp-playing .sp-i-pause { display: block; }
+#sp-album-shuffle.active { color: var(--sp-accent); }
+
+#audio-queue {
+  list-style: none; margin: 0; padding: 0; flex: 0 0 auto; min-height: 0; overflow: visible;
+}
+#audio-queue li {
+  display: flex; align-items: center; gap: 12px; margin: 0; padding: 9px 20px; min-height: 58px;
+  border: 0; border-radius: 0; background: transparent; box-shadow: none; animation: none; color: var(--text);
+}
+#audio-queue li:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+#audio-queue li:active { background: color-mix(in srgb, var(--text) 10%, transparent); transform: none; }
+.audio-track-label { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.audio-track-label .sp-t, .audio-track-label .sp-a { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.audio-track-label .sp-t { font-size: 16px; font-weight: 400; color: var(--text); }
+.audio-track-label .sp-a { font-size: 13px; color: var(--sp-sub); }
+#audio-queue li.playing { background: transparent; border-radius: 0; border: 0; }
+#audio-queue li.playing .sp-t { color: var(--sp-accent); }
+#audio-queue li.playing .sp-t::before {                    /* little bars next to the playing title */
+  content: ""; display: inline-block; width: 14px; height: 12px; margin-right: 8px; vertical-align: -1px;
+  background: var(--sp-accent); -webkit-mask: var(--sp-bars) center / contain no-repeat; mask: var(--sp-bars) center / contain no-repeat;
+}
+#audio-panel { --sp-bars: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 12'%3E%3Crect x='0' y='5' width='3' height='7' rx='1'/%3E%3Crect x='5.5' y='0' width='3' height='12' rx='1'/%3E%3Crect x='11' y='3' width='3' height='9' rx='1'/%3E%3C/svg%3E"); }
+.audio-track-playlist { font-size: 11px; color: var(--sp-sub); border: 0; background: color-mix(in srgb, var(--text) 8%, transparent); }
+.audio-track-duration { font-size: 12px; color: var(--sp-sub); }
+#audio-empty, #audio-status-note { color: var(--sp-sub); font-size: 13px; line-height: 1.55; padding: 14px 20px; border: 0; text-align: left; }
+#audio-empty code { color: var(--text); }
+
+/* ---- Now playing (Track View) ------------------------------------------- */
+#sp-track-context { flex: 1; min-width: 0; text-align: center; font-size: 12px; font-weight: 700; letter-spacing: .3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#audio-now-playing {
+  width: 100%; max-width: 440px; margin: 0 auto; gap: 8px; padding: 6px 24px 0;
+  background: none; border: 0; border-radius: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+#audio-np-top { display: grid; grid-template-columns: 1fr auto; column-gap: 8px; row-gap: 0; align-items: center; }
+#audio-artwork {
+  grid-column: 1 / -1; width: 100%; height: auto; aspect-ratio: 1; margin: 6px 0 30px; border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 12%, transparent); border: 0; color: var(--sp-sub); overflow: hidden;
+  display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 44px rgba(0,0,0,.5);
+}
+#audio-artwork .ico { width: 72px; height: 72px; stroke-width: 1.2; }
+#audio-artwork img { width: 100%; height: 100%; object-fit: cover; }
+#audio-np-text { min-width: 0; }
+#audio-np-title { font: 700 22px/1.25 var(--font-ui); color: var(--text); }
+#audio-np-artist { font-size: 15px; color: var(--sp-sub); margin-top: 3px; }
+#audio-np-actions { display: flex; align-items: center; gap: 0; }
+#audio-np-actions button { width: 42px; height: 42px; color: var(--text); }
+#audio-np-actions .ico { width: 24px; height: 24px; }
+#audio-like-btn.liked { color: var(--sp-accent); }
+#audio-np-actions button:hover:not(:disabled) { background: none; }
+
+#audio-seek-row { display: grid; grid-template-columns: 1fr 1fr; row-gap: 0; margin-top: 14px; color: var(--sp-sub); font-size: 11px; }
+#audio-seek { grid-column: 1 / -1; grid-row: 1; --accent: var(--text); --accent-strong: var(--text); --track: 4px; --thumb: 12px; width: 100%; }
+#audio-elapsed { grid-row: 2; justify-self: start; }
+#audio-duration { grid-row: 2; justify-self: end; }
+#audio-panel input[type="range"] { --accent: var(--text); --accent-strong: var(--text); --track: 4px; --thumb: 12px; --control-edge: color-mix(in srgb, var(--text) 30%, transparent); }
+#audio-panel input[type="range"]::-webkit-slider-thumb { box-shadow: none; }
+
+#audio-ab-row { min-height: 0; gap: 8px; padding-top: 6px; font-size: 12px; color: var(--sp-sub); }
+#audio-ab-row button { background: color-mix(in srgb, var(--text) 10%, transparent); border: 0; color: var(--text); border-radius: 999px; min-width: 34px; height: 28px; font-weight: 700; }
+#audio-ab-row button.active { background: var(--sp-accent); color: var(--sp-ink); }
+
+#audio-controls { width: 100%; max-width: 440px; margin: 10px auto 0; padding: 0 24px; display: flex; align-items: center; justify-content: space-between; gap: 0; }
+#audio-controls button { width: 48px; height: 48px; color: var(--text); background: none; border: 0; }
+#audio-controls button .ico { width: 24px; height: 24px; }
+#audio-controls #audio-prev-btn .ico, #audio-controls #audio-next-btn .ico { width: 32px; height: 32px; }
+#audio-controls button.active { color: var(--sp-accent); }
+#audio-controls button:disabled { opacity: .3; }
+#audio-panel #audio-play-btn, #audio-panel #audio-play-btn:hover:not(:disabled), #audio-panel #audio-play-btn:active:not(:disabled) {
+  width: 66px !important; height: 66px !important; border-radius: 50%;
+  background: var(--text) !important; color: var(--bg) !important; box-shadow: none !important;
+}
+#audio-panel #audio-play-btn .ico { width: 32px; height: 32px; }
+#audio-panel #audio-play-btn:disabled { opacity: .35; }
+#audio-play-btn::before, #audio-play-btn.is-playing::before { display: none; animation: none; }
+
+#audio-addto-list { margin: 8px 24px 0; background: color-mix(in srgb, var(--bg) 35%, transparent); border: 0; border-radius: 12px; }
+#audio-newlist-row { margin: 8px 24px 0; }
+#audio-newlist-row input { background: color-mix(in srgb, var(--text) 10%, transparent); border: 0; color: var(--text); }
+#audio-newlist-save { background: var(--sp-accent); color: var(--sp-ink); border: 0; font-weight: 700; }
+
+#sp-settings { margin: 26px 20px 8px; padding: 16px; border-radius: 12px; background: color-mix(in srgb, var(--bg) 32%, transparent); display: flex; flex-direction: column; gap: 14px; }
+.sp-card-title { font: 700 16px/1 var(--font-ui); }
+#sp-settings .audio-row { gap: 12px; font-size: 13.5px; color: var(--text); }
+#sp-settings .audio-row label { color: var(--sp-sub); min-width: 74px; }
+#sp-settings .audio-row-value { color: var(--text); }
+#sp-settings select { background: color-mix(in srgb, var(--text) 10%, transparent); border: 0; color: var(--text); border-radius: 8px; min-height: 38px; }
+
+/* ---- Mini player + tabs ------------------------------------------------- */
+#sp-mini {
+  position: relative; z-index: 2; flex: 0 0 auto; height: 56px; margin: 0 8px 6px; padding: 0 6px 0 8px;
+  display: flex; align-items: center; gap: 10px; border-radius: 8px; overflow: hidden; cursor: pointer;
+  background: color-mix(in srgb, var(--accent) 24%, var(--bg));
+  box-shadow: 0 4px 16px rgba(0,0,0,.4);
+}
+#sp-mini.hidden { display: none; }
+#sp-mini-art { width: 40px; height: 40px; border-radius: 4px; overflow: hidden; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--text) 15%, transparent); }
+#sp-mini-art .ico { width: 20px; height: 20px; }
+#sp-mini-text { flex: 1; min-width: 0; }
+#sp-mini-line { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#sp-mini-line b { font-weight: 700; }
+#sp-mini-artist { color: color-mix(in srgb, var(--text) 70%, transparent); }
+#sp-mini-artist:not(:empty)::before { content: " \2022 "; }
+#sp-mini-sub { font-size: 11px; font-weight: 700; color: var(--sp-accent-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+#sp-mini-play { width: 44px; height: 44px; border: 0; background: none; color: var(--text); display: flex; align-items: center; justify-content: center; flex-shrink: 0; cursor: pointer; }
+#sp-mini-play .ico { width: 26px; height: 26px; }
+#sp-mini-bar { position: absolute; left: 8px; right: 8px; bottom: 0; height: 2px; background: color-mix(in srgb, var(--text) 28%, transparent); border-radius: 2px; }
+#sp-mini-fill { display: block; height: 100%; width: 0; background: var(--text); }
+
+#sp-nav {
+  position: relative; z-index: 2; flex: 0 0 auto; display: flex; background: color-mix(in srgb, var(--bg) 94%, transparent);
+  padding: 6px 0 calc(6px + env(safe-area-inset-bottom, 0px));
+}
+#sp-nav button {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 6px 0;
+  background: none; border: 0; color: var(--sp-sub); font: 500 10px/1 var(--font-ui); cursor: pointer;
+}
+#sp-nav button .ico { width: 24px; height: 24px; }
+#sp-nav button.active { color: var(--text); }
+#audio-panel[data-view="track"] #sp-mini, #audio-panel[data-view="track"] #sp-nav { display: none; }
+
+/* ---- "..." sheet --------------------------------------------------------- */
+#sp-sheet { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; justify-content: flex-end; }
+#sp-sheet.hidden { display: none; }
+#sp-sheet-scrim { position: absolute; inset: 0; background: color-mix(in srgb, var(--bg) 55%, transparent); }
+#sp-sheet-body {
+  position: relative; max-height: 94%; overflow-y: auto; scrollbar-width: none; text-align: center;
+  padding: calc(18px + var(--status-bar-height)) 0 calc(16px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(180deg, var(--sp-tint) 0%, var(--sp-bg) 300px);
+  border-radius: 14px 14px 0 0; animation: spUp .26s var(--ease) both;
+}
+@keyframes spUp { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+#sp-sheet-art { width: 150px; height: 150px; margin: 0 auto; display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--text) 12%, transparent); box-shadow: 0 8px 30px rgba(0,0,0,.45); overflow: hidden; }
+#sp-sheet-art .ico { width: 48px; height: 48px; stroke-width: 1.2; }
+#sp-sheet-title { font: 700 18px/1.3 var(--font-ui); margin: 22px 24px 0; overflow-wrap: anywhere; }
+#sp-sheet-artist { font-size: 13px; color: var(--sp-sub); margin: 4px 24px 22px; }
+#sp-sheet-list { display: flex; flex-direction: column; padding: 8px 0; text-align: left; }
+#sp-sheet-list button, #sp-sleep-opts button {
+  display: flex; align-items: center; gap: 22px; width: 100%; padding: 16px 32px; background: none; border: 0;
+  color: var(--text); font: 400 16px/1.2 var(--font-ui); cursor: pointer; text-align: left;
+}
+#sp-sheet-list button:disabled { opacity: .35; }
+#sp-sheet-list button:active:not(:disabled) { background: color-mix(in srgb, var(--text) 8%, transparent); }
+#sp-sheet-list .ico { width: 24px; height: 24px; color: var(--text); }
+#sp-sheet-list em { margin-left: auto; font-style: normal; font-size: 13px; color: var(--sp-sub); }
+#sp-sleep-opts { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 32px 12px 78px; }
+#sp-sleep-opts.hidden { display: none; }
+#sp-sleep-opts button { width: auto; padding: 8px 14px; font-size: 13px; background: color-mix(in srgb, var(--text) 10%, transparent); border-radius: 999px; }
+#sp-sleep-opts button.on { background: var(--sp-accent); color: var(--sp-ink); font-weight: 700; }
+#sp-sheet-close { display: block; width: 100%; padding: 18px; margin-top: 8px; background: none; border: 0; color: var(--text); font: 400 16px var(--font-ui); cursor: pointer; }
+
+@media (prefers-reduced-motion: reduce) {
+  #audio-panel[data-view] .sp-view, #sp-sheet-body { animation: none !important; }
+}
+</style>
 </head>
 <body>
 <!-- Icon sprite: 24x24 grid, 1.75px stroke, round caps/joins (set in .ico). -->
@@ -2195,6 +2688,16 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
   <symbol id="i-lock-open" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 6.6-1.6"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.2"/><circle cx="12" cy="7.9" r=".6"/></symbol>
   <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M5 7h7M16 7h3M5 17h3M12 17h7"/><circle cx="14" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 19.6s-7.2-4.4-7.2-9.7A4.1 4.1 0 0 1 12 7.6a4.1 4.1 0 0 1 7.2 2.3c0 5.3-7.2 9.7-7.2 9.7z"/></symbol>
+  <symbol id="i-playlist-add" viewBox="0 0 24 24"><path d="M4.5 7h10M4.5 12h6.5M4.5 17h6.5"/><path d="M17.5 12.5v6M14.5 15.5h6"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M9.5 7V5h5v2M7 7l.8 12.2h8.4L17 7"/></symbol>
+  <symbol id="sp-more" viewBox="0 0 24 24"><path d="M5.5 12h.01M12 12h.01M18.5 12h.01" stroke-width="3"/></symbol>
+  <symbol id="sp-library" viewBox="0 0 24 24"><path d="M5 4.5v15M10 4.5v15M14.5 6.5l4.6 12.5"/></symbol>
+  <symbol id="sp-moon" viewBox="0 0 24 24"><path d="M20 14.6A8 8 0 0 1 9.4 4a8 8 0 1 0 10.6 10.6Z"/></symbol>
+  <symbol id="sp-play-solid" viewBox="0 0 24 24"><path d="M8 5.3v13.4a.6.6 0 0 0 .9.5l10.9-6.7a.6.6 0 0 0 0-1L8.9 4.8a.6.6 0 0 0-.9.5Z"/></symbol>
+  <symbol id="sp-pause-solid" viewBox="0 0 24 24"><rect x="6.5" y="5" width="4" height="14" rx="1"/><rect x="13.5" y="5" width="4" height="14" rx="1"/></symbol>
+  <symbol id="sp-prev-solid" viewBox="0 0 24 24"><rect x="5" y="5" width="2.4" height="14" rx="1"/><path d="M19.2 6v12a.6.6 0 0 1-.95.5L9.9 12.5a.6.6 0 0 1 0-1l8.35-6A.6.6 0 0 1 19.2 6Z"/></symbol>
+  <symbol id="sp-next-solid" viewBox="0 0 24 24"><rect x="16.6" y="5" width="2.4" height="14" rx="1"/><path d="M4.8 6v12a.6.6 0 0 0 .95.5l8.35-6a.6.6 0 0 0 0-1l-8.35-6A.6.6 0 0 0 4.8 6Z"/></symbol>
 </svg>
 
 <!-- Launch splash: pure HTML/CSS so it paints on the very first frame, before
@@ -2417,6 +2920,10 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
       </div>
 
       <div id="session-mode-time" class="session-mode-view hidden">
+        <div id="session-ampm-toggle" role="group" aria-label="AM or PM">
+          <button id="session-am-btn" type="button" aria-pressed="true">AM</button>
+          <button id="session-pm-btn" type="button" aria-pressed="false">PM</button>
+        </div>
         <p class="session-panel-hint">Turn the dial to pick a time. You'll be reminded to take a break at that time every day.</p>
         <div id="session-time-actions">
           <button id="session-time-set-btn" class="session-action-btn" type="button">Set reminder</button>
@@ -2428,96 +2935,214 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
       <button id="session-limit-off-btn" type="button">Turn off reading timer</button>
     </div>
 
-    <div id="audio-panel" class="hidden">
-      <div id="audio-panel-header">
-        <div class="panel-title-row audio-title-group">
-          <span id="audio-panel-title"><svg class="ico"><use href="#i-headphones"/></svg>Music</span>
-          <button id="audio-scan-btn" type="button"><svg class="ico"><use href="#i-refresh"/></svg>Rescan</button>
-        </div>
-        <button type="button" class="panel-close" data-close-panel title="Close" aria-label="Close music"><svg class="ico"><use href="#i-close"/></svg></button>
-      </div>
+    <div id="audio-panel" class="hidden" data-view="album">
+      <div id="sp-views">
 
-      <!-- Playlist selector: an inline expand/collapse list living in the
-           panel's normal document flow (not a separate floating overlay).
-           Selecting an item never rebuilds this list's own DOM from
-           inside its own click handler — see renderPlaylistOptions() —
-           which is what previously let the click's bubble phase see a
-           detached target and made closeOnOutsideClick() close the
-           whole panel instead of just this list. -->
-      <div class="audio-row" id="audio-playlist-row">
-        <label>Playlist</label>
-        <button type="button" id="audio-playlist-btn" aria-expanded="false">
-          <span id="audio-playlist-btn-label">All songs</span>
-          <svg class="ico"><use href="#i-chev-down"/></svg>
-        </button>
-      </div>
-      <ul id="audio-playlist-list" class="hidden"></ul>
-
-      <div id="audio-now-playing">
-        <div id="audio-np-top">
-          <div id="audio-artwork"><svg class="ico"><use href="#i-music"/></svg></div>
-          <div id="audio-np-text">
-            <div id="audio-np-title">Nothing playing</div>
-            <div id="audio-np-artist">Pick a track below</div>
+        <!-- ============ LIBRARY (kit: "User Library") ============ -->
+        <section id="sp-view-library" class="sp-view" aria-label="Library">
+          <div class="sp-topbar">
+            <span></span>
+            <button type="button" class="sp-icon-btn" data-close-panel title="Close" aria-label="Close music"><svg class="ico"><use href="#i-close"/></svg></button>
           </div>
-        </div>
-        <div id="audio-seek-row">
-          <span id="audio-elapsed">0:00</span>
-          <input type="range" id="audio-seek" min="0" max="1000" value="0" step="1" disabled>
-          <span id="audio-duration">0:00</span>
-        </div>
+          <div id="sp-lib-hero">
+            <div id="sp-lib-avatar"><svg class="ico"><use href="#i-headphones"/></svg></div>
+            <button id="audio-scan-btn" type="button" class="sp-pill"><svg class="ico"><use href="#i-refresh"/></svg>Rescan library</button>
+            <div id="sp-lib-stats">
+              <div><b id="sp-stat-playlists">0</b><span>PLAYLISTS</span></div>
+              <div><b id="sp-stat-songs">0</b><span>SONGS</span></div>
+            </div>
+          </div>
+          <div id="audio-playlists-heading">Playlists</div>
+          <!-- Playlist selector. The old dropdown button stays in the DOM
+               because audio-player.js drives it (label/count/swipe); the kit
+               hides it and shows the list as rows. Selecting an item never
+               rebuilds this list from inside its own click handler (see
+               renderPlaylistOptions() in audio-player.js). -->
+          <div class="audio-row" id="audio-playlist-row">
+            <label>Playlist</label>
+            <button type="button" id="audio-playlist-btn" aria-expanded="false">
+              <span id="audio-playlist-btn-label">All songs</span>
+              <span id="audio-playlist-btn-count"></span>
+              <svg class="ico"><use href="#i-chev-down"/></svg>
+            </button>
+          </div>
+          <ul id="audio-playlist-list" class="hidden"></ul>
+        </section>
+
+        <!-- ============ SONGS (kit: "Album View") ============ -->
+        <section id="sp-view-album" class="sp-view" aria-label="Songs">
+          <div class="sp-topbar">
+            <button type="button" class="sp-icon-btn" id="sp-back-library" title="Library" aria-label="Back to library"><svg class="ico"><use href="#i-chev-left"/></svg></button>
+            <button type="button" class="sp-icon-btn" data-close-panel title="Close" aria-label="Close music"><svg class="ico"><use href="#i-close"/></svg></button>
+          </div>
+          <div id="sp-album-cover"><svg class="ico"><use href="#i-music"/></svg></div>
+          <div id="sp-album-title">All songs</div>
+          <div id="sp-album-meta"></div>
+          <div id="sp-album-actions">
+            <button type="button" class="sp-icon-btn" id="sp-album-shuffle" title="Shuffle" aria-label="Shuffle"><svg class="ico"><use href="#i-shuffle"/></svg></button>
+            <button type="button" class="sp-icon-btn" data-sp-more title="More" aria-label="More options"><svg class="ico"><use href="#sp-more"/></svg></button>
+            <button type="button" id="sp-album-play" class="sp-fab" title="Play or pause" aria-label="Play or pause">
+              <svg class="ico fill sp-i-play"><use href="#sp-play-solid"/></svg>
+              <svg class="ico fill sp-i-pause"><use href="#sp-pause-solid"/></svg>
+            </button>
+          </div>
+          <div id="audio-song-list-heading">Songs</div>
+          <ul id="audio-queue"></ul>
+          <div id="audio-empty">No audio files yet. Put music in <code>/storage/emulated/0/Novel/Audio</code>, then tap Rescan library.</div>
+          <div id="audio-status-note"></div>
+        </section>
+
+        <!-- ============ NOW PLAYING (kit: "Track View") ============ -->
+        <section id="sp-view-track" class="sp-view" aria-label="Now playing">
+          <div class="sp-topbar">
+            <button type="button" class="sp-icon-btn" id="sp-track-down" title="Back" aria-label="Back to songs"><svg class="ico"><use href="#i-chev-down"/></svg></button>
+            <div id="sp-track-context">All songs</div>
+            <button type="button" class="sp-icon-btn" data-sp-more title="More" aria-label="More options"><svg class="ico"><use href="#sp-more"/></svg></button>
+          </div>
+
+          <div id="audio-now-playing">
+            <div id="audio-np-top">
+              <div id="audio-artwork"><svg class="ico"><use href="#i-music"/></svg></div>
+              <div id="audio-np-text">
+                <div id="audio-np-title">Nothing playing</div>
+                <div id="audio-np-artist">Pick a track below</div>
+              </div>
+              <div id="audio-np-actions">
+                <button id="audio-like-btn" type="button" aria-pressed="false" title="Like" aria-label="Like this track" disabled><svg class="ico"><use href="#i-heart"/></svg></button>
+                <button id="audio-addto-btn" type="button" title="Add to playlist" aria-label="Add to playlist" disabled><svg class="ico"><use href="#i-playlist-add"/></svg></button>
+              </div>
+            </div>
+            <div id="audio-seek-row">
+              <input type="range" id="audio-seek" min="0" max="1000" value="0" step="1" disabled>
+              <span id="audio-elapsed">0:00</span>
+              <span id="audio-duration">0:00</span>
+            </div>
+            <div id="audio-ab-row">
+              <button id="audio-ab-a" type="button" title="Set loop start (A)" aria-label="Set loop start A" disabled>A</button>
+              <button id="audio-ab-b" type="button" title="Set loop end (B)" aria-label="Set loop end B" disabled>B</button>
+              <span id="audio-ab-readout">A&ndash;B repeat</span>
+              <button id="audio-ab-clear" type="button" class="hidden" title="Clear A-B repeat" aria-label="Clear A-B repeat"><svg class="ico"><use href="#i-close"/></svg></button>
+            </div>
+          </div>
+
+          <!-- Add the playing track to a curated playlist, and name a new one. -->
+          <ul id="audio-addto-list" class="hidden"></ul>
+          <div id="audio-newlist-row" class="hidden">
+            <input type="text" id="audio-newlist-input" maxlength="60" placeholder="Playlist name" autocomplete="off" aria-label="New playlist name">
+            <button type="button" id="audio-newlist-save">Create</button>
+          </div>
+
+          <div id="audio-controls">
+            <button id="audio-shuffle-btn" type="button" title="Shuffle" aria-label="Shuffle"><svg class="ico"><use href="#i-shuffle"/></svg></button>
+            <button id="audio-prev-btn" type="button" title="Previous track" aria-label="Previous track"><svg class="ico fill"><use href="#sp-prev-solid"/></svg></button>
+            <button id="audio-play-btn" type="button" title="Play" aria-label="Play or pause">
+              <svg class="ico fill i-play"><use href="#sp-play-solid"/></svg>
+              <svg class="ico fill i-pause"><use href="#sp-pause-solid"/></svg>
+            </button>
+            <button id="audio-next-btn" type="button" title="Next track" aria-label="Next track"><svg class="ico fill"><use href="#sp-next-solid"/></svg></button>
+            <button id="audio-repeat-btn" type="button" title="Repeat" aria-label="Repeat">
+              <svg class="ico i-repeat"><use href="#i-repeat"/></svg>
+              <svg class="ico i-repeat-one"><use href="#i-repeat-one"/></svg>
+            </button>
+          </div>
+
+          <div id="sp-settings">
+            <div class="sp-card-title">Playback</div>
+            <div class="audio-row">
+              <label for="audio-volume">Volume</label>
+              <input type="range" id="audio-volume" min="0" max="100" value="80">
+              <span class="audio-row-value" id="audio-volume-value">80%</span>
+            </div>
+
+            <div class="audio-row" id="audio-rg-row" title="Evens out loud and quiet tracks using the ReplayGain tags in your files. Tracks without tags are left alone.">
+              <label for="audio-rg-mode">Normalise</label>
+              <select id="audio-rg-mode" aria-label="Volume normalisation">
+                <option value="off" selected>Off</option>
+                <option value="track">Track</option>
+                <option value="album">Album</option>
+              </select>
+              <span class="audio-row-value" id="audio-rg-value"></span>
+            </div>
+
+            <div class="audio-row" id="audio-xf-row" title="Fades the end of each track into the start of the next. Off = no overlap.">
+              <label for="audio-xf">Crossfade</label>
+              <input type="range" id="audio-xf" min="0" max="12" step="1" value="0" aria-label="Crossfade length in seconds">
+              <span class="audio-row-value" id="audio-xf-value">Off</span>
+            </div>
+
+            <!-- Sleep timer and equalizer: hidden, not removed, per spec —
+                 state/engine code (state.sleepTimerMinutes, setPreamp, etc.)
+                 is untouched so this can be un-hidden later without rebuilding
+                 the underlying feature. The sleep timer is also reachable from
+                 the "..." sheet. -->
+            <div class="audio-row hidden-feature">
+              <label for="audio-sleep">Sleep</label>
+              <select id="audio-sleep">
+                <option value="0" selected>Off</option>
+                <option value="15">After 15 min</option>
+                <option value="30">After 30 min</option>
+                <option value="60">After 60 min</option>
+                <option value="-1">End of track</option>
+              </select>
+            </div>
+
+            <button id="audio-eq-toggle" type="button" aria-expanded="false" class="hidden-feature"><span>Equalizer</span><svg class="ico"><use href="#i-chev-down"/></svg></button>
+            <div id="audio-eq-panel" class="hidden">
+              <div id="audio-eq-bands"></div>
+              <div class="audio-row">
+                <label for="audio-eq-preamp">Preamp</label>
+                <input type="range" id="audio-eq-preamp" min="-12" max="12" step="1" value="0">
+              </div>
+              <button id="audio-eq-reset" type="button" class="ghost-btn"><svg class="ico"><use href="#i-reset"/></svg>Reset equalizer</button>
+            </div>
+          </div>
+        </section>
       </div>
 
-      <div id="audio-controls">
-        <button id="audio-shuffle-btn" type="button" title="Shuffle" aria-label="Shuffle"><svg class="ico"><use href="#i-shuffle"/></svg></button>
-        <button id="audio-prev-btn" type="button" title="Previous track" aria-label="Previous track"><svg class="ico"><use href="#i-prev"/></svg></button>
-        <button id="audio-play-btn" type="button" title="Play" aria-label="Play or pause">
-          <svg class="ico i-play"><use href="#i-play"/></svg>
-          <svg class="ico i-pause"><use href="#i-pause"/></svg>
+      <!-- ============ Mini player ============ -->
+      <div id="sp-mini" class="hidden" role="button" tabindex="0" aria-label="Open now playing">
+        <div id="sp-mini-art"><svg class="ico"><use href="#i-music"/></svg></div>
+        <div id="sp-mini-text">
+          <div id="sp-mini-line"><b id="sp-mini-title"></b><span id="sp-mini-artist"></span></div>
+          <div id="sp-mini-sub"></div>
+        </div>
+        <button type="button" id="sp-mini-play" title="Play or pause" aria-label="Play or pause">
+          <svg class="ico fill sp-i-play"><use href="#sp-play-solid"/></svg>
+          <svg class="ico fill sp-i-pause"><use href="#sp-pause-solid"/></svg>
         </button>
-        <button id="audio-next-btn" type="button" title="Next track" aria-label="Next track"><svg class="ico"><use href="#i-next"/></svg></button>
-        <button id="audio-repeat-btn" type="button" title="Repeat" aria-label="Repeat">
-          <svg class="ico i-repeat"><use href="#i-repeat"/></svg>
-          <svg class="ico i-repeat-one"><use href="#i-repeat-one"/></svg>
-        </button>
+        <div id="sp-mini-bar"><i id="sp-mini-fill"></i></div>
       </div>
 
-      <div class="audio-row">
-        <label for="audio-volume">Volume</label>
-        <input type="range" id="audio-volume" min="0" max="100" value="80">
-        <span class="audio-row-value" id="audio-volume-value">80%</span>
-      </div>
+      <!-- ============ Bottom navigation ============ -->
+      <nav id="sp-nav" aria-label="Music navigation">
+        <button type="button" data-sp-view="library"><svg class="ico"><use href="#sp-library"/></svg><span>Library</span></button>
+        <button type="button" data-sp-view="album"><svg class="ico"><use href="#i-music"/></svg><span>Songs</span></button>
+        <button type="button" data-sp-view="track"><svg class="ico"><use href="#i-headphones"/></svg><span>Now playing</span></button>
+      </nav>
 
-      <!-- Sleep timer and equalizer: hidden, not removed, per spec —
-           state/engine code (state.sleepTimerMinutes, setPreamp, etc.)
-           is untouched so this can be un-hidden later without rebuilding
-           the underlying feature. -->
-      <div class="audio-row hidden-feature">
-        <label for="audio-sleep">Sleep</label>
-        <select id="audio-sleep">
-          <option value="0" selected>Off</option>
-          <option value="15">After 15 min</option>
-          <option value="30">After 30 min</option>
-          <option value="60">After 60 min</option>
-          <option value="-1">End of track</option>
-        </select>
-      </div>
-
-      <button id="audio-eq-toggle" type="button" aria-expanded="false" class="hidden-feature"><span>Equalizer</span><svg class="ico"><use href="#i-chev-down"/></svg></button>
-      <div id="audio-eq-panel" class="hidden">
-        <div id="audio-eq-bands"></div>
-        <div class="audio-row">
-          <label for="audio-eq-preamp">Preamp</label>
-          <input type="range" id="audio-eq-preamp" min="-12" max="12" step="1" value="0">
+      <!-- ============ "..." sheet (kit: "Track" / "Album Control") ============ -->
+      <div id="sp-sheet" class="hidden" role="dialog" aria-label="Track options">
+        <div id="sp-sheet-scrim" data-sp-sheet-close></div>
+        <div id="sp-sheet-body">
+          <div id="sp-sheet-art"><svg class="ico"><use href="#i-music"/></svg></div>
+          <div id="sp-sheet-title"></div>
+          <div id="sp-sheet-artist"></div>
+          <div id="sp-sheet-list">
+            <button type="button" data-sp-act="like"><svg class="ico"><use href="#i-heart"/></svg><span id="sp-act-like-label">Like</span></button>
+            <button type="button" data-sp-act="addto"><svg class="ico"><use href="#i-playlist-add"/></svg><span>Add to playlist</span></button>
+            <button type="button" data-sp-act="sleep"><svg class="ico"><use href="#sp-moon"/></svg><span>Sleep timer</span><em id="sp-act-sleep-value"></em></button>
+            <div id="sp-sleep-opts" class="hidden">
+              <button type="button" data-sp-sleep="0">Off</button>
+              <button type="button" data-sp-sleep="15">15 min</button>
+              <button type="button" data-sp-sleep="30">30 min</button>
+              <button type="button" data-sp-sleep="60">60 min</button>
+              <button type="button" data-sp-sleep="-1">End of track</button>
+            </div>
+            <button type="button" data-sp-act="rescan"><svg class="ico"><use href="#i-refresh"/></svg><span>Rescan library</span></button>
+          </div>
+          <button type="button" id="sp-sheet-close" data-sp-sheet-close>Close</button>
         </div>
-        <button id="audio-eq-reset" type="button" class="ghost-btn"><svg class="ico"><use href="#i-reset"/></svg>Reset equalizer</button>
       </div>
-
-      <div id="audio-song-list-heading">Songs</div>
-      <ul id="audio-queue"></ul>
-      <div id="audio-empty">No audio files yet. Put music in <code>/storage/emulated/0/Novel/Audio</code>, then tap Rescan.</div>
-
-      <div id="audio-status-note"></div>
     </div>
 
     <div id="reader-scroll">
@@ -2588,6 +3213,7 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
 <script src="version.js"></script>
 <script src="settings-file.js"></script>
 <script src="audio-player.js"></script>
+<script src="spotify-ui.js"></script>
 <script src="shatter-glass.js"></script>
 <script src="moon-lock.js"></script>
 <script src="reader.js"></script>

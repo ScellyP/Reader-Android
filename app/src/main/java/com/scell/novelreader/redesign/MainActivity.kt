@@ -146,7 +146,27 @@ class MainActivity : ComponentActivity() {
         return super.dispatchTouchEvent(ev)
     }
 
-    private val settingsFile get() = File(novelRoot, "settings.txt")
+    // Demo builds (application id ends in ".demo", see app/build.gradle) share
+    // /storage/emulated/0/Novel with the normal app, so they must NOT share its
+    // settings.txt - a test build writing new keys there could upset the real
+    // app. A demo build uses settings-demo.txt instead, seeded once with a copy
+    // of settings.txt so it starts with your usual look and music settings.
+    private val isDemoBuild get() = packageName.endsWith(".demo")
+
+    private val settingsFile: File
+        get() {
+            if (!isDemoBuild) return File(novelRoot, "settings.txt")
+            val demo = File(novelRoot, "settings-demo.txt")
+            try {
+                val normal = File(novelRoot, "settings.txt")
+                if (!demo.exists() && normal.isFile && normal.length() <= MAX_SETTINGS_BYTES) {
+                    normal.copyTo(demo)
+                }
+            } catch (e: Exception) {
+                // No seed copy - the demo just starts from defaults.
+            }
+            return demo
+        }
 
     // The native audio engine (audio-player.js's NativeAudioEngine) talks
     // to PlaybackService's real ExoPlayer through this controller — see
@@ -632,7 +652,7 @@ class MainActivity : ComponentActivity() {
                         null
                     )
                 }
-                progressHandler.postDelayed(this, 1000)
+                progressHandler.postDelayed(this, 500)
             }
         }
         progressRunnable = runnable
@@ -961,6 +981,10 @@ class MainActivity : ComponentActivity() {
         // Settings file: /storage/emulated/0/Novel/settings.txt. Returns
         // null when storage isn't accessible yet, "" when the file doesn't
         // exist, otherwise its text. See settings-file.js for the format.
+        // True in demo (branch) builds; version.js uses it to label the version.
+        @JavascriptInterface
+        fun isDemoBuild(): Boolean = this@MainActivity.isDemoBuild
+
         @JavascriptInterface
         fun readSettingsFile(): String? {
             if (!hasStoragePermission()) return null
@@ -1053,38 +1077,76 @@ class MainActivity : ComponentActivity() {
             return "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
         }
 
-        @JavascriptInterface
-        fun nativeAudioLoad(path: String, title: String, artist: String, album: String) {
-            // Extract cover art here (we're on the bridge thread, not the
-            // UI thread) so the notification and lock screen can show it.
-            // Refuse anything that is not a real audio file inside Audio/.
+        /**
+         * Resolves [path] (it must be a real audio file inside Audio/), pulls its
+         * cover art, and builds the MediaItem. If the file can't be used, tells
+         * the page — the same way a decoder error does, so the player skips the
+         * track — and returns null. Runs on the bridge thread (not the UI
+         * thread) because extracting artwork can take a moment.
+         */
+        private fun buildAudioItem(path: String, title: String, artist: String, album: String): MediaItem? {
             val audioFile = resolveAudioFile(path) ?: run {
-                // Same path as a decoder error, so the player skips the track.
                 runOnUiThread {
                     val msg = JSONObject.quote("That file can't be played.")
                     webView.evaluateJavascript(
                         "window.onNativeAudioError && window.onNativeAudioError($msg);", null
                     )
                 }
-                return
+                return null
             }
+            // Cover art, so the notification and lock screen can show it.
             val art = loadArtworkBytes(path)
+            val metadata = MediaMetadata.Builder()
+                .setTitle(title.ifBlank { null })
+                .setArtist(artist.ifBlank { null })
+                .setAlbumTitle(album.ifBlank { null })
+                .apply {
+                    if (art != null) setArtworkData(art, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+                }
+                .build()
+            return MediaItem.Builder()
+                .setUri(Uri.fromFile(audioFile))
+                .setMediaId(path)
+                .setMediaMetadata(metadata)
+                .build()
+        }
+
+        @JavascriptInterface
+        fun nativeAudioLoad(path: String, title: String, artist: String, album: String) {
+            val item = buildAudioItem(path, title, artist, album) ?: return
             runOnUiThread {
-                val metadata = MediaMetadata.Builder()
-                    .setTitle(title.ifBlank { null })
-                    .setArtist(artist.ifBlank { null })
-                    .setAlbumTitle(album.ifBlank { null })
-                    .apply {
-                        if (art != null) setArtworkData(art, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
-                    }
-                    .build()
-                val item = MediaItem.Builder()
-                    .setUri(Uri.fromFile(audioFile))
-                    .setMediaId(path)
-                    .setMediaMetadata(metadata)
-                    .build()
+                // Loading something else ends any crossfade still running.
+                PlaybackService.crossfade?.cancel()
                 mediaController?.setMediaItem(item)
                 mediaController?.prepare()
+            }
+        }
+
+        /**
+         * Starts [path] from its beginning, crossfading from the track that is
+         * playing over [seconds] (see NativeCrossfade.kt). [outGain] / [inGain]
+         * are the linear volume levels (0..1) of the old and the new track.
+         * Unlike nativeAudioLoad() this also starts playback — the page makes no
+         * separate play call — and it ALWAYS ends with the new track playing: if
+         * it can't overlap it simply switches. The page has already moved its
+         * queue on before calling this.
+         */
+        @JavascriptInterface
+        fun nativeAudioCrossfade(
+            path: String, title: String, artist: String, album: String,
+            seconds: Double, outGain: Double, inGain: Double
+        ) {
+            val item = buildAudioItem(path, title, artist, album) ?: return
+            runOnUiThread {
+                val xf = PlaybackService.crossfade
+                if (xf != null) {
+                    xf.start(item, seconds, outGain, inGain)
+                } else {
+                    // Service not reachable: play it the ordinary way.
+                    mediaController?.setMediaItem(item)
+                    mediaController?.prepare()
+                    mediaController?.play()
+                }
             }
         }
 
@@ -1161,7 +1223,14 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun nativeAudioSetVolume(volume: Double) {
             runOnUiThread {
-                mediaController?.volume = volume.toFloat().coerceIn(0f, 1f)
+                // During a crossfade the ramp owns the players' volume; the new
+                // level is only the target the incoming track fades up to.
+                val xf = PlaybackService.crossfade
+                if (xf != null && xf.isActive()) {
+                    xf.setInGain(volume.toFloat())
+                } else {
+                    mediaController?.volume = volume.toFloat().coerceIn(0f, 1f)
+                }
             }
         }
 
@@ -1594,6 +1663,22 @@ class MainActivity : ComponentActivity() {
                 // Nothing more we can do if release() itself fails.
             }
         }
+        addReplayGain(f, obj)
+    }
+
+    /**
+     * Adds the file's ReplayGain tags (read by ReplayGainReader, since
+     * MediaMetadataRetriever cannot) as replayGainTrackDb / replayGainAlbumDb /
+     * replayGainPeak / replayGainAlbumPeak. Tags that are missing are simply
+     * not added, so audio-player.js leaves that track's volume alone. Runs
+     * even when the retriever failed above - the file may still have tags.
+     */
+    private fun addReplayGain(f: File, obj: JSONObject) {
+        val rg = ReplayGainReader.read(f) ?: return
+        rg.trackDb?.let { obj.put("replayGainTrackDb", it) }
+        rg.albumDb?.let { obj.put("replayGainAlbumDb", it) }
+        rg.trackPeak?.let { obj.put("replayGainPeak", it) }
+        rg.albumPeak?.let { obj.put("replayGainAlbumPeak", it) }
     }
 
     private fun isAppUrl(u: Uri): Boolean =

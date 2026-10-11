@@ -10,6 +10,7 @@ Key files:
 - `app/src/main/assets/index.html` — main app UI.
 - `app/src/main/assets/reader.js` — reading UI, gestures, night-lock constants (`NIGHT_LOCK_START`, `NIGHT_LOCK_END`).
 - `app/src/main/assets/audio-player.js` — audio UI, queue, engines, audio feature framework.
+- `app/src/main/assets/spotify-ui.js` — Spotify-kit music panel glue: switches the library / songs / now-playing views, mirrors player state into the mini player and "..." sheet. Styles are the `spotify-kit` block in `index.html`; `audio-player.js` is untouched apart from two-line queue rows.
 - `app/src/main/assets/settings-file.js` — mirrors settings to `/storage/emulated/0/Novel/settings.txt`.
 - `app/src/main/assets/version.js` — `APP_VERSION`.
 - `app/src/main/assets/color-wheel.js` — Page/Text colour wheel.
@@ -18,8 +19,12 @@ Key files:
 - `MainActivity.kt` — Android host, hardcoded `chaptersDir`, `connectNativePlayer()`, `listAudioFiles()`.
 - `PlaybackService.kt` — Media3 foreground service, `QueueAwarePlayer`, notification controls.
 - `NativeAudioEffects.kt` — native equalizer/boost bridge.
+- `NativeCrossfade.kt` — native crossfade: two ExoPlayers, equal-power ramp, session hand-over.
+- `ReplayGainReader.kt` — reads ReplayGain tags from the file bytes (pure `java.io`, testable on a plain JVM).
 - `MoonUnlockStore.kt` — native signed night-lock unlock store.
 - `tests/audio-features.test.js`
+- `tests/crossfade.test.js`
+- `tests/replaygain.test.js`, `tests/replaygain-reader/` (see footnote ⁴)
 - `tests/moon-lock.test.js`
 - `tests/shatter-glass.test.js`
 
@@ -73,6 +78,35 @@ When you give the owner a change, suggest a commit message that starts with the
 new `APP_VERSION` number (e.g. `v1.04.02`; a suffix like `-alpha` is optional) so
 the push builds; for docs-only or CI-only changes, suggest a message without a version
 number (or with `[skip build]`).
+
+## Demo builds (feature branches)
+
+Demo builds have their **own workflow file**, separate from the normal one:
+
+| File | Runs on | Builds | Artifacts |
+| --- | --- | --- | --- |
+| `.github/workflows/build-apk.yml` | pushes to `main`/`master` | the normal app | `novel-reader-*-apk` |
+| `.github/workflows/build-demo-apk.yml` | pushes to every other branch (e.g. `crossfade-replaygain`), or a manual run | the **demo app** | `novel-reader-demo-*-apk` |
+
+The demo workflow sets `NR_DEMO=true`; `app/build.gradle` then adds
+`applicationIdSuffix ".demo"` (`com.scell.novelreader.redesign.demo`),
+`versionNameSuffix "-demo"` and the label "Novel Reader (Demo)" (manifest
+placeholder `appLabel`). It installs **next to** the normal app. Both files use
+the same commit-message rule (a `vX.Y.Z` in the message, or run by hand from the
+Actions tab). Branch builds never touch `main`'s workflow or artifacts, and a
+newer push to a branch cancels that branch's older running demo build.
+
+- Demo APK files are named `novel-reader-demo-release.apk` / `novel-reader-demo-debug.apk` (never `app-release.apk`). The demo workflow checks with `aapt2` that the built APK really has the `.demo` id and fails the build if not, so a demo can never silently try to update the normal app.
+- The demo is a separate app to Android: it needs its own "All files access"
+  grant and has its own private data (moon-unlock record, WebView storage).
+- Shared storage (`Novel/`, `Novel/Audio/`) is shared, but the demo reads and
+  writes `Novel/settings-demo.txt`, never `settings.txt`. First launch seeds it
+  with a copy of `settings.txt`. Delete `settings-demo.txt` to re-seed.
+- `AndroidBridge.isDemoBuild()` lets the page know; `version.js` appends
+  " · demo" to the version label.
+- GitHub runs the workflow file as it exists **on the pushed branch**, so the
+  branch must contain `build-demo-apk.yml` (create it from `main` after this
+  change lands). Merging into `main` is safe: `main` only runs `build-apk.yml`.
 
 ## Packaging rule for generated packages
 
@@ -134,10 +168,9 @@ top-of-file comment for the architecture, and `PlaybackService.kt` /
 | Near-gapless playback (next track pre-buffered) | **Working**¹ |
 | Playback speed with pitch preservation | Removed — the speed control is gone; playback is always 1× |
 | 10-band equalizer + preamp | **Working**² (native engine: built, see footnote) |
-| Volume normalisation (replay gain) | Framework — cuts and boosts are wired; needs the scanner to read ReplayGain tags |
+| Volume normalisation (replay gain) | **Working**⁴ — off / track / album, from the ReplayGain tags in your files |
 | Resume-at-position per track | Removed — every track starts at 0 (only a live engine hand-off keeps its position) |
 | A-B repeat | Logic ready — works through the JS API; no buttons yet |
-| Audio delay / sync adjustment | Stub — stores an offset; nothing uses it yet |
 | Graceful handling of unplayable files (skip, don't stall) | **Working** |
 
 **From Spotify — how it feels to use**
@@ -150,7 +183,7 @@ top-of-file comment for the architecture, and `PlaybackService.kt` /
 | Visible "up next" queue | **Working** |
 | Shuffle (real Fisher-Yates) + repeat (off / all / one) | **Working** |
 | Now-playing bar with artwork, seek scrubber | **Working** |
-| Crossfade between tracks | Planned — the trigger hook exists; neither engine implements the overlap yet |
+| Crossfade between tracks | **Working**⁵ — 🎧 panel → Crossfade slider, 1–12 s (native engine: built, see footnote) |
 | Recently played / liked tracks | Logic ready — recorded and persisted, selectable as virtual playlists; no buttons yet |
 
 **Reader-specific / background playback**
@@ -221,6 +254,32 @@ buttons entirely. `PlaybackService.kt`'s `QueueAwarePlayer` — a
 routes taps back into the JS queue — is what makes them show up and
 work despite that.
 
+⁴ **Volume normalisation.** 🎧 panel → **Normalise**: Off / Track / Album. It
+reads the ReplayGain tags already in your files (it does not analyse audio):
+MP3/AAC with ID3v2 (`TXXX`) or APEv2 tags, FLAC and Ogg Vorbis/Opus comments
+(Opus `R128_*_GAIN` too), and iTunes-style M4A atoms. The number next to the
+selector is what is being applied to the current track; "no tag" means the file
+has none and plays unchanged. Louder-than-normal tracks are turned down; a
+quieter track is turned *up* only by the background (native) player, and never
+past the point where its tagged peak would clip. Tag your files with a tool such
+as foobar2000, MP3Gain, rsgain or beets. Tags are read when you tap **Rescan**.
+`tests/replaygain.test.js` checks the gain maths; `tests/replaygain-reader/run.sh`
+checks the tag reader against real files made with ffmpeg.
+
+⁵ **Crossfade.** 🎧 panel → **Crossfade** slider: Off, or 1–12 s. The end of a
+track overlaps the start of the next on an equal-power curve (loudness stays
+steady through the overlap), and each track keeps its own replay-gain level. It
+is skipped for repeat-one, the "stop at end of track" sleep mode, an A-B loop,
+or a timed sleep that ends inside the overlap; a track shorter than twice the
+setting crossfades over half its length. Pausing, seeking or choosing another
+track ends the overlap at once. WebView engine: a second `<audio>` element and
+two timed volume ramps. Native engine: a second ExoPlayer in `PlaybackService`
+(`NativeCrossfade.kt`) that takes over the media session the moment the overlap
+starts, sharing the audio session so the equalizer covers both players. **The
+Kotlin half was written without being compiled or run** — test it on a device
+(a demo build from a feature branch is ideal) before relying on it.
+`tests/crossfade.test.js` checks the JS side.
+
 ## Audio feature framework
 
 The optional audio features all hang off one small framework in
@@ -251,7 +310,7 @@ type as the default. Modules are reachable as `NovelAudio.features.<id>`, and
 
 **Where the hooks fire** (all one-liners in the core): `trackStart` — in each
 engine's `play()` when a new track loads; `progress` — the WebView
-`timeupdate` event (~4 Hz) and the native progress callback (~2 Hz);
+`timeupdate` event (~4 Hz) and the native progress callback (~2 Hz, every 500 ms);
 `trackEnd` — `handleTrackEnded()`; `engineChanged` — `_switchToNative()`;
 `libraryChanged` — after a scan.
 
@@ -263,9 +322,8 @@ data or native support), `stub` (stores a value, nothing consumes it),
 | Module (`NovelAudio.features.…`) | Status | What exists | Next step |
 | --- | --- | --- | --- |
 | `abRepeat` | logic-ready | `setA()`, `setB()`, `clear()`, `get()`; loops via `AudioEngine.seek()`; cleared on every new track; never persisted. Loop can overshoot B by up to ~0.5 s (progress rate) | A/B buttons + a marker on the seek bar. Frame-accurate looping would need a native `ClippingMediaSource` |
-| `replayGain` | framework | `setMode('off'/'track'/'album')`. Cuts go through `gain()`; boosts go to the native `LoudnessEnhancer`; honours `replayGainPeak` so it never clips | `MainActivity.listAudioFiles()` must read ReplayGain tags (ID3 `TXXX`, Vorbis comments) and add `replayGainTrackDb` / `replayGainAlbumDb` / `replayGainPeak` to each track. Until then it changes nothing |
-| `audioDelay` | stub | `setOffsetMs()` (±2000), persisted | Needs a consumer (lyrics/video sync, or latency-compensated progress) |
-| `crossfade` | planned | `setSeconds()` (0–12), persisted; calls `AudioEngine.beginCrossfade(nextId, seconds)` once when the track is inside the window | Implement `beginCrossfade` — WebView: second `<audio>` + two gain ramps; native: a second ExoPlayer |
+| `replayGain` | working | `setMode('off'/'track'/'album')`, `describe(track)` for the UI. Cuts go through `gain()`; boosts go to the native `LoudnessEnhancer`; honours the track/album peak so it never clips. Tags are read natively by `ReplayGainReader.kt` and added to each scanned track as `replayGainTrackDb` / `replayGainAlbumDb` / `replayGainPeak` / `replayGainAlbumPeak` | Test on a device (see footnote ⁴). Possible later: pre-amp for untagged tracks, an in-app scanner that computes gain for files with no tags |
+| `crossfade` | working | `setSeconds()` (0–12, whole seconds), persisted; `curve(t)` = equal-power fade. When the track is within `seconds + 0.5 s` of its end it calls `AudioEngine.beginCrossfade(nextId, seconds)`; the engine returns `false` to be asked again next tick. On success the queue/state move to the next track immediately and the engine fades the old one out underneath. WebView: second `<audio>` + timed ramps. Native: second ExoPlayer (`NativeCrossfade.kt`) | Test the native half on a device (see footnote ⁵). Possible later: per-track fade-out points, a gapless (no-fade) mode |
 | `history` | logic-ready | Newest-first, deduped, capped at 100, persisted; virtual playlist `@recent` | Playlist picker entry |
 | `likes` | logic-ready | `toggle(id?)`, `isLiked()`, `getIds()`; virtual playlist `@liked` | Heart button on the now-playing card (needs an `i-heart` icon in the sprite) |
 | `customPlaylists` | logic-ready | `create/rename/remove/addTracks/removeTrack/list`; virtual playlist `@list:<id>` | Editor UI + picker entries |
@@ -285,9 +343,19 @@ which answers asynchronously through `window.onNativeAudioEffectsInfo(json)`.
 `NativeAudioEffects` keeps the last curve and re-applies it if the audio
 session changes or the service restarts.
 
+**Native bridge for crossfade:** `nativeAudioCrossfade(path, title, artist, album,
+seconds, outGain, inGain)` always ends with the new track playing (it just switches
+if it cannot overlap) and starts playback itself. `PlaybackService.crossfade`
+(`NativeCrossfade`) owns two ExoPlayers that share one audio session; only the
+active one handles audio focus and sits in the `MediaSession`. During an overlap
+`nativeAudioSetVolume` only updates the incoming track's target level. The progress
+poll in `MainActivity` runs every 500 ms (it was 1000 ms) so the trigger is timely.
+
 **Adding a feature:** register a module (copy `likes` for plain data, or
 `abRepeat` for something that reacts to playback), list it in the table above
 with an honest status, and add checks to `tests/audio-features.test.js`.
+
+**Crossfade checks.** `tests/crossfade.test.js` covers the trigger rules, the equal-power curve, the WebView engine's two-element ramp (with a fake clock), the native bridge call, and the guards against stale progress/ended reports from the old track. Run it from the project root: `node tests/crossfade.test.js`.
 
 **Tests.** `tests/audio-features.test.js` loads `audio-player.js` under Node
 with stubbed browser globals and checks the framework (registry, persistence,

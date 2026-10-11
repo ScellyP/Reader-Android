@@ -1717,6 +1717,8 @@
   const sessionModeDurationView = document.getElementById('session-mode-duration');
   const sessionTimeSetBtn = document.getElementById('session-time-set-btn');
   const dialColonSecondsEl = document.getElementById('dial-colon-seconds');
+  const sessionAmBtn = document.getElementById('session-am-btn');
+  const sessionPmBtn = document.getElementById('session-pm-btn');
   const sessionDurationPresetsEl = document.getElementById('session-duration-presets');
   const sessionStartBtn = document.getElementById('session-start-btn');
   const sessionResetBtn = document.getElementById('session-reset-btn');
@@ -1751,6 +1753,28 @@
   // as a real clock timer.
   const DIAL_UNIT_MAX = { hours: 24, minutes: 60, seconds: 60 };
   const DIAL_UNIT_LABEL = { hours: 'Hours', minutes: 'Minutes', seconds: 'Seconds' };
+
+  // Daily-time tab: the hours dial is a 12-hour face (12, 1 ... 11) and AM/PM
+  // is a separate switch. timeValues.hours stays 24-hour internally (that is
+  // what gets saved and compared with the clock), so only the dial and the
+  // readouts translate. Countdown mode is untouched.
+  function dialMax() {
+    return (dialMode === 'time' && dialUnit === 'hours') ? 12 : DIAL_UNIT_MAX[dialUnit];
+  }
+  function hour12(h24) { return h24 % 12 === 0 ? 12 : h24 % 12; }
+  function getDialValue() {
+    const vals = activeDialValues();
+    return (dialMode === 'time' && dialUnit === 'hours') ? vals.hours % 12 : vals[dialUnit];
+  }
+  function setDialValue(v) {
+    if (dialMode === 'time' && dialUnit === 'hours') {
+      timeValues.hours = v + (timeValues.hours >= 12 ? 12 : 0);
+    } else {
+      activeDialValues()[dialUnit] = v;
+    }
+  }
+  function isPM() { return timeValues.hours >= 12; }
+  function setPeriod(pm) { timeValues.hours = (timeValues.hours % 12) + (pm ? 12 : 0); }
 
   let dialUnit = 'minutes';           // which segment the dial is editing
   let dialValues = { hours: 0, minutes: 0, seconds: 0 };
@@ -1843,8 +1867,8 @@
   // Tick marks are redrawn whenever the selected unit changes, because
   // hours need 24 of them and minutes/seconds need 60.
   function renderDialTicks() {
-    const max = DIAL_UNIT_MAX[dialUnit];
-    const majorEvery = max === 24 ? 6 : 5;
+    const max = dialMax();
+    const majorEvery = max === 24 ? 6 : max === 12 ? 3 : 5;
     let markup = '';
     for (let i = 0; i < max; i++) {
       const angle = (i / max) * Math.PI * 2 - Math.PI / 2;
@@ -1863,8 +1887,8 @@
   // Repaints the arc, the handle and every readout from dialValues.
   function renderDial() {
     const vals = activeDialValues();
-    const max = DIAL_UNIT_MAX[dialUnit];
-    const value = vals[dialUnit];
+    const max = dialMax();
+    const value = getDialValue();
     const fraction = value / max;
 
     // Progress arc (rotated -90deg in CSS so 0 starts at 12 o'clock).
@@ -1878,7 +1902,8 @@
 
     // Segment cards
     Object.keys(dialValueEls).forEach(unit => {
-      if (vals[unit] !== undefined) dialValueEls[unit].textContent = pad2(vals[unit]);
+      if (vals[unit] === undefined) return;
+      dialValueEls[unit].textContent = pad2(dialMode === 'time' && unit === 'hours' ? hour12(vals.hours) : vals[unit]);
     });
     dialSegEls.forEach(el => {
       el.classList.toggle('active', el.dataset.unit === dialUnit);
@@ -1889,7 +1914,7 @@
     if (dialMode === 'time') {
       // Clock-time mode: the state line shows the 12-hour reading, so
       // 00:00 is plainly "12:00 AM".
-      dialCenterValueEl.textContent = pad2(value);
+      dialCenterValueEl.textContent = pad2(dialUnit === 'hours' ? hour12(timeValues.hours) : value);
       dialCenterUnitEl.textContent = DIAL_UNIT_LABEL[dialUnit];
       dialCenterStateEl.classList.remove('hidden');
       dialCenterStateEl.textContent = formatClockTime12(timeValuesToHHMM());
@@ -1902,6 +1927,15 @@
       dialCenterValueEl.textContent = pad2(value);
       dialCenterUnitEl.textContent = DIAL_UNIT_LABEL[dialUnit];
       dialCenterStateEl.classList.add('hidden');
+    }
+
+    // AM / PM switch reflects the picked time.
+    if (sessionAmBtn && sessionPmBtn) {
+      const pm = isPM();
+      sessionAmBtn.classList.toggle('active', !pm);
+      sessionPmBtn.classList.toggle('active', pm);
+      sessionAmBtn.setAttribute('aria-pressed', String(!pm));
+      sessionPmBtn.setAttribute('aria-pressed', String(pm));
     }
 
     // Presets light up when they match exactly what's dialled in.
@@ -1949,7 +1983,7 @@
     // and values increase clockwise.
     let angle = Math.atan2(clientY - cy, clientX - cx) + Math.PI / 2;
     if (angle < 0) angle += Math.PI * 2;
-    const max = DIAL_UNIT_MAX[dialUnit];
+    const max = dialMax();
     let value = Math.round((angle / (Math.PI * 2)) * max);
     if (value >= max) value = 0;
     return value;
@@ -1968,9 +2002,8 @@
 
   function updateDialFromPointer(e) {
     const value = pointerToValue(e.clientX, e.clientY);
-    const vals = activeDialValues();
-    if (vals[dialUnit] !== value) {
-      vals[dialUnit] = value;
+    if (getDialValue() !== value) {
+      setDialValue(value);
       // Dialling a new duration invalidates any paused countdown.
       if (dialMode === 'duration') sessionRemainingMs = 0;
       renderDial();
@@ -2232,6 +2265,12 @@
     setSessionModeUI('duration');
     updateSessionTimerButton();
   });
+
+  // AM / PM switch: changes only the period, never the hour or minutes.
+  if (sessionAmBtn && sessionPmBtn) {
+    sessionAmBtn.addEventListener('click', () => { setPeriod(false); renderDial(); });
+    sessionPmBtn.addEventListener('click', () => { setPeriod(true); renderDial(); });
+  }
 
   sessionTimeSetBtn.addEventListener('click', () => {
     saveSessionTimeOfDay(timeValuesToHHMM());

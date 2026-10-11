@@ -214,6 +214,14 @@ class PlaybackService : MediaSessionService() {
         @Volatile
         var effects: NativeAudioEffects? = null
 
+        /**
+         * Crossfade between tracks (see NativeCrossfade). Same single-process
+         * reasoning as [effects]: MainActivity's bridge reaches it directly.
+         * Null while the service isn't running. Main thread only.
+         */
+        @Volatile
+        var crossfade: NativeCrossfade? = null
+
         // How long the service may sit with nothing playing before it
         // shuts itself (and its notification) down.
         private const val IDLE_STOP_MS = 10 * 60 * 1000L
@@ -232,18 +240,17 @@ class PlaybackService : MediaSessionService() {
 
         setMediaNotificationProvider(AlwaysOngoingMediaNotificationProvider(this))
 
+        // USAGE_MEDIA + CONTENT_TYPE_MUSIC tells the platform (and
+        // other apps) this is music-like playback for audio
+        // focus/ducking — it ducks briefly for a notification sound
+        // rather than pausing outright, same as any music app.
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(C.USAGE_MEDIA)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .build()
+
         val player = ExoPlayer.Builder(this)
-            // USAGE_MEDIA + CONTENT_TYPE_MUSIC tells the platform (and
-            // other apps) this is music-like playback for audio
-            // focus/ducking — it ducks briefly for a notification sound
-            // rather than pausing outright, same as any music app.
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                /* handleAudioFocus = */ true
-            )
+            .setAudioAttributes(audioAttributes, /* handleAudioFocus = */ true)
             // Pauses automatically when headphones/Bluetooth disconnect —
             // without this, playback would keep going out loud through
             // the phone speaker the moment headphones are unplugged.
@@ -253,6 +260,18 @@ class PlaybackService : MediaSessionService() {
         // The equalizer attaches to the player's audio session. The provider
         // is called lazily, always from the main thread (see NativeAudioEffects).
         effects = NativeAudioEffects { player.audioSessionId }
+
+        // Crossfade needs a second player. It is created on first use, shares
+        // this player's audio session (so the equalizer above covers both) and
+        // does NOT handle audio focus until the session is handed to it — see
+        // NativeCrossfade. The session id is read lazily: it is the one the
+        // effects are attached to.
+        crossfade = NativeCrossfade(
+            active = player,
+            audioAttributes = audioAttributes,
+            createSpare = { createSparePlayer(audioAttributes, player.audioSessionId) },
+            makeActive = { p -> mediaSession?.player = QueueAwarePlayer(p) }
+        )
 
         // Tapping the notification (or the lock-screen player) brings this
         // app's own MainActivity to the front. Without a session activity
@@ -288,13 +307,29 @@ class PlaybackService : MediaSessionService() {
 
         // Close the service (and remove its notification) after 10 minutes
         // with nothing playing.
-        player.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(isPlaying: Boolean) = updateIdleTimer()
-            override fun onPlaybackStateChanged(playbackState: Int) = updateIdleTimer()
-            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = updateIdleTimer()
-        })
+        player.addListener(idleListener)
         updateIdleTimer()
     }
+
+    // On both players: after a crossfade the session's player is the other one.
+    // updateIdleTimer() always looks at whichever is in the session now.
+    private val idleListener = object : Player.Listener {
+        override fun onIsPlayingChanged(isPlaying: Boolean) = updateIdleTimer()
+        override fun onPlaybackStateChanged(playbackState: Int) = updateIdleTimer()
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = updateIdleTimer()
+    }
+
+    /** The second player used by NativeCrossfade. */
+    @OptIn(UnstableApi::class)
+    private fun createSparePlayer(attributes: AudioAttributes, audioSessionId: Int): ExoPlayer =
+        ExoPlayer.Builder(this)
+            .setAudioAttributes(attributes, /* handleAudioFocus = */ false)
+            .setHandleAudioBecomingNoisy(true)
+            .build()
+            .also {
+                it.audioSessionId = audioSessionId
+                it.addListener(idleListener)
+            }
 
     private val idleHandler = Handler(Looper.getMainLooper())
     private val idleStopRunnable = Runnable {
@@ -362,6 +397,8 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         idleHandler.removeCallbacks(idleStopRunnable)
+        crossfade?.release()
+        crossfade = null
         effects?.release()
         effects = null
         mediaSession?.run {

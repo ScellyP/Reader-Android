@@ -1,28 +1,7 @@
-# Novel Reader — Android App 
+# Novel Reader — Android App
 
 A native Android app version of the novel reader, with the layout bugs
 (buttons disappearing/overflowing on small screens) fixed.
-
-## What changed from the HTML template
-
-- **Music player**: the original template's player was removed. An
-  audio player is now being reintroduced as a framework — see
-  "Audio player" below.
-- **Chapters folder is hardcoded** to
-  `/storage/emulated/0/Novel/Chapters` (internal storage → `Novel` →
-  `Chapters`). The app reads directly from this fixed path using
-  Android's "All files access" permission — no folder picker, no
-  per-run selection. Create that folder, drop your `.txt` chapter
-  files in it, grant the permission once, and the app auto-loads it
-  every time it opens. Every other direct subfolder of `Novel/` is
-  also picked up as its own novel in the picker — **except** `Audio/`,
-  which is reserved for music (see "Audio player" below) and is never
-  offered as a novel.
-- **Layout fixes**: topbar buttons now shrink/scroll instead of
-  disappearing off-screen; flex children have `min-width: 0` so they
-  don't get clipped; the font-family dropdown is capped in width on
-  narrow screens; bottom nav buttons wrap instead of overflowing.
-- Dark theme only (matches your saved preference).
 
 ## Setting up your chapters folder
 
@@ -31,7 +10,7 @@ A native Android app version of the novel reader, with the layout bugs
    an SD card).
 3. Create a folder named `Novel`, then inside it a folder named
    `Chapters` — so the full path is:
-   `/storage/emulated/0/Novel/Chapters`
+   `/storage/emulated/0/Novel/Chapters.`
 4. Put your `.txt` chapter files directly inside `Chapters`.
 5. Open the app and tap **"Grant storage access"** — Android will take
    you to a permission screen; enable **"Allow access to manage all
@@ -43,41 +22,38 @@ A native Android app version of the novel reader, with the layout bugs
 the app at a different location, that requires changing the path in
 `MainActivity.kt` (search for `chaptersDir`) and rebuilding.
 
-## How to build the APK
+## How to build and install the APK
 
-### Option A — From your phone, using GitHub Actions (no laptop needed)
+### Option A — Download and install from GitHub Actions (no laptop needed)
 
-1. Create a free account at [github.com](https://github.com) if you
-   don't have one.
-2. On github.com (use "Desktop site" in your phone browser if the
-   mobile view is limited), tap **+ → New repository**, name it
-   (e.g. `novel-reader`), and create it.
-3. On the new repo's page, use **Add file → Upload files**. Your
-   phone's file picker will open — select **all the files inside the
-   unzipped `novelreader` folder** (some file-manager apps let you
-   select a whole folder to drag in; if yours only lets you pick
-   individual files, that's fine too, just make sure you keep the
-   subfolders like `app/`, `.github/`, `gradle/` intact when
-   selecting — most Android/iOS file browsers preserve folder
-   structure when you drag a folder onto the GitHub upload box).
-4. Scroll down, add a commit message, tap **Commit changes**.
-5. GitHub Actions kicks off automatically because of the included
-   `.github/workflows/build-apk.yml` — go to the repo's **Actions**
-   tab to watch it (or trigger manually there via **Run workflow**).
-6. Wait 3-5 minutes for the green checkmark.
-7. Open the completed run → scroll to **Artifacts** → download
-   **novel-reader-release-apk** (a zip containing `app-release.apk`; this is
-   the build to install and use). A second artifact, **novel-reader-debug-apk**
-   (`app-debug.apk`), is built alongside it for diagnosing problems.
-8. Unzip that on your phone and tap the `.apk` to install (Android
-   will prompt you to allow "install unknown apps" for your browser
-   or file manager the first time — that's normal for anything not
-   installed via the Play Store).
+This is the easiest way to get the app onto your phone. It works if the
+project is already on GitHub and has at least one successful build.
 
-If your phone's browser won't let you upload a whole folder in one
-go, the most reliable phone-only alternative is the **Working Copy**
-app (iOS) or **Termux + git** (Android) to push the folder as a real
-git repository instead of using the web uploader.
+1. Open the repository on **github.com**. Use **Desktop site** in your
+   phone browser if the mobile view hides some buttons.
+2. Tap the **Actions** tab.
+3. In the left sidebar, tap the workflow named **Build APK** (or
+   similar). You will see a list of runs.
+4. Pick the run with a **green checkmark** ✅. That means the build
+   finished successfully. If the newest run is still yellow (in
+   progress), wait a few minutes and refresh.
+5. Open that run. Scroll down to the **Artifacts** section at the
+   bottom of the page.
+6. Tap **novel-reader-debug-apk** to download it. Your browser will
+   save a `.zip` file.
+7. Open your file manager, go to **Downloads**, and unzip that file.
+   Inside you will find `app-debug.apk`.
+8. Tap `app-debug.apk` to install it. Android will ask you to allow
+   **"install unknown apps"** for your browser or file manager the
+   first time. Allow it, then finish the install.
+
+If you own the repository and the Actions tab is empty, push a commit
+or go to **Actions → Build APK → Run workflow** to start a build. Once
+it finishes, repeat steps 5–8.
+
+> **Note:** If the repo is private, you must be signed in to GitHub to
+> download artifacts. For public repos, the download link is usually
+> available without signing in.
 
 ### Option B — On a computer with Android Studio
 
@@ -91,8 +67,7 @@ git repository instead of using the web uploader.
    **Build → Build Bundle(s)/APK(s) → Build APK(s)** to get an
    installable `.apk` file you can copy to your phone.
 5. The built APK will be at:
-   `app/build/outputs/apk/debug/app-debug.apk` (or, for a release build via
-   `./gradlew assembleRelease`, `app/build/outputs/apk/release/app-release.apk`).
+   `app/build/outputs/apk/debug/app-debug.apk`
 
 ## Using the app
 
@@ -123,7 +98,7 @@ git repository instead of using the web uploader.
 
 While any menu is open (the chapter drawer or any popup panel), page
 gestures are suspended. A tap outside an open menu only closes it — it
-never paginates, scrolls or changes chapter.
+never paginates, scrolls, or changes chapter.
 
 ### Volume buttons
 
@@ -136,7 +111,7 @@ buttons always change the volume.
 
 **Volume keys in audio player** (🎨 panel, right under Smart scroll) is on by
 default: with the audio player open, the buttons change the media volume. Switch
-it off and they keep scrolling the page even while the audio player is open (any
+it off, and they keep scrolling the page even while the audio player is open (any
 other open menu still gives them to the volume). The setting is saved in
 `settings.txt` as `audioVolumeKeys`.
 
@@ -164,83 +139,22 @@ Open it with the ⏱ button in the sidebar header. Two modes:
   next occurrence. Switching between the two tabs never arms or disarms
   anything; only **Start** / **Set reminder** do.
 
-### Night lock
+### Sleep lock
 
 Between **12:00 AM and 6:00 AM** the app locks itself: a full-screen
 "Time to sleep" screen covers everything, music is paused, and the Android
-back button just leaves the app. It lifts by itself at 6:00 AM. On Sundays,
-the 1st/3rd/5th Saturdays, and the listed holidays, tapping the moon advances
-its phase and spreads cracks across the lock screen. Reaching the hidden
-50–100 tap target unlocks the app for one hour. The unlock is kept by the app
-natively (`MoonUnlockStore.kt`): a record in app-private storage, signed with
-a key in the Android Keystore and timed on the phone's monotonic clock, so
-editing the page's storage or changing the phone's date/time cannot stretch the
-hour. It also allows native background audio. After it expires, the night lock
-returns if it is still before 6:00 AM. A restart of the phone ends an unlock in
-progress, and if the record cannot be saved or verified the app stays locked.
-(The 12:00 AM to 6:00 AM window itself still follows the phone's clock.) Other days show an inactive full moon. The lock
-window is set by `NIGHT_LOCK_START` / `NIGHT_LOCK_END` in `reader.js` and
-follows the phone's local clock. On active days, four edge impacts (one per
-side) grow in randomized order with 26 rays each. Shaded triangular facets,
-impact flashes, and a progress-scaled screen shake deepen the effect; reaching
-100% inverts the screen and leaves contrasting crack lines.
+back button just leaves the app. It lifts by itself at 6:00 AM. The lock
+window follows the phone's local clock.
 
 ## Audio player
 
-> **NOTE:** the feature list below was **proposed, not specified.** This
-> README originally said only "music player removed entirely" and
-> contained no feature list, so this is a starting point to be edited
-> rather than a requirement that came from anywhere. Change it freely.
-
-The goal is a hybrid: **VLC's playback reliability with Spotify's user
-experience.** Two playback engines share one UI/queue: a WebView `<audio>`
-element (works everywhere, including outside the Android app) and a real
-ExoPlayer instance running in a Media3 foreground service (true background
-playback, lock-screen/notification controls). The app starts on the
-former and switches to the latter automatically the moment it's ready —
-mid-playback, at the same position, inaudibly. See `audio-player.js`'s
-top-of-file comment for the architecture, and `PlaybackService.kt` /
-`MainActivity.kt`'s `connectNativePlayer()` for the native half.
-
-**From VLC — playback that just works**
-
-| Feature | Status |
-| --- | --- |
-| Broad format support (mp3, m4a/aac, flac, ogg, opus, wav) | **Working** |
-| Near-gapless playback (next track pre-buffered) | **Working**¹ |
-| Playback speed with pitch preservation | Removed — the speed control is gone; playback is always 1× |
-| 10-band equalizer + preamp | **Working**² (native engine: built, see footnote) |
-| Volume normalisation (replay gain) | Framework — cuts and boosts are wired; needs the scanner to read ReplayGain tags |
-| Resume-at-position per track | Removed — every track starts at 0 (only a live engine hand-off keeps its position) |
-| A-B repeat | Logic ready — works through the JS API; no buttons yet |
-| Audio delay / sync adjustment | Stub — stores an offset; nothing uses it yet |
-| Graceful handling of unplayable files (skip, don't stall) | **Working** |
-
-**From Spotify — how it feels to use**
-
-| Feature | Status |
-| --- | --- |
-| Library scan (native folder scan + tags) | **Working** |
-| Playlists via folders (a subfolder in Audio/ = a playlist) | **Working** |
-| Curated playlists (hand-picked, not tied to a folder) | Logic ready — create/rename/delete/add in JS; no editor UI yet |
-| Visible "up next" queue | **Working** |
-| Shuffle (real Fisher-Yates) + repeat (off / all / one) | **Working** |
-| Now-playing bar with artwork, seek scrubber | **Working** |
-| Crossfade between tracks | Planned — the trigger hook exists; neither engine implements the overlap yet |
-| Recently played / liked tracks | Logic ready — recorded and persisted, selectable as virtual playlists; no buttons yet |
-
-**Reader-specific / background playback**
-
-| Feature | Status |
-| --- | --- |
-| Sleep timer (fixed minutes, or end-of-track), with a fade-out | **Working** |
-| Auto-pause when a reading-break reminder appears, and resume on dismiss | **Working** |
-| True background playback (screen off, app switched away) | **Working** |
-| System media notification (artwork, title/artist, play/pause) | **Working** |
-| Notification Next/Previous buttons | **Working**³ |
-| Lock-screen transport controls, Bluetooth/headset buttons | **Working** |
-| Audio-focus handling (ducks/pauses for calls, other apps) | **Working** |
-| Pauses automatically when headphones/Bluetooth disconnect | **Working** |
+The audio player is a hybrid: **VLC's playback reliability with Spotify's
+user experience.** Two playback engines share one UI/queue: a WebView
+`<audio>` element (works everywhere, including outside the Android app)
+and a real ExoPlayer instance running in a Media3 foreground service
+(true background playback, lock-screen/notification controls). The app
+starts on the former and switches to the latter automatically the moment
+it's ready — mid-playback, at the same position, inaudibly.
 
 Audio files are expected in `/storage/emulated/0/Novel/Audio` (created
 automatically on first scan if it doesn't exist). Tap 🎧 → "Scan
@@ -251,7 +165,7 @@ file or in-app "create playlist" step. A folder's name becomes the
 playlist name shown in the picker, and every audio file inside it
 (nested subfolders included) belongs to that playlist:
 
-```
+```text
 Novel/Audio/
   Lo-fi Focus/2AM.mp3        -> playlist "Lo-fi Focus"
   Lo-fi Focus/Rain.mp3       -> playlist "Lo-fi Focus"
@@ -271,139 +185,82 @@ of its own to filter down to. While viewing "All songs" with more than
 one playlist present, each row in the queue shows a small tag (shown in
 capitals) naming which playlist it came from.
 
-¹ "Near"-gapless: the next track's file is pre-buffered while the
-current one plays, which removes the network/disk delay that causes
-most audible gaps, but the transition is still a normal src-swap rather
-than a sample-accurate crossfade-capable handoff.
+### Feature status
 
-² The WebView engine's equalizer is a real 10-band Web Audio graph
-(`<audio>` element → 10 peaking `BiquadFilterNode`s → preamp `GainNode` →
-destination). Audio played through the native background engine never
-passes through the page's `AudioContext`, so the native engine uses
-Android's own `android.media.audiofx.Equalizer` on ExoPlayer's audio
-session instead (`NativeAudioEffects.kt`). Devices expose their own band
-layout (commonly 5 bands), so the 10 UI bands are interpolated onto
-whatever the device has, in log-frequency. Both engines share the same
-curve (`state.eqBands`), so switching engines keeps the sound. **This
-native half was written without being compiled or run** — test it on a
-device before relying on it; if a device has no equalizer effect the app
-says so in the music panel's note line.
+**Working today**
 
-³ ExoPlayer only ever holds one track at a time (JS owns the queue —
-see `audio-player.js`'s architecture note), so it normally has no
-"next item" to report and the standard notification omits those
-buttons entirely. `PlaybackService.kt`'s `QueueAwarePlayer` — a
-`ForwardingPlayer` that always reports Next/Previous as available and
-routes taps back into the JS queue — is what makes them show up and
-work despite that.
+| Feature | Status |
+| --- | --- |
+| Library scan (native folder scan + tags) | ✅ Working |
+| Playlists via folders (a subfolder in `Audio/` = a playlist) | ✅ Working |
+| Visible "up next" queue | ✅ Working |
+| Shuffle (real Fisher-Yates) + repeat (off / all / one) | ✅ Working |
+| Now-playing bar with artwork, seek scrubber | ✅ Working |
+| Broad format support (mp3, m4a/aac, flac, ogg, opus, wav) | ✅ Working |
+| Near-gapless playback (next track pre-buffered) | ✅ Working |
+| 10-band equalizer + preamp | ✅ Working |
+| Sleep timer (fixed minutes, or end-of-track), with a fade-out | ✅ Working |
+| Auto-pause when a reading-break reminder appears, and resume on dismiss | ✅ Working |
+| True background playback (screen off, app switched away) | ✅ Working |
+| System media notification (artwork, title/artist, play/pause) | ✅ Working |
+| Notification Next/Previous buttons | ✅ Working |
+| Lock-screen transport controls, Bluetooth/headset buttons | ✅ Working |
+| Audio-focus handling (ducks/pauses for calls, other apps) | ✅ Working |
+| Pauses automatically when headphones/Bluetooth disconnect | ✅ Working |
+| Graceful handling of unplayable files (skip, don't stall) | ✅ Working |
 
-## Audio feature framework
+**Removed**
 
-The optional audio features all hang off one small framework in
-`audio-player.js` (section **7b. AUDIO FEATURES FRAMEWORK**), so adding or
-finishing one doesn't mean threading changes through both engines.
+| Feature | Status |
+| --- | --- |
+| Playback speed with pitch preservation | ❌ Removed — always 1× |
+| Resume-at-position per track | ❌ Removed — every track starts at 0 (only a live engine hand-off keeps its position) |
 
-**How it works.** The engines and queue stay feature-agnostic; they only
-announce what happened, and feature *modules* react. Each module is a plain
-object passed to `AudioFeatures.register()`:
+**Planned / in progress**
 
-```js
-{
-  id: 'abRepeat', label: 'A-B repeat', status: 'logic-ready',
-  defaults: { a: null, b: null },   // per-feature state -> state.features[id]
-  persistKeys: [],                  // optional; omit = save all, [] = save none
-  trackStart(track) {}  trackEnd(track) {}  progress({positionSec, durationSec}) {}
-  engineChanged(engine) {}  libraryChanged() {}
-  outputGain(track) {}              // linear multiplier <= 1, folded into gain()
-}
-```
+| Feature | Status | What's missing |
+| --- | --- | --- |
+| A-B repeat | 🟡 Currently Testing | The logic works, but there are no buttons or seek-bar markers. |
+| Likes | 🟡 Currently Testing | Recorded, but there is no heart button. |
+| Audio delay/sync adjustment | 🟡 Currently Testing | It only stores an offset and nothing uses it. |
+| Crossfade between tracks | 🟡 Under Development | The trigger hook exists, but neither engine implements the overlap. |
+| Volume normalisation (ReplayGain) | 🟡 Under Development | `MainActivity.listAudioFiles()` needs to read the ReplayGain tags. Until then it changes nothing. |
+| Recently played | 🟡 Under Development | Recorded, but there is no picker entry for `@recent`. |
+| Custom playlist editor | 🟡 Logic ready | Playlist Editor UI Is still being worked on. |
 
-Every hook is optional and wrapped in try/catch, so a broken feature can
-never stall playback. Per-feature state is saved inside the existing audio
-prefs blob (so it is mirrored to `settings.txt` for free) and restored by
-`Prefs.load()`; restore only accepts keys the module declares, with the same
-type as the default. Modules are reachable as `NovelAudio.features.<id>`, and
-`NovelAudio.features.describe()` lists them with their status.
+## Security features to add
 
-**Where the hooks fire** (all one-liners in the core): `trackStart` — in each
-engine's `play()` when a new track loads; `progress` — the WebView
-`timeupdate` event (~4 Hz) and the native progress callback (~2 Hz);
-`trackEnd` — `handleTrackEnded()`; `engineChanged` — `_switchToNative()`;
-`libraryChanged` — after a scan.
+The following are known gaps to close. None of these are fixed yet.
 
-**Status vocabulary** — `working` (behaviour + UI), `logic-ready` (works
-through the JS API, no control yet), `framework` (plumbing in place, needs
-data or native support), `stub` (stores a value, nothing consumes it),
-`planned` (hook exists, behaviour not written).
-
-| Module (`NovelAudio.features.…`) | Status | What exists | Next step |
-| --- | --- | --- | --- |
-| `abRepeat` | logic-ready | `setA()`, `setB()`, `clear()`, `get()`; loops via `AudioEngine.seek()`; cleared on every new track; never persisted. Loop can overshoot B by up to ~0.5 s (progress rate) | A/B buttons + a marker on the seek bar. Frame-accurate looping would need a native `ClippingMediaSource` |
-| `replayGain` | framework | `setMode('off'/'track'/'album')`. Cuts go through `gain()`; boosts go to the native `LoudnessEnhancer`; honours `replayGainPeak` so it never clips | `MainActivity.listAudioFiles()` must read ReplayGain tags (ID3 `TXXX`, Vorbis comments) and add `replayGainTrackDb` / `replayGainAlbumDb` / `replayGainPeak` to each track. Until then it changes nothing |
-| `audioDelay` | stub | `setOffsetMs()` (±2000), persisted | Needs a consumer (lyrics/video sync, or latency-compensated progress) |
-| `crossfade` | planned | `setSeconds()` (0–12), persisted; calls `AudioEngine.beginCrossfade(nextId, seconds)` once when the track is inside the window | Implement `beginCrossfade` — WebView: second `<audio>` + two gain ramps; native: a second ExoPlayer |
-| `history` | logic-ready | Newest-first, deduped, capped at 100, persisted; virtual playlist `@recent` | Playlist picker entry |
-| `likes` | logic-ready | `toggle(id?)`, `isLiked()`, `getIds()`; virtual playlist `@liked` | Heart button on the now-playing card (needs an `i-heart` icon in the sprite) |
-| `customPlaylists` | logic-ready | `create/rename/remove/addTracks/removeTrack/list`; virtual playlist `@list:<id>` | Editor UI + picker entries |
-| `nativeEffects` | framework | Pushes the EQ curve + preamp + replay-gain boost to the native side on engine switch, track start and every slider change | Verify on a device (see footnote ²) |
-
-**Virtual playlists.** `state.activePlaylist` may be `'all'`, a folder name,
-or `'@recent'`, `'@liked'`, `'@list:<id>'`. `MediaLibrary.currentSelectionIds()`
-resolves the virtual ones through `AudioFeatures.selectionFor()`, dropping any
-track no longer in the library, so shuffle/repeat/next/previous work on them
-unchanged. `AudioFeatures.listVirtualPlaylists()` returns what a picker should
-offer. The existing folder dropdown does not list them yet.
-
-**Native bridge added for this** (Kotlin side in `NativeAudioEffects.kt`,
-created and released by `PlaybackService`): `nativeAudioSetEqualizer(bandsJson,
-preampDb)`, `nativeAudioSetBoostDb(db)`, and `nativeAudioEffectsRequestInfo()`,
-which answers asynchronously through `window.onNativeAudioEffectsInfo(json)`.
-`NativeAudioEffects` keeps the last curve and re-applies it if the audio
-session changes or the service restarts.
-
-**Adding a feature:** register a module (copy `likes` for plain data, or
-`abRepeat` for something that reacts to playback), list it in the table above
-with an honest status, and add checks to `tests/audio-features.test.js`.
-
-**Tests.** `tests/audio-features.test.js` loads `audio-player.js` under Node
-with stubbed browser globals and checks the framework (registry, persistence,
-A-B loop, replay-gain maths, virtual playlists, crossfade trigger, native EQ
-fallback). Run it from the project root: `node tests/audio-features.test.js`.
-It cannot exercise the Kotlin side or real audio.
-
-**Moon-lock checks.** `tests/moon-lock.test.js` checks eligible dates, moon
-phases, tap completion, four-side impact geometry, 26-ray density, random web
-staggering, facet progression, screen shake, and terminal contrast. Run it from
-the project root: `node tests/moon-lock.test.js`.
-
-**Colour wheel.** The Page and Text colour swatches in the Reading panel open a
-colour wheel (`color-wheel.js`: hue/saturation wheel, brightness slider, hex field)
-instead of the system colour dialog. The native colour inputs stay in the page as
-the source of truth, so saving, recent colours and presets work as before.
-
-**Shattered-glass renderer.** The moon-lock glass is drawn by
-`app/src/main/assets/shatter-glass.js`: a dependency-free Canvas 2D module that
-builds a seeded, irregular low-poly glass layout (Delaunay facets around four
-staggered impact points plus long branching cracks) once per lock session, then
-only redraws when tap progress changes (the existing 40-step quantisation).
-The last 18% of progress turns the glass into a plain inverse-colour fill
-(cracks fade out, no lines in the final frame).
-If the module or canvas is unavailable, `moon-lock.js` falls back to its older
-layered renderer. Run `node tests/shatter-glass.test.js` for its geometry checks.
-
-Chapter files are read either in the original `chapter_downloader.py`
-format (title / `Source:` line / `====` separator / body; the `Source:`
-line is skipped and never shown) or as plain
-text files — either works.
-
-**Chapter order** comes from the chapter number in each file's actual
-title (the first line of its content — e.g. "Chapter 2004: Seeds of
-Rebellion"), not from the filename or whatever order the filesystem/Files
-app happens to list them in. Renaming files, an inconsistently-named
-download batch, or the OS returning them in a different order won't
-change reading order as long as the real title still has a number in it.
-Chapters with no number in their title (a Prologue/Epilogue, say) sort
-after every numbered chapter, in filename order.
+1. **Chapter `Source:` line runs as HTML.** `reader.js` puts `ch.source`
+   into `innerHTML`. A crafted `.txt` file could run script with access to
+   `AndroidBridge`. Build the link with DOM calls and allow only `http` or
+   `https`.
+2. **Signing keys and passwords are in the repo.** Both keystores are
+   included, and `build.gradle` has the password `novelreader` in plain
+   text. Move them to GitHub secrets and rotate the key.
+3. **Bridge accepts any file path.** `getArtwork` and `nativeAudioLoad`
+   take any path, and the app holds all-files access. Restrict paths to
+   `Novel/Audio` after resolving them.
+4. **Playback service has no caller check.** `PlaybackService` is
+   `exported="true"` and `onGetSession` returns the session to anyone.
+   Validate the controller's package.
+5. **Sleep lock and unlock are easy to bypass.** The unlock time sits in
+   plain `localStorage`, and the lock relies on the phone clock. Changing
+   the clock or clearing app data defeats it. Track time with
+   `SystemClock.elapsedRealtime()` and keep the unlock state on the native
+   side.
+6. **WebView is too open.** Switch to `WebViewAssetLoader` instead of
+   `file://`, turn off `allowFileAccess`, and add a Content-Security-Policy.
+   Also add `shouldOverrideUrlLoading` so links open only in the external
+   browser.
+7. **`allowBackup="true"`.** Set it to `false`, or add backup rules.
+8. **`settings.txt` and `crash_log.txt` sit in shared storage.** Any app
+   with storage access can edit or read them, and the file overrides saved
+   settings on startup. Validate values on load, and move the crash log into
+   app-private storage.
+9. **Release build has `minifyEnabled false`.** Turn on R8 and ship a
+   release build, not debug.
 
 ## Settings file
 
@@ -412,19 +269,6 @@ are mirrored to `/storage/emulated/0/Novel/settings.txt` and read back on
 startup (see `app/src/main/assets/settings-file.js`). One `key = value` per
 line, values as JSON; lines starting with `#` are comments. Edit it while the
 app is closed; delete a line to reset that setting.
-
-`settings.txt` sits in shared storage, so it is treated as untrusted input. Only
-known settings are read, each value must have the right type and stay inside
-the same range as the matching control in the app (for example font size 13-32),
-and anything else on a line is ignored: that setting simply keeps its current
-value. At most 5,000 lines are read, and a file larger than 256 KB is ignored
-and rewritten from the app's current settings.
-
-If the app crashes, the stack trace is saved to `crash_log.txt` in the app's own
-folder, `/storage/emulated/0/Android/data/com.scell.novelreader.redesign/files/`
-(not in `Novel/`, where other apps could read it). Many file managers can still
-open that folder; on newer Android versions some can't, and then the file needs
-a computer (adb).
 
 ## Screen timeout
 
@@ -441,48 +285,6 @@ playing on the native player or the WebView fallback player; it simply
 re-checks 10 minutes later. Swiping the app away stops it
 unless music is playing.
 
-If Android kills the WebView's renderer process while the app sits in the
-background (usually after the phone has been locked for a while), the app drops
-the dead WebView and rebuilds its screen instead of closing; if the renderer
-dies again within 5 seconds of a rebuild, the app closes rather than looping.
-
-## How the page is loaded (WebView lock-down)
-
-The app page is not opened from `file://`. `MainActivity.kt` serves it from
-`https://appassets.androidplatform.net/assets/index.html` through
-`WebViewAssetLoader` and the WebView has file and content access switched off.
-Local music reaches the page's `<audio>` element from the same origin under
-`/audio/<path inside Audio/>`, served by `serveAudio()` (real audio files
-inside `Novel/Audio` only, with Range support for seeking). The page carries a
-Content-Security-Policy (own files only; no network, frames or workers), every
-request to another host is refused, and navigation away from the app page is
-blocked: a tapped http/https link opens in the external browser, anything else
-is dropped.
-
-Because the page's origin changed from `file://` to `https://`, its saved page
-data (stored per origin) starts empty after updating to this version. Data that
-is mirrored to `Novel/settings.txt` comes back (appearance, music settings,
-reading-session limits, last novel and last chapter per novel). Not mirrored,
-so reset once: bookmarks, per-chapter scroll positions, chapter "deleted"
-marks and a running reading-session timer.
-
-## Backup
-
-Android's automatic backup stays on, but `res/xml/backup_rules.xml` (Android 11
-and older) and `res/xml/data_extraction_rules.xml` (Android 12+, cloud backup
-and device transfer) exclude everything private: the moon-lock unlock record,
-the page's saved data (`app_webview`) and all other app-private preferences,
-files and databases. Your own files are not part of app data: chapters, music
-and `settings.txt` live in `Novel/` on shared storage.
-
-## Release build
-
-GitHub Actions builds `app-release.apk` (the one to install) and `app-debug.apk`
-on every run, both signed with the same key. The release build is shrunk by R8
-(unused code removed, the rest optimised) but not obfuscated, so crash logs stay
-readable; the rules are in `app/proguard-rules.pro` and keep the WebView bridge
-methods the page calls by name. Resource shrinking is not enabled.
-
 ## Updating the installed app
 
 Builds are signed with a fixed key that is supplied through GitHub secrets
@@ -492,35 +294,6 @@ update over the previous one (data is kept). The very first build with this
 key cannot update an app installed from an older build signed with a different
 key: uninstall once, then every later build updates in place. Settings are
 restored from `Novel/settings.txt` after that one-time reinstall.
-
-## Version number
-
-> **For any AI assistant / future chat working on this project:** bumping
-> the version is part of every bug fix or feature. Do it automatically in
-> the same change, without being asked, and state the new version in your
-> reply.
-
-The current version is shown at the bottom of the side menu (e.g. `v1.00.00`).
-It lives in one place only: `APP_VERSION` in `app/src/main/assets/version.js`,
-and you change it by hand — nothing bumps it automatically.
-
-Format: `v MAJOR . MID . MINOR`
-
-| Part | When it changes |
-| --- | --- |
-| **MAJOR** (the `1`) | Stays the same until *you* decide to change it |
-| **MID** (middle) | +1 for a major update (e.g. a new feature), **or** when minor bug fixes pass 99. MINOR resets to `00` |
-| **MINOR** (last) | +1 for every minor bug fix |
-
-Examples: `v1.00.00` first tracked version → `v1.00.01` one small fix →
-`v1.01.00` a new feature → `v1.01.99` then one more fix rolls over to
-`v1.02.00`.
-
-**Broken builds never change the version.** If a build fails or has to be
-redone, the number stays as it is; only a real shipped fix or feature bumps
-it. This is separate from Android's `versionCode`/`versionName` in
-`app/build.gradle`, which follows the GitHub Actions run number so each APK
-installs over the last one.
 
 ## Library (novel selector)
 
@@ -532,12 +305,3 @@ png or webp): `cover`, `folder`, `front`, `poster`, `thumbnail`, `thumb`, `art`,
 `image`; if none match, the first image file in the folder is used. Novels with
 no image get a placeholder with the first letter. Use **Switch novel** in the
 chapter list to come back to the library.
-
-## Packaging rule for generated packages
-
-Every zip package generated for this app must contain **one top-level folder
-named `novelreader`**, with the whole project inside it (`app/`, `.github/`,
-`README.md`, ...). Do not use other folder names such as `Novel-Reader-2-master`.
-When uploading to GitHub, copy the *contents* of `novelreader/` into the repo
-root so that `app/src/main/assets/index.html` and `.github/workflows/` sit at the
-top level of the repo.
