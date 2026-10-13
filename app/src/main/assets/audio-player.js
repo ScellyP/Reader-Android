@@ -176,12 +176,16 @@ window.NovelAudio = (function () {
      *   - Report scan progress incrementally for very large libraries
      *     instead of one callback at the end.
      */
-    scan() {
+    scan(atStartup) {
       state.scanning = true;
       AudioUI.setNote('');
       AudioUI.render();
 
-      if (window.AndroidBridge && window.AndroidBridge.scanAudio) {
+      // At start-up the native side has usually already begun (or finished)
+      // scanning, so ask for that result instead of starting a second scan.
+      if (atStartup === true && window.AndroidBridge && window.AndroidBridge.scanAudioStartup) {
+        window.AndroidBridge.scanAudioStartup();
+      } else if (window.AndroidBridge && window.AndroidBridge.scanAudio) {
         window.AndroidBridge.scanAudio();
       } else {
         // Running outside the Android app (e.g. this repo's test suite,
@@ -2533,7 +2537,7 @@ window.NovelAudio = (function () {
       // Scan for music as soon as the app opens, rather than waiting for
       // the user to open the music panel and tap Rescan — the whole
       // point of a library is that it's there when you look for it.
-      MediaLibrary.scan();
+      MediaLibrary.scan(true);
     },
 
     // Called by MainActivity's inactivity timer so the app never closes

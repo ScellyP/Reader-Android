@@ -375,6 +375,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         installCrashLogger()
 
+        // Start reading the music library right away, in parallel with the page
+        // and the chapter loading. (Without storage access yet, it starts from
+        // listNovels() once access is granted.)
+        if (hasStoragePermission()) runAudioScan()
+
         webView = WebView(this)
         webView.setBackgroundColor(android.graphics.Color.parseColor("#0b0d12"))
         setContentView(webView)
@@ -1096,6 +1101,13 @@ class MainActivity : ComponentActivity() {
             runOnUiThread { listAudioFiles() }
         }
 
+        // Called once by the page at start-up: hands over the scan that was
+        // already started in onCreate instead of starting another.
+        @JavascriptInterface
+        fun scanAudioStartup() {
+            runOnUiThread { requestAudioListAtStartup() }
+        }
+
         // The five calls behind audio-player.js's NativeAudioEngine —
         // each just forwards to the MediaController connected in
         // connectNativePlayer(). All are no-ops if that connection
@@ -1400,6 +1412,9 @@ class MainActivity : ComponentActivity() {
                 val namesArray = JSONArray()
                 novelNames.forEach { namesArray.put(it) }
 
+                // Permission is confirmed here: make sure the music scan is under way too.
+                runAudioScan()
+
                 runOnUiThread {
                     hasLoadedOnce = true
                     webView.evaluateJavascript(
@@ -1504,10 +1519,74 @@ class MainActivity : ComponentActivity() {
      *     standalone-track.mp3      -> no playlist
      */
     private fun listAudioFiles() {
+        // Rescan button / explicit scan: always walk the folder again.
+        jsWantsAudio = true
+        runAudioScan()
+    }
+
+    // ---- Audio library scan: starts at launch, runs in parallel, caches tags ----
+    // The scan used to start only when the page asked for it and read every
+    // file's tags one after another. Now it starts in onCreate (alongside the
+    // chapter loading), reads tags on several threads, and remembers each
+    // file's tags (keyed by path + size + modified time) so unchanged files
+    // are not parsed again on the next launch.
+    @Volatile private var audioScanRunning = false
+    @Volatile private var jsWantsAudio = false
+    @Volatile private var audioScanJson: String? = null
+    @Volatile private var audioScanAt = 0L
+
+    private fun deliverAudioList(tracksJson: String) {
+        webView.evaluateJavascript(
+            "window.onAudioListed && window.onAudioListed(${JSONObject.quote(tracksJson)});",
+            null
+        )
+    }
+
+    /** Page start-up request: reuse a fresh early scan, or wait for the one in flight. */
+    private fun requestAudioListAtStartup() {
+        jsWantsAudio = true
+        val ready = audioScanJson
+        if (ready != null && System.currentTimeMillis() - audioScanAt < 120_000L) {
+            deliverAudioList(ready)
+        } else if (!audioScanRunning) {
+            runAudioScan()
+        } // else: a scan is running and delivers to the page when it finishes
+    }
+
+    private fun tagCacheFile() = File(cacheDir, "audio_tags.json")
+
+    private fun loadTagCache(): java.util.concurrent.ConcurrentHashMap<String, JSONObject> {
+        val map = java.util.concurrent.ConcurrentHashMap<String, JSONObject>()
+        try {
+            val f = tagCacheFile()
+            if (f.exists()) {
+                val root = JSONObject(f.readText())
+                for (k in root.keys()) map[k] = root.getJSONObject(k)
+            }
+        } catch (e: Exception) {
+            // Unreadable cache: just rebuild it.
+        }
+        return map
+    }
+
+    private fun saveTagCache(cache: Map<String, JSONObject>, livePaths: Set<String>) {
+        try {
+            val root = JSONObject()
+            for ((k, v) in cache) if (livePaths.contains(k)) root.put(k, v)
+            tagCacheFile().writeText(root.toString())
+        } catch (e: Exception) {
+            // Cache is an optimisation only.
+        }
+    }
+
+    private fun runAudioScan() {
+        if (audioScanRunning) return
+        audioScanRunning = true
         Thread {
             try {
                 if (!hasStoragePermission()) {
-                    runOnUiThread {
+                    audioScanRunning = false
+                    if (jsWantsAudio) runOnUiThread {
                         notifyError("Storage permission is needed to read /storage/emulated/0/Novel/Audio.")
                     }
                     return@Thread
@@ -1518,9 +1597,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 // Sorted by path-relative-to-Audio/ (not just filename) so
-                // tracks in the same playlist folder stay grouped together
-                // in the result, rather than interleaving alphabetically
-                // with same-named files from other folders.
+                // tracks in the same playlist folder stay grouped together.
                 val audioFiles = audioRoot.walkTopDown()
                     .filter { it.isFile && audioExtensions.contains(it.extension.lowercase()) }
                     .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) {
@@ -1528,45 +1605,59 @@ class MainActivity : ComponentActivity() {
                     })
                     .toList()
 
-                val tracksArray = JSONArray()
-                for (f in audioFiles) {
-                    val obj = JSONObject()
-                    obj.put("id", f.absolutePath)
-                    obj.put("path", Uri.fromFile(f).toString()) // percent-encodes spaces etc. correctly
-                    // Address the page's <audio> element uses (see serveAudio()).
-                    obj.put(
-                        "webUrl",
-                        "https://$appHost/audio/" +
-                            Uri.encode(f.toRelativeString(audioRoot).replace(File.separatorChar, '/'), "/")
-                    )
-
-                    // The first path segment under Audio/ is the playlist
-                    // name; a file with no '/' in its relative path sits
-                    // directly in Audio/ and has no playlist.
-                    val relativePath = f.toRelativeString(audioRoot).replace(File.separatorChar, '/')
-                    val slashIndex = relativePath.indexOf('/')
-                    if (slashIndex > 0) {
-                        obj.put("playlist", relativePath.substring(0, slashIndex))
-                    } else {
-                        obj.put("playlist", JSONObject.NULL)
+                val cache = loadTagCache()
+                val results = arrayOfNulls<JSONObject>(audioFiles.size)
+                val pool = java.util.concurrent.Executors.newFixedThreadPool(4)
+                audioFiles.forEachIndexed { i, f ->
+                    pool.execute {
+                        results[i] = try { buildTrackJson(f, cache) } catch (e: Exception) { null }
                     }
-
-                    readAudioTags(f, obj)
-                    tracksArray.put(obj)
                 }
+                pool.shutdown()
+                pool.awaitTermination(15, java.util.concurrent.TimeUnit.MINUTES)
 
-                val tracksJsonEscaped = JSONObject.quote(tracksArray.toString())
+                val tracksArray = JSONArray()
+                for (r in results) if (r != null) tracksArray.put(r)
+                saveTagCache(cache, audioFiles.map { it.absolutePath }.toSet())
 
-                runOnUiThread {
-                    webView.evaluateJavascript(
-                        "window.onAudioListed && window.onAudioListed($tracksJsonEscaped);",
-                        null
-                    )
-                }
+                val json = tracksArray.toString()
+                audioScanJson = json
+                audioScanAt = System.currentTimeMillis()
+                audioScanRunning = false
+
+                runOnUiThread { if (jsWantsAudio) deliverAudioList(json) }
             } catch (e: Exception) {
-                runOnUiThread { notifyError("Could not scan /storage/emulated/0/Novel/Audio: ${e.message}") }
+                audioScanRunning = false
+                if (jsWantsAudio) runOnUiThread { notifyError("Could not scan /storage/emulated/0/Novel/Audio: ${e.message}") }
             }
         }.start()
+    }
+
+    private fun buildTrackJson(f: File, cache: java.util.concurrent.ConcurrentHashMap<String, JSONObject>): JSONObject {
+        val obj = JSONObject()
+        obj.put("id", f.absolutePath)
+        obj.put("path", Uri.fromFile(f).toString()) // percent-encodes spaces etc. correctly
+        val relativePath = f.toRelativeString(audioRoot).replace(File.separatorChar, '/')
+        // Address the page's <audio> element uses (see serveAudio()).
+        obj.put("webUrl", "https://$appHost/audio/" + Uri.encode(relativePath, "/"))
+        // First path segment under Audio/ is the playlist; no '/' = no playlist.
+        val slashIndex = relativePath.indexOf('/')
+        if (slashIndex > 0) obj.put("playlist", relativePath.substring(0, slashIndex))
+        else obj.put("playlist", JSONObject.NULL)
+
+        val size = f.length()
+        val modified = f.lastModified()
+        val hit = cache[f.absolutePath]
+        val tags: JSONObject
+        if (hit != null && hit.optLong("s", -1L) == size && hit.optLong("m", -1L) == modified) {
+            tags = hit.getJSONObject("t")
+        } else {
+            tags = JSONObject()
+            readAudioTags(f, tags)
+            cache[f.absolutePath] = JSONObject().put("s", size).put("m", modified).put("t", tags)
+        }
+        for (k in tags.keys()) obj.put(k, tags.get(k))
+        return obj
     }
 
     /**
