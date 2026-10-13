@@ -2345,7 +2345,7 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
    ========================================================================= */
 #audio-panel {
   /* ---- THEME BRIDGE ------------------------------------------------------
-     Nothing in this skin is a fixed colour. Every --sp-* token below is read
+     Nothing in this skin is a fixed colour. (While a song with cover art is loaded, spotify-ui.js overrides --accent and friends on this panel from the cover; otherwise they inherit the app theme.) Every --sp-* token below is read
      from the app's own variables, which reader.js (applyUiTheme) rewrites on
      <html> whenever the reading colours / presets / colour pickers change:
          --bg  --text  --muted  --accent  --accent-strong  --accent-ink
@@ -2454,6 +2454,8 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
     linear-gradient(var(--sp-bg), var(--sp-bg)) center / 100% 1px no-repeat,
     conic-gradient(var(--c1) 0 25%, var(--c2) 0 50%, var(--c3) 0 75%, var(--c4) 0);
 }
+/* real cover mosaic (first four songs' art), set per row by spotify-ui.js */
+#audio-playlist-list li[data-sp-cover]::before { background: var(--sp-cover) center / cover no-repeat; }
 #audio-playlist-list li .pl-name { grid-column: 2; grid-row: 1; align-self: end; font-size: 16px; font-weight: 500; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #audio-playlist-list li .pl-count {
   grid-column: 2; grid-row: 2; align-self: start; justify-self: start; padding: 0; border: 0; background: none;
