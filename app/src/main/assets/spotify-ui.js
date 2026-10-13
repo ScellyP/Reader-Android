@@ -106,13 +106,13 @@
   /* ---------------- colours: current song, else the app theme ----------------
      While a track with cover art is loaded, the panel's accent colours
      (--accent, --accent-strong, --accent-ink, --accent-soft, --accent-line) are
-     taken from that cover and set on #audio-panel only. index.html derives the
+     taken from that cover and set on #audio-panel only, together with --bg, --text and --muted (same hue) so the text follows too. index.html derives the
      rest (header gradient, buttons, active states, progress) from those, so the
      whole panel follows. With no track, or a track without art (or a grey
      cover), the inline values are removed and the panel falls straight back to
      the app's own theme variables, live. The accent is nudged to a readable
      lightness for the current theme background. */
-  var TINT_VARS = ['--accent', '--accent-strong', '--accent-ink', '--accent-soft', '--accent-line', '--sp-tint'];
+  var TINT_VARS = ['--accent', '--accent-strong', '--accent-ink', '--accent-soft', '--accent-line', '--bg', '--text', '--muted', '--sp-tint'];
   var tintKey = null, tintRgb = null;
 
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -164,10 +164,19 @@
     return [R / W, G / W, B / W];
   }
 
+  /* Is the APP theme dark? Read from <html>, not from the panel, because the
+     panel's own --bg is overridden while a song colour is active. */
   function themeBgIsDark() {
-    var m = (getComputedStyle(panel).backgroundColor || '').match(/[\d.]+/g);
-    if (!m || m.length < 3) return true;
-    return lum(+m[0], +m[1], +m[2]) < 0.4;
+    var v = (getComputedStyle(document.documentElement).getPropertyValue('--bg') || '').trim(), r = null;
+    var hex = v.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (hex) {
+      var h = hex[1].length === 3 ? hex[1].replace(/./g, '$&$&') : hex[1];
+      r = [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+    } else {
+      var m = v.match(/[\d.]+/g);
+      if (m && m.length >= 3) r = [+m[0], +m[1], +m[2]];
+    }
+    return r ? lum(r[0], r[1], r[2]) < 0.4 : true;
   }
 
   function clearTint() {
@@ -179,14 +188,23 @@
     var l = dark ? clamp(hsl[2], 0.55, 0.7) : clamp(hsl[2], 0.3, 0.45);
     var base = hslToRgb(hsl[0], s, l);
     var strong = hslToRgb(hsl[0], s, clamp(l + (dark ? 0.08 : -0.08), 0.1, 0.9));
-    var ink = lum(base[0], base[1], base[2]) > 0.4 ? '#111111' : '#ffffff';
     function css(c) { return 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')'; }
     function rgba(c, a) { return 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + a + ')'; }
+    // Background and text come from the same hue, so the whole panel (text
+    // included) reads as one theme: a deep tint of the cover with light text on
+    // a dark app theme, a pale tint with dark text on a light one.
+    var hue = hsl[0], sat = clamp(hsl[1], 0.3, 0.8);
+    var bg = hslToRgb(hue, sat * (dark ? 0.55 : 0.6), dark ? 0.09 : 0.94);
+    var text = hslToRgb(hue, dark ? 0.25 : 0.4, dark ? 0.94 : 0.12);
+    var muted = hslToRgb(hue, dark ? 0.15 : 0.2, dark ? 0.68 : 0.36);
     var st = panel.style;
     st.removeProperty('--sp-tint'); // keep index.html's own mix of accent + bg
+    st.setProperty('--bg', css(bg));
+    st.setProperty('--text', css(text));
+    st.setProperty('--muted', css(muted));
     st.setProperty('--accent', css(base));
     st.setProperty('--accent-strong', css(strong));
-    st.setProperty('--accent-ink', ink);
+    st.setProperty('--accent-ink', css(bg));
     st.setProperty('--accent-soft', rgba(base, 0.13));
     st.setProperty('--accent-line', rgba(base, 0.42));
   }
