@@ -1349,7 +1349,7 @@ input[type="range"]:disabled::-webkit-slider-thumb { background: var(--faint); }
 #night-lock-moon.active { cursor: pointer; }
 #night-lock-glass { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: hidden; }
 #night-lock-glass canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
-/* Hidden moon-lock test trigger: a faint dot at the bottom of the Reading panel. */
+/* Hidden Moonlit Lock test trigger: a faint dot at the bottom of the Reading panel. */
 #moon-test-btn { display: block; width: 28px; height: 28px; margin: 6px auto 0; padding: 0; border: 0; background: transparent; opacity: .22; cursor: pointer; position: relative; }
 #moon-test-btn::after { content: ""; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: transparent; box-shadow: inset -2.5px -1px 0 0 var(--text); transform: rotate(-20deg); } /* tiny crescent moon */
 #moon-test-btn:hover, #moon-test-btn:focus-visible { opacity: .7; }
@@ -1358,6 +1358,8 @@ input[type="range"]:disabled::-webkit-slider-thumb { background: var(--faint); }
 #night-lock-flash { position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: 0; background: #fff; }
 #night-lock-box h2 { margin: 0 0 10px; font-family: var(--font-book); font-weight: 500; font-size: 28px; }
 #night-lock-box p { margin: 0 0 8px; color: var(--muted); font-size: 15px; line-height: 1.55; }
+#night-lock-name { margin: 0 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; color: var(--muted); }
+#night-lock-phase { margin: 6px 0 0; font-size: 13px; letter-spacing: .04em; color: var(--muted); }
 #night-lock-now { font-size: 34px; font-weight: 600; letter-spacing: .02em; color: var(--text); margin: 14px 0 6px; }
 #night-lock-opens { color: var(--accent); font-size: 14px; font-weight: 600; }
 
@@ -2926,7 +2928,7 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
         <input type="range" id="tap-scroll-lines-input" min="3" max="30" step="1" value="27">
       </div>
       <button id="theme-reset-btn" class="ghost-btn"><svg class="ico"><use href="#i-reset"/></svg>Reset to default</button>
-      <button id="moon-test-btn" type="button" title="Test moon lock" aria-label="Test moon lock"></button>
+      <button id="moon-test-btn" type="button" title="Test Moonlit Lock" aria-label="Test Moonlit Lock"></button>
     </div>
 
     <div id="session-settings-panel" class="hidden">
@@ -3244,10 +3246,11 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
   </div>
 </div>
 
-<!-- Night lock: covers the whole app overnight (see "Night lock" in reader.js). -->
-<div id="night-lock" class="hidden" role="alertdialog" aria-modal="true" aria-label="Night lock">
+<!-- Moonlit Lock (night lock): covers the whole app overnight (see "Night lock" in reader.js). -->
+<div id="night-lock" class="hidden" role="alertdialog" aria-modal="true" aria-label="Moonlit Lock">
   <div id="night-lock-stage">
     <div id="night-lock-box">
+      <div id="night-lock-name">Moonlit Lock</div>
       <h2>Time to sleep</h2>
       <p>Novel Reader is locked for the night.</p>
       <button id="night-lock-icon" type="button" aria-label="Moon">
@@ -3256,6 +3259,7 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
           <path id="night-lock-moon-lit" d="" />
         </svg>
       </button>
+      <div id="night-lock-phase"></div>
       <div id="night-lock-now"></div>
       <div id="night-lock-opens"></div>
     </div>
@@ -3267,7 +3271,7 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
       <canvas id="draw-noise"></canvas>
     </div>
     <div id="night-lock-flash"></div>
-    <button id="night-lock-test-exit" type="button" class="hidden" aria-label="Exit moon lock test">Exit test</button>
+    <button id="night-lock-test-exit" type="button" class="hidden" aria-label="Exit Moonlit Lock test">Exit test</button>
   </div>
 </div>
 

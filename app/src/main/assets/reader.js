@@ -2333,7 +2333,7 @@
 
      Between NIGHT_LOCK_START and NIGHT_LOCK_END (local time, 24h "HH:MM")
      a full-screen lock covers the app and music is paused. It lifts at
-     NIGHT_LOCK_END, or after the one-hour moon unlock on eligible days.
+     NIGHT_LOCK_END, or after the one-hour Moonlit Lock unlock on eligible days.
      Change the two constants to move the window. (It follows local time.)
   --------------------------------------------------------------------- */
 
@@ -2370,7 +2370,7 @@
     return ((h % 12) || 12) + ':' + mm + ' ' + (h < 12 ? 'AM' : 'PM');
   }
 
-  // Hidden test run (Reading panel, faint dot at the bottom): shows the lock
+  // Hidden Moonlit Lock test run (Reading panel, faint dot at the bottom): shows the lock
   // with the glass effect on any day, needs 20 taps, and never saves an unlock.
   const moonTestBtn = document.getElementById('moon-test-btn');
   const moonTestExitBtn = document.getElementById('night-lock-test-exit');

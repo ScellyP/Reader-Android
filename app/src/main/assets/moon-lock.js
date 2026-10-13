@@ -1,5 +1,6 @@
-/* Moon-lock cheat for the reader's WebView: date and tap state plus a
-   progress-driven, four-impact layered glass effect. */
+/* Moonlit Lock (file kept as moon-lock.js) for the reader's WebView: shows the
+   real current moon phase, plus the date and tap state and a progress-driven,
+   four-impact layered glass effect. */
 (function () {
   'use strict';
 
@@ -18,6 +19,7 @@
   const moonSvg = $('night-lock-moon');
   const moonDisc = $('night-lock-moon-disc');
   const moonLit = $('night-lock-moon-lit');
+  const phaseEl = $('night-lock-phase');
   const stage = $('night-lock-stage');
   const flash = $('night-lock-flash');
   const glass = $('night-lock-glass');
@@ -100,14 +102,44 @@
     const term = quarter ? `L ${top}` : `A ${rx} ${r} 0 0 ${termSweep} ${top}`;
     return `M ${top} A ${r} ${r} 0 0 ${limbSweep} ${bottom} ${term} Z`;
   }
-  function updateMoon(index, active) {
+  // ---- Real moon phase -------------------------------------------------
+  // Low-precision sun/moon longitudes (Meeus-style, good to about a degree),
+  // so the lock shows the phase you would see in the sky, not a tap counter.
+  const PHASE_NAMES = ['New Moon','Waxing Crescent','First Quarter','Waxing Gibbous','Full Moon','Waning Gibbous','Last Quarter','Waning Crescent'];
+  function moonPhaseInfo(date) {
+    const d = ((date ? date.getTime() : Date.now()) - Date.UTC(2000, 0, 1, 12)) / 86400000;
+    const rad = Math.PI / 180, wrap = x => ((x % 360) + 360) % 360;
+    const moonLon = 218.316 + 13.176396 * d + 6.289 * Math.sin(rad * wrap(134.963 + 13.064993 * d));
+    const g = rad * wrap(357.528 + 0.9856003 * d);
+    const sunLon = 280.460 + 0.9856474 * d + 1.915 * Math.sin(g) + 0.020 * Math.sin(2 * g);
+    const elongation = wrap(moonLon - sunLon);       // 0 new, 90 first quarter, 180 full, 270 last quarter
+    const fraction = elongation / 360;                // 0..1 through the cycle
+    const illumination = (1 - Math.cos(rad * elongation)) / 2;
+    const index = Math.floor(fraction * 8 + 0.5) % 8;
+    return {fraction, illumination, index, name: PHASE_NAMES[index], waxing: fraction < .5};
+  }
+  // Lit part of the moon for any point in the cycle (not just the 8 steps).
+  function moonPhasePath(fraction, cx, cy, r) {
+    const theta = 2 * Math.PI * fraction, c = Math.cos(theta), illum = (1 - c) / 2;
+    if (illum < .015) return '';
+    if (illum > .985) return `M ${cx-r} ${cy} A ${r} ${r} 0 1 1 ${cx+r} ${cy} A ${r} ${r} 0 1 1 ${cx-r} ${cy} Z`;
+    const waxing = fraction < .5, top = `${cx} ${cy-r}`, bottom = `${cx} ${cy+r}`;
+    const limbSweep = waxing ? 1 : 0, rx = r * Math.abs(c);
+    const termSweep = waxing ? (c > 0 ? 0 : 1) : (c > 0 ? 1 : 0);
+    const term = rx < .5 ? `L ${top}` : `A ${rx} ${r} 0 0 ${termSweep} ${top}`;
+    return `M ${top} A ${r} ${r} 0 0 ${limbSweep} ${bottom} ${term} Z`;
+  }
+  function updateMoon(active) {
     const dark = isDarkTheme();
     const lit = dark ? '#f3efe0' : '#1c1c28', dim = dark ? '#2a2a36' : '#d9d6cc';
     moonDisc.setAttribute('fill', dim); moonDisc.setAttribute('stroke', lit);
     moonDisc.setAttribute('stroke-opacity', '.35'); moonDisc.setAttribute('stroke-width', '1.5');
-    moonLit.setAttribute('d', phasePath(index, 60, 60, 50)); moonLit.setAttribute('fill', lit);
+    const phase = moonPhaseInfo(new Date());
+    moonLit.setAttribute('d', moonPhasePath(phase.fraction, 60, 60, 50)); moonLit.setAttribute('fill', lit);
     moonButton.classList.toggle('active', !!active); moonButton.disabled = !active;
-    moonSvg.setAttribute('aria-label', ['New Moon','Waxing Crescent','First Quarter','Waxing Gibbous','Full Moon','Waning Gibbous','Last Quarter','Waning Crescent'][index % 8]);
+    const label = phase.name + ' \u00b7 ' + Math.round(phase.illumination * 100) + '% lit';
+    moonSvg.setAttribute('aria-label', label);
+    if (phaseEl) phaseEl.textContent = label;
   }
 
   function rngFor(s) {
@@ -290,7 +322,7 @@
 
   function render() {
     if (!state) return;
-    updateMoon(state.count % 8, state.active && !state.done);
+    updateMoon(state.active && !state.done);
     if (state.active) {
       try { drawGlass(shown); }
       catch (error) {
@@ -357,7 +389,7 @@
       flash.animate([{opacity:0},{opacity:.92,offset:.18},{opacity:0}],{duration:260,easing:'ease-out'});
     } catch (_) { /* final flash is optional */ }
   }
-  if (typeof module !== 'undefined' && module.exports) module.exports={isUnlocked,grantUnlock,TEST_TARGET,isCheatDay,localKey,phasePath,randomTarget,advanceTap,generateGlass,crackFraction,fillOpacity,renderProgress,strokeScale,facetOpacity,visibleSegmentCount,visibleFacetCount,terminalPalette,shakeAmplitude,impactFlash};
+  if (typeof module !== 'undefined' && module.exports) module.exports={isUnlocked,grantUnlock,TEST_TARGET,isCheatDay,localKey,phasePath,moonPhaseInfo,moonPhasePath,randomTarget,advanceTap,generateGlass,crackFraction,fillOpacity,renderProgress,strokeScale,facetOpacity,visibleSegmentCount,visibleFacetCount,terminalPalette,shakeAmplitude,impactFlash};
   if (moonButton) moonButton.addEventListener('click', function () {
     if (!tracker || !state || state.done) return;
     state=Object.assign(state,advanceTap(tracker));

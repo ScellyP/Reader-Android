@@ -14,7 +14,7 @@ Key files:
 - `app/src/main/assets/settings-file.js` — mirrors settings to `/storage/emulated/0/Novel/settings.txt`.
 - `app/src/main/assets/version.js` — `APP_VERSION`.
 - `app/src/main/assets/color-wheel.js` — Page/Text colour wheel.
-- `app/src/main/assets/moon-lock.js` — night-lock UI.
+- `app/src/main/assets/moon-lock.js` — Moonlit Lock (night-lock) UI; shows the real moon phase via `moonPhaseInfo()` / `moonPhasePath()`.
 - `app/src/main/assets/shatter-glass.js` — Canvas 2D shattered-glass renderer.
 - `MainActivity.kt` — Android host, hardcoded `chaptersDir`, `connectNativePlayer()`, `listAudioFiles()`.
 - `PlaybackService.kt` — Media3 foreground service, `QueueAwarePlayer`, notification controls.
@@ -363,7 +363,7 @@ A-B loop, replay-gain maths, virtual playlists, crossfade trigger, native EQ
 fallback). Run it from the project root: `node tests/audio-features.test.js`.
 It cannot exercise the Kotlin side or real audio.
 
-**Moon-lock checks.** `tests/moon-lock.test.js` checks eligible dates, moon
+**Moonlit Lock checks.** (The lock was renamed from "moon lock"; file and `NovelMoonLock` names are unchanged.) The moon icon uses `moonPhaseInfo(date)` (real phase from sun/moon longitudes) and `moonPhasePath(fraction, cx, cy, r)`; tap count no longer changes the icon. Add checks for these to the test below. `tests/moon-lock.test.js` checks eligible dates, moon
 phases, tap completion, four-side impact geometry, 26-ray density, random web
 staggering, facet progression, screen shake, and terminal contrast. Run it from
 the project root: `node tests/moon-lock.test.js`.
