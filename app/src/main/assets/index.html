@@ -2654,6 +2654,75 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
 @media (prefers-reduced-motion: reduce) {
   #audio-panel[data-view] .sp-view, #sp-sheet-body { animation: none !important; }
 }
+
+/* ---- Music panel motion ------------------------------------------------
+   One-shot animations only (nothing here loops), and only transform/opacity,
+   so it costs no battery once a transition has finished. All of it is off
+   under prefers-reduced-motion (block at the end). */
+@keyframes spRowIn   { from { opacity: 0; transform: translate3d(0, 12px, 0); } to { opacity: 1; transform: none; } }
+@keyframes spCoverIn { from { opacity: 0; transform: scale(1.08); } to { opacity: 1; transform: none; } }
+@keyframes spTextIn  { from { opacity: 0; transform: translate3d(0, 7px, 0); } to { opacity: 1; transform: none; } }
+@keyframes spMiniUp  { from { opacity: 0; transform: translate3d(0, 16px, 0); } to { opacity: 1; transform: none; } }
+@keyframes spNavPop  { 0% { transform: scale(.7); } 60% { transform: scale(1.18); } 100% { transform: none; } }
+@keyframes spIconIn  { from { opacity: 0; transform: scale(.45) rotate(-35deg); } to { opacity: 1; transform: none; } }
+@keyframes spPop     { 0% { opacity: 0; transform: scale(.6); } 65% { opacity: 1; transform: scale(1.1); } 100% { transform: none; } }
+
+/* song list: rows slide up one after another when a playlist is opened */
+#audio-panel.sp-enter #audio-queue li { animation: spRowIn .34s var(--ease) both; }
+#audio-panel.sp-enter #audio-queue li:nth-child(1) { animation-delay: 0ms; }
+#audio-panel.sp-enter #audio-queue li:nth-child(2) { animation-delay: 30ms; }
+#audio-panel.sp-enter #audio-queue li:nth-child(3) { animation-delay: 60ms; }
+#audio-panel.sp-enter #audio-queue li:nth-child(4) { animation-delay: 90ms; }
+#audio-panel.sp-enter #audio-queue li:nth-child(5) { animation-delay: 120ms; }
+#audio-panel.sp-enter #audio-queue li:nth-child(6) { animation-delay: 150ms; }
+#audio-panel.sp-enter #audio-queue li:nth-child(7) { animation-delay: 180ms; }
+#audio-panel.sp-enter #audio-queue li:nth-child(8) { animation-delay: 210ms; }
+#audio-panel.sp-enter #audio-queue li:nth-child(9) { animation-delay: 240ms; }
+#audio-panel.sp-enter #audio-queue li:nth-child(10) { animation-delay: 270ms; }
+#audio-panel.sp-enter #audio-queue li:nth-child(11) { animation-delay: 300ms; }
+#audio-panel.sp-enter #audio-queue li:nth-child(12) { animation-delay: 330ms; }
+
+/* cover art fades/zooms in whenever a new one is set (track change, view shown) */
+#sp-album-cover img, #sp-mini-art img, #sp-sheet-art img, #audio-artwork img { animation: spCoverIn .45s var(--ease) both; }
+#audio-playlist-list li[data-sp-cover]::before { animation: fadeIn .4s ease both; }
+
+/* title / artist slide up when the song changes (class set by spotify-ui.js) */
+.sp-swap { animation: spTextIn .36s var(--ease) both; }
+
+/* mini player rises into place when the first song loads */
+#sp-mini:not(.hidden) { animation: spMiniUp .34s var(--ease) both; }
+
+/* bottom tabs: the newly selected icon pops */
+#sp-nav button.active .ico { animation: spNavPop .36s cubic-bezier(.34, 1.56, .64, 1); }
+
+/* play / pause: springy press, and the icon spins in when it swaps */
+#audio-play-btn, #sp-mini-play { transition: transform .26s cubic-bezier(.34, 1.56, .64, 1), background .2s ease; }
+#sp-mini-play:active { transform: scale(.88); }
+#audio-play-btn.is-playing .i-pause, #audio-play-btn:not(.is-playing) .i-play,
+#audio-panel.sp-playing #sp-mini-play .sp-i-pause, #audio-panel:not(.sp-playing) #sp-mini-play .sp-i-play { animation: spIconIn .28s var(--ease) both; }
+
+/* toggles (shuffle etc.) pop when switched on */
+.sp-icon-btn.active .ico, #audio-shuffle-btn.active .ico, #sp-album-shuffle.active .ico { animation: spPop .3s cubic-bezier(.34, 1.56, .64, 1); }
+
+/* library header avatar pops in */
+#sp-lib-avatar { animation: spPop .5s cubic-bezier(.34, 1.56, .64, 1) both; }
+
+/* "..." sheet: scrim fades, options cascade in */
+#sp-sheet:not(.hidden) #sp-sheet-scrim { animation: fadeIn .22s ease both; }
+#sp-sheet:not(.hidden) #sp-sheet-list > * { animation: spRowIn .3s var(--ease) both; }
+#sp-sheet:not(.hidden) #sp-sheet-list > *:nth-child(2) { animation-delay: .04s; }
+#sp-sheet:not(.hidden) #sp-sheet-list > *:nth-child(3) { animation-delay: .08s; }
+#sp-sheet:not(.hidden) #sp-sheet-list > *:nth-child(4) { animation-delay: .12s; }
+#sp-sheet:not(.hidden) #sp-sheet-list > *:nth-child(n+5) { animation-delay: .16s; }
+
+@media (prefers-reduced-motion: reduce) {
+  #audio-panel.sp-enter #audio-queue li, #sp-album-cover img, #sp-mini-art img, #sp-sheet-art img, #audio-artwork img,
+  #audio-playlist-list li[data-sp-cover]::before, .sp-swap, #sp-mini:not(.hidden), #sp-nav button.active .ico,
+  #audio-play-btn .i-play, #audio-play-btn .i-pause, #sp-mini-play .sp-i-play, #sp-mini-play .sp-i-pause,
+  .sp-icon-btn.active .ico, #audio-shuffle-btn.active .ico, #sp-album-shuffle.active .ico, #sp-lib-avatar,
+  #sp-sheet-scrim, #sp-sheet-list > * { animation: none !important; }
+  #audio-play-btn, #sp-mini-play { transition: none; }
+}
 </style>
 </head>
 <body>

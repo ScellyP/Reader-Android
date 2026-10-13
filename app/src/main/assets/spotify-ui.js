@@ -16,6 +16,15 @@
   if (!panel) return;
 
   var VIEWS = ['library', 'album', 'track'];
+  var enterTimer = 0, lastSong = null;
+
+  // Restart a one-shot CSS animation (.sp-swap) on an element.
+  function bump(node) {
+    if (!node) return;
+    node.classList.remove('sp-swap');
+    void node.offsetWidth;
+    node.classList.add('sp-swap');
+  }
 
   var el = {
     views: $('sp-views'), mini: $('sp-mini'), miniArt: $('sp-mini-art'),
@@ -39,6 +48,10 @@
   function setView(name) {
     if (VIEWS.indexOf(name) < 0) return;
     panel.setAttribute('data-view', name);
+    // Lets index.html stagger the song rows in; removed again once they've played.
+    panel.classList.add('sp-enter');
+    clearTimeout(enterTimer);
+    enterTimer = setTimeout(function () { panel.classList.remove('sp-enter'); }, 900);
     Array.prototype.forEach.call(document.querySelectorAll('#sp-nav [data-sp-view]'), function (b) {
       b.classList.toggle('active', b.getAttribute('data-sp-view') === name);
     });
@@ -368,6 +381,13 @@
     var playing = !!(el.play && el.play.classList.contains('is-playing'));
     var pl = playlistTitle();
     var n = (el.plCount && el.plCount.textContent || '').trim();
+
+    // Song changed: slide the title/artist (full player + mini player) into place.
+    var songKey = hasTrack ? title + '\u0001' + artist : '';
+    if (lastSong !== null && songKey && songKey !== lastSong) {
+      bump(el.title); bump(el.artist); bump($('sp-mini-text'));
+    }
+    lastSong = songKey;
 
     panel.classList.toggle('sp-playing', playing);
     if (el.mini) el.mini.classList.toggle('hidden', !hasTrack);
