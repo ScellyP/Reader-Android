@@ -2401,6 +2401,9 @@
 
   function updateNightLock() {
     if (moonTest) return; // test run owns the overlay until it ends
+    // Hidden page: the native side pauses music at night, and the
+    // visibilitychange handler below re-runs this the moment the page returns.
+    if (document.visibilityState !== 'visible' && !nightLocked) return;
     const d = new Date();
     const left = nightLockMinutesLeft(d);
     const unlocked = window.NovelMoonLock && window.NovelMoonLock.isUnlocked();

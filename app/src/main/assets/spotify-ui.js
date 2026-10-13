@@ -177,7 +177,7 @@
   function schedule() { if (!raf) raf = requestAnimationFrame(sync); }
 
   function progress() {
-    if (!el.seek || !el.miniFill || panel.classList.contains('hidden')) return;
+    if (document.hidden || !el.seek || !el.miniFill || panel.classList.contains('hidden')) return;
     var max = parseFloat(el.seek.max) || 1, v = parseFloat(el.seek.value) || 0;
     el.miniFill.style.width = Math.max(0, Math.min(100, v / max * 100)) + '%';
   }

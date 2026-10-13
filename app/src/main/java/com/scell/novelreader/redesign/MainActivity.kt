@@ -82,6 +82,19 @@ class MainActivity : ComponentActivity() {
     // isPlaying), and the WebView <audio> fallback engine, which the native
     // controller knows nothing about.
     private val inactivityCloseMs = 10 * 60 * 1000L
+    // Set after the first "nothing is playing" reading; the app only closes if
+    // a second reading a few seconds later agrees (see closeRunnable).
+    private var closeRecheckPending = false
+
+    private fun logAutoClose(reason: String) {
+        try {
+            val f = File(getExternalFilesDir(null) ?: filesDir, "autoclose_log.txt")
+            f.appendText("${java.util.Date()} auto-close: $reason\n")
+        } catch (e: Exception) {
+            // Logging only; never block closing on it.
+        }
+    }
+
     private val closeRunnable = object : Runnable {
         override fun run() {
             val c = mediaController
@@ -89,20 +102,35 @@ class MainActivity : ComponentActivity() {
                 (c.playWhenReady && (c.playbackState == Player.STATE_BUFFERING ||
                     c.playbackState == Player.STATE_READY)))
             if (nativeActive) {
+                closeRecheckPending = false
                 screenHandler.postDelayed(this, inactivityCloseMs)
                 return
             }
+            // A single reading can land in the gap between two tracks, a
+            // crossfade hand-over or a short audio-focus blip. Look again
+            // a few seconds later before closing anything.
+            if (!closeRecheckPending) {
+                closeRecheckPending = true
+                screenHandler.postDelayed(this, 5_000L)
+                return
+            }
+            closeRecheckPending = false
             if (!::webView.isInitialized) {
+                logAutoClose("no webview")
                 finishAndRemoveTask()
                 return
             }
             webView.evaluateJavascript(
                 "!!(window.NovelAudio && window.NovelAudio.isPlaying && window.NovelAudio.isPlaying())"
             ) { result ->
-                if (result == "true") {
-                    screenHandler.postDelayed(this, inactivityCloseMs)
-                } else {
+                // Only an explicit "false" closes. A null/failed answer (e.g. a
+                // paused WebView that can't run the script) is not proof that
+                // nothing is playing.
+                if (result == "false") {
+                    logAutoClose("idle for 10 min, native=${c?.playbackState}/${c?.playWhenReady}, js=false")
                     finishAndRemoveTask()
+                } else {
+                    screenHandler.postDelayed(this, inactivityCloseMs)
                 }
             }
         }
@@ -194,6 +222,8 @@ class MainActivity : ComponentActivity() {
     // Set once the WebView's renderer process has died and the view has been
     // thrown away (see onRenderProcessGone); the activity is then rebuilt.
     private var webViewGone = false
+    // True between onResume and onPause; the progress poll slows down when false.
+    @Volatile private var appInForeground = false
     private var lastBackPressMs = 0L
     private var permissionFlowActive = false
     private var permissionFlowStarted = false
@@ -652,7 +682,15 @@ class MainActivity : ComponentActivity() {
                         null
                     )
                 }
-                progressHandler.postDelayed(this, 500)
+                // Screen visible: 500 ms keeps the seek bar smooth. App in the
+                // background / screen off: nobody sees the bar, so tick slowly
+                // mid-track and only go back to 500 ms near the end of a
+                // track, where crossfade (needs ~0.5 s precision) and the
+                // 20 s sleep-timer fade do their work.
+                val remainingSec = if (controller != null && controller.duration != C.TIME_UNSET && controller.duration > 0)
+                    (controller.duration - controller.currentPosition) / 1000.0 else 0.0
+                val delay = if (appInForeground || remainingSec <= 35.0) 500L else 2000L
+                progressHandler.postDelayed(this, delay)
             }
         }
         progressRunnable = runnable
@@ -901,6 +939,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
+        appInForeground = false
         screenHandler.removeCallbacks(releaseScreenRunnable)
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (::webView.isInitialized && !webViewGone) {
@@ -910,6 +949,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        appInForeground = true
+        // Push the current position right away (the poll may have been in slow mode).
+        if (mediaController?.isPlaying == true) startProgressUpdates()
         keepScreenAwake()
         nightLockHandler.removeCallbacks(nightLockCheck)
         nightLockHandler.post(nightLockCheck)
