@@ -226,11 +226,11 @@
      open, so loading, first-run and error read as three clear states
      rather than one blank screen. */
   function setWelcome(state, detail) {
-    const iconId = state === 'error' ? 'i-info' : (state === 'setup' ? 'i-folder' : 'i-book');
+    const iconId = state === 'error' ? 'i-info' : (state === 'setup' ? 'i-folder' : 'i-moon-stars');
     welcomeEl.classList.toggle('is-loading', state === 'loading');
     let html = '<div class="wl-mark"></div>';
     if (state === 'loading') {
-      html += '<h2>Your library is loading</h2><p>Looking for novels in your Novel folder.</p>';
+      html += '<h2>Your library is rising</h2><p>Looking for novels in your Novel folder.</p>';
     } else if (state === 'setup') {
       html += '<h2>Let\u2019s find your novels</h2>' +
         '<p>Novel Reader works offline, straight from a folder on your phone.</p>' +
@@ -245,6 +245,11 @@
       html += '<h2>Couldn\u2019t open your library</h2><p>' + (detail || 'Something went wrong while reading your folder.') + '</p>';
     }
     welcomeEl.innerHTML = html;
+    // innerHTML above wipes the starfield, so put it back.
+    const welcomeSky = document.createElement('div');
+    welcomeSky.className = 'sky sm';
+    welcomeSky.setAttribute('aria-hidden', 'true');
+    welcomeEl.insertBefore(welcomeSky, welcomeEl.firstChild);
     welcomeEl.querySelector('.wl-mark').appendChild(svgIcon(iconId));
     if (detail && state !== 'error' && state !== 'empty') { /* detail unused for these states */ }
   }
@@ -696,7 +701,7 @@
       cover.className = 'novel-cover';
       const ph = document.createElement('div');
       ph.className = 'nc-ph';
-      ph.appendChild(svgIcon('i-book'));
+      ph.appendChild(svgIcon('i-planet'));
       const initial = document.createElement('b');
       initial.textContent = (name.trim().charAt(0) || '?').toUpperCase();
       ph.appendChild(initial);

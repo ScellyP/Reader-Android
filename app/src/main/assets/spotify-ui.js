@@ -721,7 +721,7 @@
         target.innerHTML = '<img alt="" src="' + sourceImage.src + '">';
       }
     } else if (!target.querySelector('svg')) {
-      target.innerHTML = '<svg class="ico"><use href="#i-music"/></svg>';
+      target.innerHTML = '<svg class="ico"><use href="#i-moon-music"/></svg>';
     }
   }
 

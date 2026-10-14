@@ -3,42 +3,53 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- Soft pool of lamplight behind the book. -->
+    <!-- Moonlight pool behind the icon. -->
     <path
-        android:fillColor="#1F1A0E"
-        android:pathData="M54,54m-30,0a30,30 0,1 1,60 0a30,30 0,1 1,-60 0" />
-    <!-- Open book outline, same shape as the launch splash. Kept inside the
-         66dp adaptive-icon safe zone so no launcher mask can crop it. -->
+        android:fillColor="#161B33"
+        android:pathData="M54,54m-32,0a32,32 0,1 1,64 0a32,32 0,1 1,-64 0" />
+    <!-- Crescent moon above the book. -->
     <path
-        android:strokeColor="#E8A83E"
-        android:strokeWidth="3.4"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:fillColor="#00000000"
-        android:pathData="M54,38C49,33 40,31 31,31.5L31,72.5C40,72 49,74 54,79C59,74 68,72 77,72.5L77,31.5C68,31 59,33 54,38Z" />
-    <path
-        android:strokeColor="#E8A83E"
-        android:strokeWidth="3.4"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M54,38L54,79" />
-    <!-- Text lines on each page. -->
-    <path
-        android:strokeColor="#EBE6DA"
-        android:strokeAlpha="0.6"
-        android:strokeWidth="2.6"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M38,44C41.5,44.3 45,45 48,46.5M38,52C41.5,52.3 45,53 48,54.5M60,46.5C63,45 66.5,44.3 70,44M60,54.5C63,53 66.5,52.3 70,52" />
-    <!-- Marker distinguishing this redesigned build from the stable app
-         when both are installed side by side — kept well inside the
-         adaptive-icon safe zone (28dp from center, vs. the ~33dp radius
-         a circular launcher mask guarantees) so it survives every
-         launcher shape rather than being clipped at a corner. -->
+        android:fillColor="#F3EFE0"
+        android:pathData="M57,23.4A12,12 0,1 0,57 46.6A12.5,12.5 0,0 1,57 23.4Z" />
+    <!-- A few stars. -->
+    <path android:fillColor="#F3EFE0" android:pathData="M34,36m-1.4,0a1.4,1.4 0,1 1,2.8 0a1.4,1.4 0,1 1,-2.8 0" />
+    <path android:fillColor="#F3EFE0" android:pathData="M45,19m-1.2,0a1.2,1.2 0,1 1,2.4 0a1.2,1.2 0,1 1,-2.4 0" />
+    <path android:fillColor="#F3EFE0" android:pathData="M63,19.5m-1,0a1,1 0,1 1,2 0a1,1 0,1 1,-2 0" />
+    <!-- Open book, smaller and lower, kept inside the 66dp adaptive-icon safe
+         zone so no launcher mask can crop it. -->
+    <group
+        android:pivotX="54"
+        android:pivotY="54"
+        android:scaleX="0.78"
+        android:scaleY="0.78"
+        android:translateY="11">
+        <path
+            android:strokeColor="#E8A83E"
+            android:strokeWidth="3.6"
+            android:strokeLineCap="round"
+            android:strokeLineJoin="round"
+            android:fillColor="#00000000"
+            android:pathData="M54,38C49,33 40,31 31,31.5L31,72.5C40,72 49,74 54,79C59,74 68,72 77,72.5L77,31.5C68,31 59,33 54,38Z" />
+        <path
+            android:strokeColor="#E8A83E"
+            android:strokeWidth="3.6"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000"
+            android:pathData="M54,38L54,79" />
+        <path
+            android:strokeColor="#EBE6DA"
+            android:strokeAlpha="0.6"
+            android:strokeWidth="2.8"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000"
+            android:pathData="M38,44C41.5,44.3 45,45 48,46.5M38,52C41.5,52.3 45,53 48,54.5M60,46.5C63,45 66.5,44.3 70,44M60,54.5C63,53 66.5,52.3 70,52" />
+    </group>
+    <!-- Marker distinguishing this redesigned build from the stable app when
+         both are installed side by side (inside the safe zone, as before). -->
     <path
         android:fillColor="#0B0D12"
-        android:pathData="M73.8,34.2m-9,0a9,9 0,1 1,18 0a9,9 0,1 1,-18 0" />
+        android:pathData="M76,28m-8,0a8,8 0,1 1,16 0a8,8 0,1 1,-16 0" />
     <path
         android:fillColor="#40DCBE"
-        android:pathData="M73.8,34.2m-6.5,0a6.5,6.5 0,1 1,13 0a6.5,6.5 0,1 1,-13 0" />
+        android:pathData="M76,28m-5.8,0a5.8,5.8 0,1 1,11.6 0a5.8,5.8 0,1 1,-11.6 0" />
 </vector>

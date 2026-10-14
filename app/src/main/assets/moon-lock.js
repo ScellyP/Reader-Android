@@ -137,6 +137,7 @@
     const phase = moonPhaseInfo(new Date());
     moonLit.setAttribute('d', moonPhasePath(phase.fraction, 60, 60, 50)); moonLit.setAttribute('fill', lit);
     moonButton.classList.toggle('active', !!active); moonButton.disabled = !active;
+    moonSvg.style.filter = dark ? 'drop-shadow(0 0 16px rgba(243,239,224,.35))' : 'none';
     const label = phase.name + ' \u00b7 ' + Math.round(phase.illumination * 100) + '% lit';
     moonSvg.setAttribute('aria-label', label);
     if (phaseEl) phaseEl.textContent = label;
@@ -407,5 +408,5 @@
     shatterOn=false;
     state=null; tracker=null; system=null; shown=0; lastDrawQ=-1;
   }
-  window.NovelMoonLock = { isUnlocked, canDismiss:() => unlockReady, startSession, stopSession, onUnlocked:null, onTestFinished:null, isCheatDay };
+  window.NovelMoonLock = { moonPhaseInfo, moonPhasePath, isUnlocked, canDismiss:() => unlockReady, startSession, stopSession, onUnlocked:null, onTestFinished:null, isCheatDay };
 })();

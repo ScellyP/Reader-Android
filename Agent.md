@@ -15,6 +15,7 @@ Key files:
 - `app/src/main/assets/version.js` — `APP_VERSION`.
 - `app/src/main/assets/color-wheel.js` — Page/Text colour wheel.
 - `app/src/main/assets/moon-lock.js` — Moonlit Lock (night-lock) UI; shows the real moon phase via `moonPhaseInfo()` / `moonPhasePath()`.
+- `app/src/main/assets/moon-theme.js` — fills the `[data-moon]` phase badges (uses `NovelMoonLock.moonPhaseInfo/moonPhasePath`). The rest of the moon/space theme is CSS in `<style id="moon-theme">` in `index.html` (`.sky` starfield, ornaments, splash moon).
 - `app/src/main/assets/shatter-glass.js` — Canvas 2D shattered-glass renderer.
 - `MainActivity.kt` — Android host, hardcoded `chaptersDir`, `connectNativePlayer()`, `listAudioFiles()`.
 - `PlaybackService.kt` — Media3 foreground service, `QueueAwarePlayer`, notification controls.

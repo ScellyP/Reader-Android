@@ -212,6 +212,22 @@ The moon on the lock shows tonight's **real moon phase** (computed on the
 phone, no internet needed), with its name and how much of it is lit, e.g.
 "Waxing Crescent · 21% lit". It no longer cycles through phases as you tap.
 
+### Moon and space theme
+
+The whole app is dressed for the night sky: a moonrise splash, twinkling
+stars (with an occasional shooting star) behind the library, loading screen,
+break reminder and Moonlit Lock, a crescent-and-star rule under each chapter
+title and above Previous / Next, an orbiting mark while the library loads, a
+planet for novels without a cover, and a small live moon-phase badge in the
+library heading and the status strip. Stars and ornaments follow your reading
+colours and switch off when Android's "reduce motion" is on.
+
+The music player is themed too: songs without cover art get a moonlit-sky
+cover, the Library shows today's real moon with its phase underneath,
+playlists are "Constellations" and the rescan button is "Scan the sky". The
+current chapter is marked with a crescent, slider thumbs glow like a little
+moon, and the app icon and the music notification icon are a crescent moon.
+
 ## Audio player
 
 The audio player is a hybrid: **VLC's playback reliability with Spotify's

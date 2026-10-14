@@ -1689,7 +1689,7 @@ window.NovelAudio = (function () {
     }
     els.artwork.innerHTML = uri
       ? '<img alt="" src="' + uri + '">'
-      : '<svg class="ico"><use href="#i-music"/></svg>';
+      : '<svg class="ico"><use href="#i-moon-music"/></svg>';
     els.artwork.classList.toggle('has-art', !!uri);
   }
 
@@ -2376,8 +2376,8 @@ window.NovelAudio = (function () {
 
       const track = state.currentTrackId ? MediaLibrary.getTrack(state.currentTrackId) : null;
 
-      els.npTitle.textContent = track ? track.title : (state.scanning ? 'Scanning…' : 'Nothing playing');
-      els.npArtist.textContent = track ? (track.artist || 'Unknown artist') : (state.scanning ? 'Looking through your music folder' : 'Pick a track below');
+      els.npTitle.textContent = track ? track.title : (state.scanning ? 'Scanning…' : 'The sky is quiet');
+      els.npArtist.textContent = track ? (track.artist || 'Unknown artist') : (state.scanning ? 'Looking through your music folder' : 'Pick a star below');
       updateArtwork(track);
       els.playBtn.classList.toggle('is-playing', !!state.playing);
       // Top-bar music shortcut: shown once a track is loaded or playing
@@ -2514,7 +2514,7 @@ window.NovelAudio = (function () {
       els.queue.style.display = hasTracks ? '' : 'none';
       if (!hasTracks) {
         els.empty.innerHTML = state.tracks.length === 0
-          ? 'No audio files yet. Put music in <code>/storage/emulated/0/Novel/Audio</code>, then tap Rescan.'
+          ? 'No audio files yet. Put music in <code>/storage/emulated/0/Novel/Audio</code>, then tap Scan the sky.'
           : 'This playlist has no songs.';
       }
     },
