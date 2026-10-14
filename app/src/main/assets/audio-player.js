@@ -99,6 +99,27 @@ window.NovelAudio = (function () {
     } catch (e) { /* ignore */ }
   }
 
+  /* Muting pauses the music and raising the volume again carries on. Only a
+     pause that muting caused is undone: if you press play yourself, or never
+     had music playing, turning the volume up changes nothing. */
+  const MUTE_AT = 0.005;
+  const MuteGuard = {
+    pausedByMute: false,
+    check() {
+      if (state.volume <= MUTE_AT) {
+        if (state.playing && !this.pausedByMute) {
+          this.pausedByMute = true;
+          AudioEngine.pause();
+        }
+      } else if (this.pausedByMute) {
+        this.pausedByMute = false;
+        if (!state.playing) AudioEngine.play();
+      }
+    },
+    // The listener took over (play pressed, notification button, headset...).
+    clear() { this.pausedByMute = false; },
+  };
+
   /* =======================================================================
      1. STATE
      =======================================================================
@@ -566,6 +587,7 @@ window.NovelAudio = (function () {
       const track = MediaLibrary.getTrack(id);
       if (!track) return;
 
+      MuteGuard.clear(); // playback started on purpose: forget any pause-on-mute
       const isAlreadyLoaded = id === state.currentTrackId && this._el.src;
 
       // Picking a different track (next/previous/queue tap) while a
@@ -661,6 +683,7 @@ window.NovelAudio = (function () {
     setVolume(v) {
       state.volume = Math.max(0, Math.min(1, v));
       applySystemVolume(state.volume);
+      MuteGuard.check();
       this._applyVolume();
       Prefs.save();
       AudioUI.render();
@@ -940,6 +963,7 @@ window.NovelAudio = (function () {
       const track = MediaLibrary.getTrack(id);
       if (!track) return;
 
+      MuteGuard.clear(); // playback started on purpose: forget any pause-on-mute
       const isAlreadyLoaded = id === this._loadedTrackId;
       state.currentTrackId = id;
       PlaybackQueue.jumpTo(id);
@@ -1018,6 +1042,7 @@ window.NovelAudio = (function () {
     setVolume(v) {
       state.volume = Math.max(0, Math.min(1, v));
       applySystemVolume(state.volume);
+      MuteGuard.check();
       const bridge = this._bridge();
       if (bridge) bridge.nativeAudioSetVolume(gain());
       Prefs.save();
@@ -1072,6 +1097,7 @@ window.NovelAudio = (function () {
     // audio focus lost to another app.
     onStateChanged(playing) {
       if (playing) AudioUI.setNote(''); // confirmed playback supersedes any prior error/skip note
+      if (playing) MuteGuard.clear();   // started from the notification/headset: not ours to undo
       if (!playing && Date.now() < this._xfGraceUntil) return; // see _xfGraceUntil
       if (state.playing === playing) return;
       state.playing = playing;
@@ -2550,12 +2576,14 @@ window.NovelAudio = (function () {
     // volume, so the slider/percentage in the open panel follow along.
     syncVolume() {
       syncVolumeFromSystem();
+      MuteGuard.check();
       AudioUI.render();
     },
 
     // Called by reader.js each time the panel is opened.
     onPanelOpened() {
       syncVolumeFromSystem();
+      MuteGuard.check();
       AudioUI.render();
     },
 

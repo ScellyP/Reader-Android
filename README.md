@@ -244,6 +244,15 @@ it. Once a track is loaded, a 🎧 shortcut also appears in the top bar, between
 the next-chapter button and the font dropdown. The panel has the playlist
 list, shuffle, previous/play/next, repeat, a seek bar and a volume slider.
 
+**Mute pauses the music.** If the media volume goes to 0 (volume keys, the
+system volume panel or the slider) the music pauses, and it carries on when
+you turn the volume back up. Only a pause caused by muting is undone: if you
+paused it yourself, raising the volume won't start it again.
+
+**Swipe to close.** Swipe the music panel from left to right to close it, the
+same as its ✕ button. Dragging the sliders, scrolling the lists and the track
+options sheet are not affected.
+
 > **Currently hidden:** the **Sleep timer** and the **Equalizer** controls are
 > switched off in the music panel (the code is kept, so they can be shown
 > again). The feature tables below describe what is built, not what is
@@ -296,6 +305,8 @@ capitals) naming which playlist it came from.
 | Lock-screen transport controls, Bluetooth/headset buttons | ✅ Working |
 | Audio-focus handling (ducks/pauses for calls, other apps) | ✅ Working |
 | Pauses automatically when headphones/Bluetooth disconnect | ✅ Working |
+| Pauses when the volume is muted and resumes when it is raised | ✅ Implemented |
+| Swipe the music panel left-to-right to close it | ✅ Implemented |
 | Graceful handling of unplayable files (skip, don't stall) | ✅ Working |
 | A-B repeat (A / B buttons under the seek bar) | ✅ Implemented |
 | Likes (heart button on the now-playing card, plus a "Liked" playlist) | ✅ Implemented |

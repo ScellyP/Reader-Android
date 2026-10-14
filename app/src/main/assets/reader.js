@@ -1259,6 +1259,49 @@
     if (e.target.closest('[data-close-panel]')) closeAllPanels();
   });
 
+  /* Swipe the music panel left-to-right to close it, like its ✕ button.
+     It only counts as a swipe when the finger moves mostly sideways, far and
+     quickly enough, so scrolling the lists, dragging the seek/volume sliders
+     and tapping are all unaffected. */
+  (function () {
+    if (!audioPanel) return;
+    const MIN_DX = 70, MAX_MS = 800;
+    let sx = 0, sy = 0, st = 0, tracking = false;
+
+    // True when the touch started somewhere that needs sideways drags itself.
+    function ownsHorizontalDrag(target) {
+      for (let el = target; el && el !== audioPanel; el = el.parentElement) {
+        if (el.matches && el.matches('input, textarea, select, #sp-sheet')) return true;
+        if (el.scrollWidth > el.clientWidth + 1 && el.scrollLeft > 0) {
+          const ox = getComputedStyle(el).overflowX;
+          if (ox === 'auto' || ox === 'scroll') return true;
+        }
+      }
+      return false;
+    }
+
+    audioPanel.addEventListener('touchstart', (e) => {
+      tracking = e.touches.length === 1 && !ownsHorizontalDrag(e.target);
+      if (!tracking) return;
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now();
+    }, { passive: true });
+
+    audioPanel.addEventListener('touchmove', (e) => {
+      if (e.touches.length !== 1) tracking = false;
+    }, { passive: true });
+
+    audioPanel.addEventListener('touchend', (e) => {
+      if (!tracking) return;
+      tracking = false;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - sx, dy = t.clientY - sy;
+      if (dx >= MIN_DX && Math.abs(dy) <= dx * 0.6 && Date.now() - st <= MAX_MS) {
+        closeAllPanels();
+      }
+    }, { passive: true });
+    audioPanel.addEventListener('touchcancel', () => { tracking = false; }, { passive: true });
+  })();
+
   // Close a panel when tapping anywhere outside it and outside its
   // trigger button. `triggers` is a list of CSS selectors.
   function closeOnOutsideClick(panel, triggers) {

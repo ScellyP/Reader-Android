@@ -2,8 +2,11 @@ package com.scell.novelreader.redesign
 
 import android.annotation.SuppressLint
 import android.app.AlertDialog
+import android.content.BroadcastReceiver
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.media.AudioManager
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -374,6 +377,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installCrashLogger()
+        registerVolumeReceiver()
 
         // Start reading the music library right away, in parallel with the page
         // and the chapter loading. (Without storage access yet, it starts from
@@ -841,6 +845,57 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // Muting the media volume (by any means: volume keys, the system volume
+    // panel, the in-app slider) pauses the music; raising it again resumes
+    // it. Only a pause caused by muting is undone. Handled here, natively, so
+    // it also works with the screen off or the app in the background.
+    private var mutePaused = false
+
+    private val volumeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val stream = intent?.getIntExtra("android.media.EXTRA_VOLUME_STREAM_TYPE", -1)
+            if (stream == AudioManager.STREAM_MUSIC) handleMuteChange()
+        }
+    }
+
+    private fun handleMuteChange() {
+        try {
+            val am = getSystemService(AudioManager::class.java) ?: return
+            val controller = mediaController
+            val muted = am.getStreamVolume(AudioManager.STREAM_MUSIC) <= 0
+            if (muted) {
+                if (controller != null && controller.isPlaying) {
+                    mutePaused = true
+                    controller.pause()
+                }
+            } else if (mutePaused) {
+                mutePaused = false
+                controller?.play()
+            }
+        } catch (e: Exception) {
+            // Not permitted right now — ignore.
+        }
+        if (::webView.isInitialized) {
+            webView.evaluateJavascript(
+                "window.NovelAudio && window.NovelAudio.syncVolume && window.NovelAudio.syncVolume();", null
+            )
+        }
+    }
+
+    @SuppressLint("UnspecifiedRegisterReceiverFlag")
+    private fun registerVolumeReceiver() {
+        val filter = IntentFilter("android.media.VOLUME_CHANGED_ACTION")
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(volumeReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                registerReceiver(volumeReceiver, filter)
+            }
+        } catch (e: Exception) {
+            // Without it, muting still works from the slider and volume keys.
+        }
+    }
+
     // Raises/lowers the real media volume (shows the system volume UI) and
     // refreshes the slider in the audio panel.
     private fun adjustMediaVolume(raise: Boolean) {
@@ -931,6 +986,7 @@ class MainActivity : ComponentActivity() {
      */
     override fun onDestroy() {
         super.onDestroy()
+        try { unregisterReceiver(volumeReceiver) } catch (e: Exception) { /* not registered */ }
         screenHandler.removeCallbacks(releaseScreenRunnable)
         screenHandler.removeCallbacks(closeRunnable)
         nightLockHandler.removeCallbacks(nightLockCheck)
