@@ -135,12 +135,21 @@
     moonDisc.setAttribute('fill', dim); moonDisc.setAttribute('stroke', lit);
     moonDisc.setAttribute('stroke-opacity', '.35'); moonDisc.setAttribute('stroke-width', '1.5');
     const phase = moonPhaseInfo(new Date());
-    moonLit.setAttribute('d', moonPhasePath(phase.fraction, 60, 60, 50)); moonLit.setAttribute('fill', lit);
+    // Starts on tonight's real phase; every tap steps the moon on to the next phase.
+    const taps = active && state ? state.count % 8 : 0;
+    let name = phase.name;
+    if (taps) {
+      const idx = (phase.index + taps) % 8;
+      moonLit.setAttribute('d', phasePath(idx, 60, 60, 50));
+      name = PHASE_NAMES[idx];
+    } else {
+      moonLit.setAttribute('d', moonPhasePath(phase.fraction, 60, 60, 50));
+    }
+    moonLit.setAttribute('fill', lit);
     moonButton.classList.toggle('active', !!active); moonButton.disabled = !active;
     moonSvg.style.filter = dark ? 'drop-shadow(0 0 16px rgba(243,239,224,.35))' : 'none';
-    const label = phase.name + ' \u00b7 ' + Math.round(phase.illumination * 100) + '% lit';
-    moonSvg.setAttribute('aria-label', label);
-    if (phaseEl) phaseEl.textContent = label;
+    moonSvg.setAttribute('aria-label', name);
+    if (phaseEl) phaseEl.textContent = name;
   }
 
   function rngFor(s) {

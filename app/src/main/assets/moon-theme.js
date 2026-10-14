@@ -8,7 +8,7 @@
     const ml = window.NovelMoonLock;
     if (!ml || !ml.moonPhaseInfo || !ml.moonPhasePath) return;
     const phase = ml.moonPhaseInfo(new Date());
-    const label = phase.name + ' \u00b7 ' + Math.round(phase.illumination * 100) + '% lit';
+    const label = phase.name;
     document.querySelectorAll('[data-moon-label]').forEach(function (el) { el.textContent = label; });
     document.querySelectorAll('[data-moon]').forEach(function (el) {
       el.textContent = '';

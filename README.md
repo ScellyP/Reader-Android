@@ -208,9 +208,9 @@ Between **12:00 AM and 6:00 AM** the app locks itself: a full-screen
 and the Android back button just leaves the app. It lifts by itself at
 6:00 AM. The lock window follows the phone's local clock.
 
-The moon on the lock shows tonight's **real moon phase** (computed on the
-phone, no internet needed), with its name and how much of it is lit, e.g.
-"Waxing Crescent · 21% lit". It no longer cycles through phases as you tap.
+The moon on the lock starts on tonight's **real moon phase** (computed on the
+phone, no internet needed) with its name underneath, e.g. "Waxing Crescent".
+Each tap on the moon steps it on to the next phase.
 
 ### Moon and space theme
 
