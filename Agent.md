@@ -171,7 +171,7 @@ top-of-file comment for the architecture, and `PlaybackService.kt` /
 | 10-band equalizer + preamp | **Working**² (native engine: built, see footnote) |
 | Volume normalisation (replay gain) | **Working**⁴ — off / track / album, from the ReplayGain tags in your files |
 | Resume-at-position per track | Removed — every track starts at 0 (only a live engine hand-off keeps its position) |
-| A-B repeat | Logic ready — works through the JS API; no buttons yet |
+| A-B repeat | **Working** — A / B buttons under the seek bar |
 | Graceful handling of unplayable files (skip, don't stall) | **Working** |
 
 **From Spotify — how it feels to use**
@@ -180,12 +180,12 @@ top-of-file comment for the architecture, and `PlaybackService.kt` /
 | --- | --- |
 | Library scan (native folder scan + tags) | **Working** |
 | Playlists via folders (a subfolder in Audio/ = a playlist) | **Working** |
-| Curated playlists (hand-picked, not tied to a folder) | Logic ready — create/rename/delete/add in JS; no editor UI yet |
+| Curated playlists (hand-picked, not tied to a folder) | **Working** — "New playlist" in the Library, plus add-to-playlist |
 | Visible "up next" queue | **Working** |
 | Shuffle (real Fisher-Yates) + repeat (off / all / one) | **Working** |
 | Now-playing bar with artwork, seek scrubber | **Working** |
 | Crossfade between tracks | **Working**⁵ — 🎧 panel → Crossfade slider, 1–12 s (native engine: built, see footnote) |
-| Recently played / liked tracks | Logic ready — recorded and persisted, selectable as virtual playlists; no buttons yet |
+| Recently played / liked tracks | **Working** — heart button on the now-playing card; "Recently played" and "Liked" in the Library |
 
 **Reader-specific / background playback**
 
@@ -201,8 +201,7 @@ top-of-file comment for the architecture, and `PlaybackService.kt` /
 | Pauses automatically when headphones/Bluetooth disconnect | **Working** |
 
 Audio files are expected in `/storage/emulated/0/Novel/Audio` (created
-automatically on first scan if it doesn't exist). Tap 🎧 → "Scan
-folder" to load it, then 🎧 → "Equalizer ▾" for the 10-band EQ.
+automatically on first scan if it doesn't exist). Tap 🎧 → "Scan the sky" to load it, then 🎧 → "Equalizer ▾" for the 10-band EQ.
 
 **Playlists** are just subfolders of `Audio/` — no separate playlist
 file or in-app "create playlist" step. A folder's name becomes the
@@ -322,12 +321,12 @@ data or native support), `stub` (stores a value, nothing consumes it),
 
 | Module (`NovelAudio.features.…`) | Status | What exists | Next step |
 | --- | --- | --- | --- |
-| `abRepeat` | logic-ready | `setA()`, `setB()`, `clear()`, `get()`; loops via `AudioEngine.seek()`; cleared on every new track; never persisted. Loop can overshoot B by up to ~0.5 s (progress rate) | A/B buttons + a marker on the seek bar. Frame-accurate looping would need a native `ClippingMediaSource` |
+| `abRepeat` | working | `setA()`, `setB()`, `clear()`, `get()`; loops via `AudioEngine.seek()`; cleared on every new track; never persisted. Loop can overshoot B by up to ~0.5 s (progress rate) | A/B buttons are in place under the seek bar. Possible later: a marker on the seek bar. Frame-accurate looping would need a native `ClippingMediaSource` |
 | `replayGain` | working | `setMode('off'/'track'/'album')`, `describe(track)` for the UI. Cuts go through `gain()`; boosts go to the native `LoudnessEnhancer`; honours the track/album peak so it never clips. Tags are read natively by `ReplayGainReader.kt` and added to each scanned track as `replayGainTrackDb` / `replayGainAlbumDb` / `replayGainPeak` / `replayGainAlbumPeak` | Test on a device (see footnote ⁴). Possible later: pre-amp for untagged tracks, an in-app scanner that computes gain for files with no tags |
 | `crossfade` | working | `setSeconds()` (0–12, whole seconds), persisted; `curve(t)` = equal-power fade. When the track is within `seconds + 0.5 s` of its end it calls `AudioEngine.beginCrossfade(nextId, seconds)`; the engine returns `false` to be asked again next tick. On success the queue/state move to the next track immediately and the engine fades the old one out underneath. WebView: second `<audio>` + timed ramps. Native: second ExoPlayer (`NativeCrossfade.kt`) | Test the native half on a device (see footnote ⁵). Possible later: per-track fade-out points, a gapless (no-fade) mode |
-| `history` | logic-ready | Newest-first, deduped, capped at 100, persisted; virtual playlist `@recent` | Playlist picker entry |
-| `likes` | logic-ready | `toggle(id?)`, `isLiked()`, `getIds()`; virtual playlist `@liked` | Heart button on the now-playing card (needs an `i-heart` icon in the sprite) |
-| `customPlaylists` | logic-ready | `create/rename/remove/addTracks/removeTrack/list`; virtual playlist `@list:<id>` | Editor UI + picker entries |
+| `history` | working | Newest-first, deduped, capped at 100, persisted; virtual playlist `@recent` | Done: "Recently played" appears in the Library |
+| `likes` | working | `toggle(id?)`, `isLiked()`, `getIds()`; virtual playlist `@liked` | Done: heart button on the now-playing card |
+| `customPlaylists` | working | `create/rename/remove/addTracks/removeTrack/list`; virtual playlist `@list:<id>` | Done: "New playlist" editor and picker entries. Possible later: drag to reorder |
 | `nativeEffects` | framework | Pushes the EQ curve + preamp + replay-gain boost to the native side on engine switch, track start and every slider change | Verify on a device (see footnote ²) |
 
 **Virtual playlists.** `state.activePlaylist` may be `'all'`, a folder name,

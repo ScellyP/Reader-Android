@@ -239,7 +239,7 @@ starts on the former and switches to the latter automatically the moment
 it's ready — mid-playback, at the same position, inaudibly.
 
 Audio files are expected in `/storage/emulated/0/Novel/Audio` (created
-automatically on first scan if it doesn't exist). Tap 🎧 → **Rescan** to load
+automatically on first scan if it doesn't exist). Tap 🎧 → **Scan the sky** to load
 it. Once a track is loaded, a 🎧 shortcut also appears in the top bar, between
 the next-chapter button and the font dropdown. The panel has the playlist
 list, shuffle, previous/play/next, repeat, a seek bar and a volume slider.
@@ -297,6 +297,12 @@ capitals) naming which playlist it came from.
 | Audio-focus handling (ducks/pauses for calls, other apps) | ✅ Working |
 | Pauses automatically when headphones/Bluetooth disconnect | ✅ Working |
 | Graceful handling of unplayable files (skip, don't stall) | ✅ Working |
+| A-B repeat (A / B buttons under the seek bar) | ✅ Implemented |
+| Likes (heart button on the now-playing card, plus a "Liked" playlist) | ✅ Implemented |
+| Recently played (entry in the playlist picker) | ✅ Implemented |
+| Custom playlist editor ("New playlist" in the Library) | ✅ Implemented |
+| Crossfade between tracks (1-12 s slider in the music panel) | ✅ Implemented |
+| Volume normalisation (ReplayGain: off / track / album) | ✅ Implemented |
 
 **Removed**
 
@@ -309,15 +315,8 @@ capitals) naming which playlist it came from.
 
 | Feature | Status | What's missing |
 | --- | --- | --- |
-| A-B repeat | 🟡 Currently Testing | The logic works, but there are no buttons or seek-bar markers. |
-| Likes | 🟡 Currently Testing | Recorded, but there is no heart button. |
 | Audio delay/sync adjustment | 🟡 Currently Testing | It only stores an offset and nothing uses it. |
-| Crossfade between tracks | 🟡 Under Development | The trigger hook exists, but neither engine implements the overlap. |
-| Volume normalisation (ReplayGain) | 🟡 Under Development | `MainActivity.listAudioFiles()` needs to read the ReplayGain tags. Until then it changes nothing. |
-| Recently played | 🟡 Under Development | Recorded, but there is no picker entry for `@recent`. |
-| Custom playlist editor | 🟡 Logic ready | Playlist Editor UI Is still being worked on. |
 | Search box for the music library | ⚪ Not added | Only the chapter list has a search box today. |
-| Heart / A-B buttons, Recently played and Liked in the playlist picker | ⚪ Not added | The logic is there; none of these has a button or picker entry yet. |
 
 ## Library (novel selector)
 
