@@ -6,6 +6,11 @@
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
         tools:ignore="ScopedStorage" />
+    <!-- Android 10 and older have no "all files access": creating the Novel
+         folder there needs ordinary write permission. Not used on 11+. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="29"
+        tools:ignore="ScopedStorage" />
 
     <!-- For PlaybackService (background audio playback + the system
          media notification). FOREGROUND_SERVICE_MEDIA_PLAYBACK is the
@@ -24,6 +29,7 @@
 
     <application
         android:allowBackup="true"
+        android:requestLegacyExternalStorage="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"

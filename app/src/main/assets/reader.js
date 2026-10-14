@@ -235,8 +235,8 @@
       html += '<h2>Let\u2019s find your novels</h2>' +
         '<p>Novel Reader works offline, straight from a folder on your phone.</p>' +
         '<ol class="steps">' +
-        '<li><span>Open the chapter list and tap <b>Allow access to your novels</b>.</span></li>' +
-        '<li><span>Make a folder for each novel inside <code>/storage/emulated/0/Novel</code>.</span></li>' +
+        '<li><span>Open the chapter list and tap <b>Allow access to your novels</b>. The app then creates the <code>/storage/emulated/0/Novel</code> folder for you.</span></li>' +
+        '<li><span>Make a folder for each novel inside <code>Novel</code>.</span></li>' +
         '<li><span>Put that novel\u2019s <b>.txt</b> chapters in its folder. They sort by chapter number automatically.</span></li>' +
         '</ol>';
     } else if (state === 'empty') {

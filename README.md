@@ -66,9 +66,10 @@ install again. Your settings come back from `Novel/settings.txt`.
 1. On your phone, open any file manager app.
 2. Go to **Internal storage** (the root of your phone's storage, not
    an SD card).
-3. Create a folder named `Novel`, then inside it a folder named
-   `Chapters`, so the full path is:
-   `/storage/emulated/0/Novel/Chapters`
+3. Open the app once and allow storage access: it creates the `Novel`
+   folder (and `Novel/Audio` for music) for you on first launch, so you
+   don't have to. Then, inside `Novel`, make a folder named `Chapters`, so
+   the full path is: `/storage/emulated/0/Novel/Chapters`
 4. Put your `.txt` chapter files directly inside `Chapters`.
 5. Open the app and tap **"Grant storage access"**. Android will take
    you to a permission screen; enable **"Allow access to manage all

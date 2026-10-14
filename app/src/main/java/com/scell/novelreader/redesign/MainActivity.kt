@@ -361,13 +361,20 @@ class MainActivity : ComponentActivity() {
         // an error to the JS side if permission is still missing. If the
         // page hasn't finished loading yet, onPageFinished() does this.
         permissionFlowActive = false
+        // Create the Novel folder the moment access is granted, even if the
+        // page is still loading, so it exists on the very first launch.
+        if (hasStoragePermission()) ensureNovelFolders()
         if (pageLoaded) listNovels()
     }
 
     private val legacyPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted ->
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { results ->
         permissionFlowActive = false
+        val granted = results.isNotEmpty() && results.values.all { it }
+        // Create the Novel folder the moment access is granted, even if the
+        // page is still loading, so it exists on the very first launch.
+        if (granted) ensureNovelFolders()
         if (pageLoaded) {
             if (granted) listNovels() else notifyError("Storage permission was not granted.")
         }
@@ -378,6 +385,8 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         installCrashLogger()
         registerVolumeReceiver()
+        // If access was already granted, make sure the folders exist right away.
+        if (hasStoragePermission()) Thread { ensureNovelFolders() }.start()
 
         // Start reading the music library right away, in parallel with the page
         // and the chapter loading. (Without storage access yet, it starts from
@@ -1394,10 +1403,32 @@ class MainActivity : ComponentActivity() {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Environment.isExternalStorageManager()
         } else {
+            // Read AND write: without write the Novel folder can't be created.
             ContextCompat.checkSelfPermission(
                 this,
                 android.Manifest.permission.READ_EXTERNAL_STORAGE
-            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(
+                    this,
+                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    /**
+     * Creates /storage/emulated/0/Novel and Novel/Audio if they are missing.
+     * Called as soon as storage access is granted (so the folders exist on
+     * the very first launch after installing) and again whenever the novels
+     * are listed. A no-op when they already exist; never touches their
+     * contents. Returns false if the Novel folder could not be created.
+     */
+    private fun ensureNovelFolders(): Boolean {
+        return try {
+            if (!novelRoot.exists()) novelRoot.mkdirs()
+            if (novelRoot.isDirectory && !audioRoot.exists()) audioRoot.mkdirs()
+            novelRoot.isDirectory
+        } catch (e: Exception) {
+            false
         }
     }
 
@@ -1419,7 +1450,12 @@ class MainActivity : ComponentActivity() {
                 manageStorageLauncher.launch(intent)
             }
         } else {
-            legacyPermissionLauncher.launch(android.Manifest.permission.READ_EXTERNAL_STORAGE)
+            legacyPermissionLauncher.launch(
+                arrayOf(
+                    android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                    android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+                )
+            )
         }
     }
 
@@ -1439,17 +1475,15 @@ class MainActivity : ComponentActivity() {
                     return@Thread
                 }
 
-                if (!novelRoot.exists()) {
-                    novelRoot.mkdirs()
-                }
-                // Created alongside Novel/ (not only later, when the Music
-                // panel first scans for audio) so the full expected folder
-                // structure exists from the first launch, whether or not
-                // the user ever opens the Music panel. mkdirs() is a no-op
-                // when the folder already exists, so this never touches an
-                // existing Audio/ folder or its contents.
-                if (!audioRoot.exists()) {
-                    audioRoot.mkdirs()
+                // Novel/ and Novel/Audio/ are created here on first run (not
+                // only when the Music panel first scans), so the full folder
+                // structure exists whether or not the user opens it. Never
+                // touches existing folders or their contents.
+                if (!ensureNovelFolders()) {
+                    runOnUiThread {
+                        notifyError("Couldn't create /storage/emulated/0/Novel. Check that storage access is allowed for this app.")
+                    }
+                    return@Thread
                 }
 
                 // Audio/ is where scanAudio()/listAudioFiles() looks for music
