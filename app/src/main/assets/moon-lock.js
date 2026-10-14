@@ -408,7 +408,6 @@
     return puzzleSolved(board) ? puzzleShuffle(rnd) : board;
   }
 
-  const puzzleBtn = $('night-lock-puzzle-btn');
   const puzzlePanel = $('night-lock-puzzle');
   const puzzleGrid = $('pz-grid');
   const puzzleMoves = $('pz-moves');
@@ -416,6 +415,40 @@
   const puzzleGoal = $('pz-goal');
   const lockBox = $('night-lock-box');
   let puzzleBoard = null, puzzleCount = 0, puzzleDone = false, puzzleAvailable = false;
+
+  // The puzzle has no button. It opens when you tap one particular star in the lock
+  // screen's sky, chosen at random each time the lock appears. Nothing marks it: no
+  // element, no highlight, no feedback for any other tap. These are the positions
+  // (percent of the screen) of the stars drawn by the .sky CSS in index.html.
+  const STAR_SPOTS = [[33.4,16.5],[9.8,53.4],[8.5,50.7],[43.8,8.7],[42.9,81.4],[24,62.2],[57.2,40.1],[7.4,84.4],[16.6,13.3],[79.7,19.3],[63.1,37.8],[8.9,7.7],[67,43],[58,45.5],[77.7,69.1],[57,52.4],[71.6,29.6],[14.1,42.1],[17.3,48.9],[65.8,75.4],[85.3,32.1],[58.9,57.7],[82,92.7],[65.4,7.8],[63.8,97.3],[29.8,39],[5.1,46.3],[14,7.7],[15.2,25.8],[84.9,9.7],[54.6,86.8],[84.2,28.7],[36.7,86.9],[17.2,18.9],[24.9,48.6],[27.7,2.4],[37.7,56.4]];
+  const STAR_HIT = 26; // px: how close a tap has to be to the star
+  let secretStar = null;
+  function randomIndex(n) {
+    const a = new Uint32Array(1), crypt = window.crypto;
+    if (crypt && crypt.getRandomValues) crypt.getRandomValues(a); else a[0] = Math.floor(Math.random() * 4294967296);
+    return a[0] % n;
+  }
+  // Is a tap at (x, y) on the star at `star` ([x%, y%]) in a screen of the given rect?
+  function isStarHit(star, rect, x, y) {
+    if (!star || !rect) return false;
+    const dx = x - (rect.left + rect.width * star[0] / 100), dy = y - (rect.top + rect.height * star[1] / 100);
+    return dx * dx + dy * dy <= STAR_HIT * STAR_HIT;
+  }
+  // Picks the secret star, leaving out stars sitting under a button (a tap there
+  // would hit the button instead of the star).
+  function pickSecretStar() {
+    secretStar = null;
+    if (!stage) return;
+    const rect = stage.getBoundingClientRect();
+    const avoid = [moonButton, $('night-lock-test-exit')].filter(Boolean)
+      .map(el => el.getBoundingClientRect()).filter(r => r.width > 0 && r.height > 0);
+    const free = STAR_SPOTS.filter(st => {
+      const px = rect.left + rect.width * st[0] / 100, py = rect.top + rect.height * st[1] / 100;
+      return avoid.every(r => px < r.left - STAR_HIT || px > r.right + STAR_HIT || py < r.top - STAR_HIT || py > r.bottom + STAR_HIT);
+    });
+    const pool = free.length ? free : STAR_SPOTS;
+    secretStar = pool[randomIndex(pool.length)];
+  }
 
   function phaseSvg(index) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -462,11 +495,11 @@
     if (puzzlePanel) puzzlePanel.classList.add('hidden');
     if (lockBox) lockBox.classList.remove('puzzle-open');
   }
-  // Called by startSession: puzzle button only on non-holiday days (or in the hidden test run).
+  // Called by startSession: the secret star only exists on non-holiday days (or in the hidden test run).
   function resetPuzzle(available) {
     puzzleAvailable = available; puzzleBoard = null; puzzleCount = 0; puzzleDone = false;
     closePuzzle();
-    if (puzzleBtn) puzzleBtn.classList.toggle('hidden', !available);
+    if (available) pickSecretStar(); else secretStar = null;
   }
   function onPuzzleSolved() {
     puzzleDone = true; renderPuzzle();
@@ -490,7 +523,11 @@
       if (window.NovelMoonLock && window.NovelMoonLock.onUnlocked) window.NovelMoonLock.onUnlocked();
     }, 1100);
   }
-  if (puzzleBtn) puzzleBtn.addEventListener('click', openPuzzle);
+  if (stage) stage.addEventListener('click', function (e) {
+    if (!puzzleAvailable || !secretStar || (lockBox && lockBox.classList.contains('puzzle-open'))) return;
+    if (e.target.closest && e.target.closest('button, #night-lock-puzzle')) return;
+    if (isStarHit(secretStar, stage.getBoundingClientRect(), e.clientX, e.clientY)) openPuzzle();
+  });
   if ($('pz-back')) $('pz-back').addEventListener('click', closePuzzle);
   if ($('pz-new')) $('pz-new').addEventListener('click', () => { if (!puzzleDone) newPuzzle(); });
   if (puzzleGrid) puzzleGrid.addEventListener('click', function (e) {
@@ -540,7 +577,7 @@
       flash.animate([{opacity:0},{opacity:.92,offset:.18},{opacity:0}],{duration:260,easing:'ease-out'});
     } catch (_) { /* final flash is optional */ }
   }
-  if (typeof module !== 'undefined' && module.exports) module.exports={PUZZLE_UNLOCK_MS,PUZZLE_SOLVED,puzzleSolved,puzzleMove,puzzleShuffle,isUnlocked,grantUnlock,TEST_TARGET,isCheatDay,localKey,phasePath,moonPhaseInfo,moonPhasePath,randomTarget,advanceTap,generateGlass,crackFraction,fillOpacity,renderProgress,strokeScale,facetOpacity,visibleSegmentCount,visibleFacetCount,terminalPalette,shakeAmplitude,impactFlash};
+  if (typeof module !== 'undefined' && module.exports) module.exports={STAR_SPOTS,STAR_HIT,isStarHit,PUZZLE_UNLOCK_MS,PUZZLE_SOLVED,puzzleSolved,puzzleMove,puzzleShuffle,isUnlocked,grantUnlock,TEST_TARGET,isCheatDay,localKey,phasePath,moonPhaseInfo,moonPhasePath,randomTarget,advanceTap,generateGlass,crackFraction,fillOpacity,renderProgress,strokeScale,facetOpacity,visibleSegmentCount,visibleFacetCount,terminalPalette,shakeAmplitude,impactFlash};
   if (moonButton) moonButton.addEventListener('click', function () {
     if (!tracker || !state || state.done) return;
     state=Object.assign(state,advanceTap(tracker));
@@ -558,5 +595,5 @@
     shatterOn=false;
     state=null; tracker=null; system=null; shown=0; lastDrawQ=-1;
   }
-  window.NovelMoonLock = { moonPhaseInfo, moonPhasePath, isUnlocked, canDismiss:() => unlockReady, startSession, stopSession, onUnlocked:null, onTestFinished:null, isCheatDay };
+  window.NovelMoonLock = { moonPhaseInfo, moonPhasePath, isUnlocked, canDismiss:() => unlockReady, startSession, stopSession, onUnlocked:null, onTestFinished:null, isCheatDay, _secretStar:() => secretStar };
 })();

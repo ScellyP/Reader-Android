@@ -2870,16 +2870,13 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
 }
 
 
-/* Moonlit Lock puzzle (non-holiday days): slide the moon phases into order. */
-#night-lock-puzzle-btn {
-  margin-top: 16px; padding: 12px 20px; border-radius: 999px; font: inherit; font-size: 14px; font-weight: 600;
-  border: 1px solid var(--accent-line, rgba(128,128,128,.4)); background: var(--accent-soft, transparent); color: var(--accent);
-  touch-action: manipulation;
-}
-#night-lock-puzzle-btn.hidden, #night-lock-puzzle.hidden { display: none; }
+/* Moonlit Lock puzzle (non-holiday days): slide the moon phases into order. It is opened by tapping one secret star, see moon-lock.js. */
+#night-lock-puzzle.hidden { display: none; }
+/* No tap flash anywhere on the lock: nothing should show which star is the secret one. */
+#night-lock-stage { -webkit-tap-highlight-color: transparent; }
 #night-lock-box.puzzle-open h2, #night-lock-box.puzzle-open > p, #night-lock-box.puzzle-open #night-lock-icon,
 #night-lock-box.puzzle-open #night-lock-phase, #night-lock-box.puzzle-open #night-lock-now,
-#night-lock-box.puzzle-open #night-lock-opens, #night-lock-box.puzzle-open #night-lock-puzzle-btn { display: none; }
+#night-lock-box.puzzle-open #night-lock-opens { display: none; }
 #pz-msg { min-height: 20px; margin: 0 0 12px; font-size: 14px; color: var(--muted); }
 #pz-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; width: min(264px, 70vw); margin: 0 auto; }
 .pz-tile {
@@ -3461,7 +3458,6 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
       <div id="night-lock-phase"></div>
       <div id="night-lock-now"></div>
       <div id="night-lock-opens"></div>
-      <button id="night-lock-puzzle-btn" type="button" class="hidden">Unlock for 30 minutes with a puzzle</button>
       <div id="night-lock-puzzle" class="hidden">
         <div id="pz-msg" aria-live="polite"></div>
         <div id="pz-grid" role="group" aria-label="Moon phase puzzle"></div>
