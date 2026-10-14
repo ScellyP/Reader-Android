@@ -213,6 +213,19 @@ The moon on the lock starts on tonight's **real moon phase** (computed on the
 phone, no internet needed) with its name underneath, e.g. "Waxing Crescent".
 Each tap on the moon steps it on to the next phase.
 
+**Unlocking the Moonlit Lock.** How you get past it depends on the day:
+
+- **Holidays, Sundays and odd Saturdays:** tap the moon until the glass
+  shatters. That unlocks the app for **1 hour**.
+- **Every other day:** tap **"Unlock for 30 minutes with a puzzle"** and slide
+  the eight moon phases into order, new moon first (a small row under the
+  board shows the goal). Solving it unlocks the app for **30 minutes**, then the
+  lock comes back and you can do another puzzle. Every puzzle is shuffled
+  from the solved board, so it can always be solved.
+
+Both unlocks are kept and timed by the app itself, not by the page, so
+changing the phone's clock does not stretch them.
+
 ### Moon and space theme
 
 The whole app is dressed for the night sky: a moonrise splash, twinkling
@@ -308,6 +321,7 @@ capitals) naming which playlist it came from.
 | Pauses automatically when headphones/Bluetooth disconnect | ✅ Working |
 | Pauses when the volume is muted and resumes when it is raised | ✅ Implemented |
 | Swipe the music panel left-to-right to close it | ✅ Implemented |
+| Moonlit Lock puzzle unlock (30 minutes) on non-holiday days | ✅ Implemented |
 | Graceful handling of unplayable files (skip, don't stall) | ✅ Working |
 | A-B repeat (A / B buttons under the seek bar) | ✅ Implemented |
 | Likes (heart button on the now-playing card, plus a "Liked" playlist) | ✅ Implemented |

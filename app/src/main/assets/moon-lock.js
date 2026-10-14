@@ -6,6 +6,9 @@
 
   const UNLOCK_KEY = 'moon_lock_cheat_unlock_until';
   const UNLOCK_MS = 60 * 60 * 1000;
+  // Days without the tap unlock (not a holiday/Sunday/odd Saturday) are opened with a
+  // puzzle instead, for half an hour. The real timing is native (MoonUnlockStore).
+  const PUZZLE_UNLOCK_MS = 30 * 60 * 1000;
   const TEST_TARGET = 20; // hidden settings test run: short, ignores the date, never saves an unlock
   const holidays = new Set([
     '2026-08-26', '2026-08-29', '2026-09-05', '2026-09-14', '2026-09-19',
@@ -61,10 +64,17 @@
     if (b) { try { return Number(b.moonUnlockRemainingMs()) > 0; } catch (_) { return false; } }
     return memoryUnlockUntil > (now === undefined ? Date.now() : now);
   }
-  function grantUnlock() {
-    const b = nativeBridge();
-    if (b) { try { b.moonUnlockGrant(); } catch (_) { /* not saved: the app stays locked */ } return; }
-    memoryUnlockUntil=Date.now()+UNLOCK_MS;
+  // grantUnlock() = the one-hour tap unlock; grantUnlock('puzzle') = the half-hour puzzle unlock.
+  function grantUnlock(kind) {
+    const puzzle = kind === 'puzzle', b = nativeBridge();
+    if (b) {
+      try {
+        if (!puzzle) b.moonUnlockGrant();
+        else if (typeof b.moonUnlockGrantPuzzle === 'function') b.moonUnlockGrantPuzzle();
+      } catch (_) { /* not saved: the app stays locked */ }
+      return;
+    }
+    memoryUnlockUntil=Date.now()+(puzzle ? PUZZLE_UNLOCK_MS : UNLOCK_MS);
   }
   // The old localStorage value is no longer read; remove any leftover copy.
   try { localStorage.removeItem(UNLOCK_KEY); } catch (_) { /* storage unavailable */ }
@@ -362,6 +372,136 @@
     clearTimeout(finishTimer); lastProgressFrom=shown; lastProgressTo=to; lastProgressAt=performance.now();
     frame=requestAnimationFrame(animate);
   }
+
+  // ---- Moon-phase sliding puzzle (non-holiday days) ---------------------
+  // Eight tiles, one per phase, on a 3x3 board with one gap. Tiles read in
+  // order (new moon first) left-to-right, top-to-bottom. 0 is the gap.
+  const PUZZLE_SOLVED = [1,2,3,4,5,6,7,8,0];
+  function puzzleSolved(board) { return board.every((v, i) => v === PUZZLE_SOLVED[i]); }
+  // Slides tile i towards the gap (and any tiles between them) when it shares
+  // a row or column with it. Returns the new board, or null if it can't move.
+  function puzzleMove(board, i) {
+    const gap = board.indexOf(0);
+    if (i === gap || i < 0 || i > 8) return null;
+    const r = Math.floor(i / 3), c = i % 3, gr = Math.floor(gap / 3), gc = gap % 3;
+    if (r !== gr && c !== gc) return null;
+    const step = r === gr ? (i > gap ? 1 : -1) : (i > gap ? 3 : -3), next = board.slice();
+    for (let pos = gap; pos !== i; pos += step) next[pos] = next[pos + step];
+    next[i] = 0;
+    return next;
+  }
+  // Shuffles by making legal moves from the solved board, so every puzzle can be solved.
+  function puzzleShuffle(rand) {
+    const rnd = rand || Math.random;
+    let board = PUZZLE_SOLVED.slice(), prevGap = -1;
+    for (let n = 0; n < 140; n++) {
+      const gap = board.indexOf(0), options = [];
+      if (gap >= 3) options.push(gap - 3);
+      if (gap <= 5) options.push(gap + 3);
+      if (gap % 3 > 0) options.push(gap - 1);
+      if (gap % 3 < 2) options.push(gap + 1);
+      const choices = options.filter(i => i !== prevGap);
+      const pick = choices[Math.floor(rnd() * choices.length)];
+      prevGap = gap;
+      board = puzzleMove(board, pick);
+    }
+    return puzzleSolved(board) ? puzzleShuffle(rnd) : board;
+  }
+
+  const puzzleBtn = $('night-lock-puzzle-btn');
+  const puzzlePanel = $('night-lock-puzzle');
+  const puzzleGrid = $('pz-grid');
+  const puzzleMoves = $('pz-moves');
+  const puzzleMsg = $('pz-msg');
+  const puzzleGoal = $('pz-goal');
+  const lockBox = $('night-lock-box');
+  let puzzleBoard = null, puzzleCount = 0, puzzleDone = false, puzzleAvailable = false;
+
+  function phaseSvg(index) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 120 120'); svg.setAttribute('aria-hidden', 'true');
+    const disc = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    disc.setAttribute('cx', '60'); disc.setAttribute('cy', '60'); disc.setAttribute('r', '50');
+    const lit = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    lit.setAttribute('d', phasePath(index, 60, 60, 50));
+    svg.appendChild(disc); svg.appendChild(lit);
+    return svg;
+  }
+  function renderPuzzle() {
+    if (!puzzleGrid || !puzzleBoard) return;
+    puzzleGrid.textContent = '';
+    puzzleBoard.forEach((v, i) => {
+      const tile = document.createElement('button');
+      tile.type = 'button'; tile.dataset.i = String(i);
+      tile.className = 'pz-tile' + (v ? '' : ' pz-gap') + (puzzleDone ? ' pz-done' : '');
+      if (v) {
+        tile.appendChild(phaseSvg(v - 1));
+        const n = document.createElement('span'); n.className = 'pz-n'; n.textContent = String(v); tile.appendChild(n);
+        tile.setAttribute('aria-label', PHASE_NAMES[v - 1] + ', tile ' + v);
+      } else { tile.disabled = true; tile.setAttribute('aria-label', 'Empty space'); }
+      puzzleGrid.appendChild(tile);
+    });
+    if (puzzleMoves) puzzleMoves.textContent = puzzleCount + (puzzleCount === 1 ? ' move' : ' moves');
+  }
+  function renderGoal() {
+    if (!puzzleGoal || puzzleGoal.childNodes.length) return;
+    for (let k = 0; k < 8; k++) { const w = document.createElement('span'); w.appendChild(phaseSvg(k)); puzzleGoal.appendChild(w); }
+  }
+  function newPuzzle() {
+    puzzleBoard = puzzleShuffle(); puzzleCount = 0; puzzleDone = false;
+    if (puzzleMsg) puzzleMsg.textContent = 'Slide the moons into order, new moon first.';
+    renderPuzzle();
+  }
+  function openPuzzle() {
+    if (!puzzleAvailable || !puzzlePanel) return;
+    renderGoal(); newPuzzle();
+    puzzlePanel.classList.remove('hidden');
+    if (lockBox) lockBox.classList.add('puzzle-open');
+  }
+  function closePuzzle() {
+    if (puzzlePanel) puzzlePanel.classList.add('hidden');
+    if (lockBox) lockBox.classList.remove('puzzle-open');
+  }
+  // Called by startSession: puzzle button only on non-holiday days (or in the hidden test run).
+  function resetPuzzle(available) {
+    puzzleAvailable = available; puzzleBoard = null; puzzleCount = 0; puzzleDone = false;
+    closePuzzle();
+    if (puzzleBtn) puzzleBtn.classList.toggle('hidden', !available);
+  }
+  function onPuzzleSolved() {
+    puzzleDone = true; renderPuzzle();
+    if (state && state.test) {                       // hidden test run: never saves an unlock
+      if (puzzleMsg) puzzleMsg.textContent = 'Solved! (test: nothing saved)';
+      finishTimer = setTimeout(() => { if (window.NovelMoonLock && window.NovelMoonLock.onTestFinished) window.NovelMoonLock.onTestFinished(); }, 1200);
+      return;
+    }
+    grantUnlock('puzzle');
+    if (!isUnlocked()) {                              // couldn't be saved: stay locked, let them retry
+      puzzleDone = false;
+      if (puzzleMsg) puzzleMsg.textContent = 'Solved, but the unlock could not be saved. Try a new puzzle.';
+      renderPuzzle();
+      return;
+    }
+    if (puzzleMsg) puzzleMsg.textContent = 'Unlocked for 30 minutes.';
+    finalFlash();
+    clearTimeout(finishTimer);
+    finishTimer = setTimeout(() => {
+      unlockReady = true;
+      if (window.NovelMoonLock && window.NovelMoonLock.onUnlocked) window.NovelMoonLock.onUnlocked();
+    }, 1100);
+  }
+  if (puzzleBtn) puzzleBtn.addEventListener('click', openPuzzle);
+  if ($('pz-back')) $('pz-back').addEventListener('click', closePuzzle);
+  if ($('pz-new')) $('pz-new').addEventListener('click', () => { if (!puzzleDone) newPuzzle(); });
+  if (puzzleGrid) puzzleGrid.addEventListener('click', function (e) {
+    const tile = e.target.closest && e.target.closest('.pz-tile');
+    if (!tile || puzzleDone || !puzzleBoard) return;
+    const next = puzzleMove(puzzleBoard, Number(tile.dataset.i));
+    if (!next) return;
+    puzzleBoard = next; puzzleCount++; renderPuzzle();
+    if (puzzleSolved(puzzleBoard)) onPuzzleSolved();
+  });
+
   function startSession(options) {
     const test=!!(options && options.test), active=test || isCheatDay(new Date());
     if (frame) { cancelAnimationFrame(frame); frame=0; }
@@ -369,6 +509,7 @@
     tracker=active ? {target:test ? TEST_TARGET : randomTarget(),count:0} : null;
     state={active,count:active ? 0 : 4,done:false,test}; shown=0;
     unlockReady=false;
+    resetPuzzle(test || !isCheatDay(new Date()));
     lastDrawQ=-1;
     seed=(Math.random()*0x7fffffff)|0; system=null; shatterOn=false;
     try {
@@ -399,7 +540,7 @@
       flash.animate([{opacity:0},{opacity:.92,offset:.18},{opacity:0}],{duration:260,easing:'ease-out'});
     } catch (_) { /* final flash is optional */ }
   }
-  if (typeof module !== 'undefined' && module.exports) module.exports={isUnlocked,grantUnlock,TEST_TARGET,isCheatDay,localKey,phasePath,moonPhaseInfo,moonPhasePath,randomTarget,advanceTap,generateGlass,crackFraction,fillOpacity,renderProgress,strokeScale,facetOpacity,visibleSegmentCount,visibleFacetCount,terminalPalette,shakeAmplitude,impactFlash};
+  if (typeof module !== 'undefined' && module.exports) module.exports={PUZZLE_UNLOCK_MS,PUZZLE_SOLVED,puzzleSolved,puzzleMove,puzzleShuffle,isUnlocked,grantUnlock,TEST_TARGET,isCheatDay,localKey,phasePath,moonPhaseInfo,moonPhasePath,randomTarget,advanceTap,generateGlass,crackFraction,fillOpacity,renderProgress,strokeScale,facetOpacity,visibleSegmentCount,visibleFacetCount,terminalPalette,shakeAmplitude,impactFlash};
   if (moonButton) moonButton.addEventListener('click', function () {
     if (!tracker || !state || state.done) return;
     state=Object.assign(state,advanceTap(tracker));

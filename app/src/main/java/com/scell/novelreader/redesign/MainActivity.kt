@@ -144,6 +144,9 @@ class MainActivity : ComponentActivity() {
     // through AndroidBridge.moonUnlockRemainingMs() / moonUnlockGrant().
     private val moonUnlock by lazy { MoonUnlockStore(this) }
     private val moonUnlockMs = 60 * 60 * 1000L
+    // The puzzle unlock (non-holiday days) is shorter: half an hour. Fixed here, not
+    // chosen by the page.
+    private val moonPuzzleUnlockMs = 30 * 60 * 1000L
 
     // Upper limit for settings.txt (read and write); see readSettingsFile().
     private val MAX_SETTINGS_BYTES = 256 * 1024
@@ -1131,6 +1134,9 @@ class MainActivity : ComponentActivity() {
         // hour and ask how much is left; the record itself stays native.
         @JavascriptInterface
         fun moonUnlockGrant(): Boolean = moonUnlock.grant(moonUnlockMs)
+
+        @JavascriptInterface
+        fun moonUnlockGrantPuzzle(): Boolean = moonUnlock.grant(moonPuzzleUnlockMs)
 
         @JavascriptInterface
         fun moonUnlockRemainingMs(): Long = moonUnlock.remainingMs()

@@ -27,6 +27,7 @@ Key files:
 - `tests/crossfade.test.js`
 - `tests/replaygain.test.js`, `tests/replaygain-reader/` (see footnote ⁴)
 - `tests/moon-lock.test.js`
+- `tests/moon-puzzle.test.js` — puzzle rules for the Moonlit Lock (run with `node tests/moon-puzzle.test.js`)
 - `tests/shatter-glass.test.js`
 
 ## Version number
@@ -362,6 +363,8 @@ with stubbed browser globals and checks the framework (registry, persistence,
 A-B loop, replay-gain maths, virtual playlists, crossfade trigger, native EQ
 fallback). Run it from the project root: `node tests/audio-features.test.js`.
 It cannot exercise the Kotlin side or real audio.
+
+**Moonlit Lock puzzle.** On non-holiday days (`!isCheatDay`) the lock offers a moon-phase sliding puzzle (`puzzleShuffle`, `puzzleMove`, `puzzleSolved` in `moon-lock.js`). Solving it calls `grantUnlock('puzzle')`, which uses the native `AndroidBridge.moonUnlockGrantPuzzle()` (fixed 30 minutes, see `moonPuzzleUnlockMs` in `MainActivity.kt`); holidays keep the 1-hour tap unlock. The hidden test run also offers the puzzle and never saves an unlock.
 
 **Moonlit Lock checks.** (The lock was renamed from "moon lock"; file and `NovelMoonLock` names are unchanged.) The moon icon uses `moonPhaseInfo(date)` (real phase from sun/moon longitudes) and `moonPhasePath(fraction, cx, cy, r)`; tap count no longer changes the icon. Add checks for these to the test below. `tests/moon-lock.test.js` checks eligible dates, moon
 phases, tap completion, four-side impact geometry, 26-ray density, random web
