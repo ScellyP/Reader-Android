@@ -218,13 +218,24 @@ Each tap on the moon steps it on to the next phase.
 - **Holidays, Sundays and odd Saturdays:** tap the moon until the glass
   shatters. That unlocks the app for **1 hour**.
 - **Every other day:** tap the one secret star in the lock screen's sky and
-  slide the eight moon phases into order, new moon first (a small row under
-  the board shows the goal). Solving it unlocks the app for **30 minutes**,
-  then the lock comes back and you can do another puzzle. There is no button
-  and nothing marks the star: it is one of the stars on screen, picked at
-  random each time the lock appears, and tapping any other star or spot does
-  nothing. Every puzzle is shuffled from the solved board, so it can always
-  be solved.
+  solve a logic puzzle. Solving it unlocks the app for **30 minutes**, then the
+  lock comes back and you can do another puzzle. There is no button and nothing
+  marks the star: it is one of the stars on screen, picked at random each time
+  the lock appears, and tapping any other star or spot does nothing.
+
+  The puzzles are pure logic and problem solving: **no trivia and no general
+  knowledge**, everything you need is on the screen. A random one is picked each
+  time (**New puzzle** swaps it for a different type), and every one is built so
+  it can always be solved:
+
+  | Puzzle | What you do |
+  | ------ | ----------- |
+  | Logic & Timing | Lamps repeat "lit for a few ticks, dark for a few ticks" from different starting points. Find a tick when all of them are lit together. |
+  | Grid Match | Fill a 4x4 grid so each of the four symbols appears once in every row and column. |
+  | Spatial Light Routing | A beam enters from the left. Place `╱` and `╲` mirrors (limited number, some squares are walls) so it reaches the target `◎`. |
+  | Math & Combinatorics | Pick exactly the stated number of numbers that add up to the target. |
+  | Sequence Programming | Fill the slots of a number machine (+, −, ×) so that, run in order from the start value, it ends on the target. |
+  | Mastermind Variant | Crack a 4-colour code (5 colours, none repeated in the code) in 8 guesses, using the right-colour-right-place and right-colour-wrong-place counts. |
 
 Both unlocks are kept and timed by the app itself, not by the page, so
 changing the phone's clock does not stretch them.
@@ -324,7 +335,7 @@ capitals) naming which playlist it came from.
 | Pauses automatically when headphones/Bluetooth disconnect | ✅ Working |
 | Pauses when the volume is muted and resumes when it is raised | ✅ Implemented |
 | Swipe the music panel left-to-right to close it | ✅ Implemented |
-| Moonlit Lock puzzle unlock (30 minutes) on non-holiday days, opened by a secret random star | ✅ Implemented |
+| Moonlit Lock puzzle unlock (30 minutes) on non-holiday days, opened by a secret random star; six pure-logic puzzle types, no trivia | ✅ Implemented |
 | Graceful handling of unplayable files (skip, don't stall) | ✅ Working |
 | A-B repeat (A / B buttons under the seek bar) | ✅ Implemented |
 | Likes (heart button on the now-playing card, plus a "Liked" playlist) | ✅ Implemented |

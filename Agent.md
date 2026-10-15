@@ -14,6 +14,7 @@ Key files:
 - `app/src/main/assets/settings-file.js` — mirrors settings to `/storage/emulated/0/Novel/settings.txt`.
 - `app/src/main/assets/version.js` — `APP_VERSION`.
 - `app/src/main/assets/color-wheel.js` — Page/Text colour wheel.
+- `app/src/main/assets/moon-puzzles.js` — the six pure-logic puzzles for the Moonlit Lock (`window.MoonPuzzles`); loaded before `moon-lock.js`.
 - `app/src/main/assets/moon-lock.js` — Moonlit Lock (night-lock) UI; shows the real moon phase via `moonPhaseInfo()` / `moonPhasePath()`.
 - `app/src/main/assets/moon-theme.js` — fills the `[data-moon]` phase badges (uses `NovelMoonLock.moonPhaseInfo/moonPhasePath`). The rest of the moon/space theme is CSS in `<style id="moon-theme">` in `index.html` (`.sky` starfield, ornaments, splash moon).
 - `app/src/main/assets/shatter-glass.js` — Canvas 2D shattered-glass renderer.
@@ -27,7 +28,8 @@ Key files:
 - `tests/crossfade.test.js`
 - `tests/replaygain.test.js`, `tests/replaygain-reader/` (see footnote ⁴)
 - `tests/moon-lock.test.js`
-- `tests/moon-puzzle.test.js` — puzzle rules for the Moonlit Lock (run with `node tests/moon-puzzle.test.js`)
+- `tests/moon-puzzle.test.js` — unlock rules and secret star of the Moonlit Lock (run with `node tests/moon-puzzle.test.js`)
+- `tests/moon-puzzles.test.js` — the six Moonlit Lock puzzles: every generated puzzle is solvable, wrong answers are refused (run with `node tests/moon-puzzles.test.js`)
 - `tests/shatter-glass.test.js`
 
 ## Version number
@@ -364,7 +366,9 @@ A-B loop, replay-gain maths, virtual playlists, crossfade trigger, native EQ
 fallback). Run it from the project root: `node tests/audio-features.test.js`.
 It cannot exercise the Kotlin side or real audio.
 
-**Moonlit Lock puzzle.** On non-holiday days (`!isCheatDay`) the lock has a moon-phase sliding puzzle, opened only by tapping one secret star (no button, no hint: `STAR_SPOTS` mirrors the `.sky` stars in `index.html`; `pickSecretStar()` chooses one at random per lock session, and `isStarHit()` accepts taps within `STAR_HIT` px of it; keep `STAR_SPOTS` in step with the CSS, a test checks this) (`puzzleShuffle`, `puzzleMove`, `puzzleSolved` in `moon-lock.js`). Solving it calls `grantUnlock('puzzle')`, which uses the native `AndroidBridge.moonUnlockGrantPuzzle()` (fixed 30 minutes, see `moonPuzzleUnlockMs` in `MainActivity.kt`); holidays keep the 1-hour tap unlock. The hidden test run also has the secret star and never saves an unlock.
+**Moonlit Lock puzzle.** On non-holiday days (`!isCheatDay`) the lock has a logic puzzle, opened only by tapping one secret star (no button, no hint: `STAR_SPOTS` mirrors the `.sky` stars in `index.html`; `pickSecretStar()` chooses one at random per lock session, and `isStarHit()` accepts taps within `STAR_HIT` px of it; keep `STAR_SPOTS` in step with the CSS, a test checks this) (the star code is in `moon-lock.js`; the puzzles are in `moon-puzzles.js`, see below). Solving it calls `grantUnlock('puzzle')`, which uses the native `AndroidBridge.moonUnlockGrantPuzzle()` (fixed 30 minutes, see `moonPuzzleUnlockMs` in `MainActivity.kt`); holidays keep the 1-hour tap unlock. The hidden test run also has the secret star and never saves an unlock.
+
+**Moonlit Lock puzzles (`moon-puzzles.js`).** Six pure-logic types, **no trivia or general-knowledge puzzles, ever**: `timing` (Logic & Timing), `grid` (Grid Match, 4x4 Latin square), `light` (Spatial Light Routing, mirrors), `math` (Math & Combinatorics, pick k numbers for a sum), `sequence` (Sequence Programming, fill a number machine) and `mastermind` (Mastermind Variant). Each entry in `MoonPuzzles.PUZZLES` is `{id, name, rule, make(rand), solved(state), status(state), render(host, state, change, done)}`. `make` must always return a solvable puzzle that does not start solved (every generator has a fixed fallback), and `solved` must accept any valid answer, not only the generator's. `moon-lock.js` picks a type with `MoonPuzzles.pickType()` (never the same twice in a row), calls `render` after every change and `grantUnlock('puzzle')` once `solved` is true. To add a type: add a generator, a `solved` check, a renderer and a registry entry, then add a solvability test to `tests/moon-puzzles.test.js`.
 
 **Moonlit Lock checks.** (The lock was renamed from "moon lock"; file and `NovelMoonLock` names are unchanged.) The moon icon uses `moonPhaseInfo(date)` (real phase from sun/moon longitudes) and `moonPhasePath(fraction, cx, cy, r)`; tap count no longer changes the icon. Add checks for these to the test below. `tests/moon-lock.test.js` checks eligible dates, moon
 phases, tap completion, four-side impact geometry, 26-ray density, random web
