@@ -54,7 +54,7 @@
   }
   function timingCommit(s) {
     if (timingAllLit(s.lamps, s.tick)) { s.done = true; s.msg = ''; return true; }
-    s.msg = 'Not every lamp is lit at tick ' + s.tick + '.';
+    s.msg = 'Not every moon is full on night ' + s.tick + '.';
     return false;
   }
 
@@ -442,19 +442,19 @@
     s.lamps.forEach((l, i) => {
       const row = el('div', 'pz-row');
       row.appendChild(el('span', 'pz-lamp' + (lampLit(l, s.tick) ? ' lit' : ''), ''));
-      row.appendChild(el('span', 'pz-rule', 'Lamp ' + (i + 1) + ': lit ' + l.on + ', dark ' + l.off + ', already ' + plural(l.start, 'tick') + ' into its cycle at tick 0'));
+      row.appendChild(el('span', 'pz-rule', 'Moon ' + (i + 1) + ': full ' + plural(l.on, 'night') + ', dark ' + plural(l.off, 'night') + ', already ' + plural(l.start, 'night') + ' into its cycle on night 0'));
       host.appendChild(row);
     });
     const step = el('div', 'pz-step');
-    step.appendChild(btn('pz-btn', '−', () => { if (s.tick > 0) { s.tick--; s.msg = ''; change(); } }, 'Previous tick', done));
-    step.appendChild(el('span', 'pz-tick', 'Tick ' + s.tick));
-    step.appendChild(btn('pz-btn', '+', () => { if (s.tick < TIMING_MAX) { s.tick++; s.msg = ''; change(); } }, 'Next tick', done));
-    step.appendChild(btn('pz-btn pz-go', 'Set tick', () => { timingCommit(s); change(); }, 'Set this tick as the answer', done));
+    step.appendChild(btn('pz-btn', '−', () => { if (s.tick > 0) { s.tick--; s.msg = ''; change(); } }, 'Previous night', done));
+    step.appendChild(el('span', 'pz-tick', 'Night ' + s.tick));
+    step.appendChild(btn('pz-btn', '+', () => { if (s.tick < TIMING_MAX) { s.tick++; s.msg = ''; change(); } }, 'Next night', done));
+    step.appendChild(btn('pz-btn pz-go', 'Set night', () => { timingCommit(s); change(); }, 'Set this night as the answer', done));
     host.appendChild(step);
     host.appendChild(el('div', 'pz-note', s.msg));
   }
 
-  const GRID_GLYPH = ['', '●', '▲', '■', '◆'], GRID_NAME = ['empty', 'circle', 'triangle', 'square', 'diamond'];
+  const GRID_GLYPH = ['', '☾', '★', '◐', '○'], GRID_NAME = ['empty', 'crescent', 'star', 'half moon', 'full moon'];
   function renderGrid(host, s, change, done) {
     host.textContent = '';
     const bad = latinConflicts(s.cells), board = el('div', 'pz-board pz-grid4');
@@ -473,14 +473,14 @@
     host.textContent = '';
     const N = LIGHT_N, trace = lightTrace(s), lit = new Set(trace.lit), board = el('div', 'pz-board pz-light');
     for (let r = 0; r < N; r++) {
-      board.appendChild(el('span', 'pz-src', r === s.row ? '✦' : ''));
+      board.appendChild(el('span', 'pz-src', r === s.row ? '☾' : ''));
       for (let c = 0; c < N; c++) {
         const i = r * N + c, isTarget = i === s.target, m = s.mirrors[i];
         const text = s.walls[i] ? '▮' : isTarget ? '◎' : (MIRROR_GLYPH[m] || '');
         const label = 'Row ' + (r + 1) + ', column ' + (c + 1) + ': ' + (s.walls[i] ? 'wall' : isTarget ? 'target' : m === '/' ? 'mirror /' : m === '\\' ? 'mirror \\' : 'empty');
         board.appendChild(btn('pz-cell' + (lit.has(i) ? ' pz-lit' : '') + (s.walls[i] ? ' pz-wall' : '') + (isTarget ? ' pz-target' : ''), text, () => {
           const next = m === '' ? '/' : m === '/' ? '\\' : '';
-          if (next && !m && lightCount(s) >= s.max) { s.msg = 'No mirrors left: remove one first.'; change(); return; }
+          if (next && !m && lightCount(s) >= s.max) { s.msg = 'No mirrors left: lift one first.'; change(); return; }
           s.mirrors[i] = next; s.msg = ''; change();
         }, label, s.walls[i] || isTarget || done));
       }
@@ -494,14 +494,14 @@
     const board = el('div', 'pz-board pz-nums');
     s.nums.forEach((n, i) => {
       const on = s.picked.includes(i);
-      board.appendChild(btn('pz-cell pz-num' + (on ? ' pz-on' : ''), String(n), () => {
+      board.appendChild(btn('pz-cell pz-num' + (on ? ' pz-on' : ''), '☾' + n, () => {
         if (on) s.picked = s.picked.filter(j => j !== i);
         else if (s.picked.length < s.k) s.picked = s.picked.concat(i);
         change();
-      }, 'Number ' + n + (on ? ', picked' : ''), done));
+      }, 'Moonstone ' + n + (on ? ', picked' : ''), done));
     });
     host.appendChild(board);
-    host.appendChild(el('div', 'pz-note', 'Target ' + s.target + '  ·  sum ' + mathSum(s) + '  ·  ' + s.picked.length + '/' + s.k + ' picked'));
+    host.appendChild(el('div', 'pz-note', 'Weight ' + s.target + '  ·  so far ' + mathSum(s) + '  ·  ' + s.picked.length + '/' + s.k + ' stones'));
   }
 
   function renderSequence(host, s, change, done) {
@@ -523,7 +523,7 @@
     host.appendChild(btn('pz-btn', 'Clear all', () => { s.slots = Array(SEQ_SLOTS).fill(null); change(); }, 'Clear all slots', done));
   }
 
-  const MM_LETTER = ['', 'A', 'B', 'C', 'D', 'E'];
+  const MM_LETTER = ['', 'N', 'C', 'Q', 'G', 'F'];   // New, Crescent, Quarter, Gibbous, Full
   function renderMastermind(host, s, change, done) {
     host.textContent = '';
     const list = el('div', 'pz-history');
@@ -535,8 +535,8 @@
     });
     host.appendChild(list);
     if (s.failed) {
-      host.appendChild(el('div', 'pz-note', 'Out of guesses. The code was ' + s.secret.map(v => MM_LETTER[v]).join(' ') + '.'));
-      host.appendChild(btn('pz-btn pz-go', 'New code', () => { Object.assign(s, mmMake(Math.random)); change(); }, 'Start again with a new code', done));
+      host.appendChild(el('div', 'pz-note', 'Out of guesses. The sky was ' + s.secret.map(v => MM_LETTER[v]).join(' ') + '.'));
+      host.appendChild(btn('pz-btn pz-go', 'New sky', () => { Object.assign(s, mmMake(Math.random)); change(); }, 'Start again with a new sky', done));
       return;
     }
     const cur = el('div', 'pz-row');
@@ -544,15 +544,15 @@
       () => { s.guess[i] = (s.guess[i] + 1) % (MM_COLOURS + 1); change(); }, 'Peg ' + (i + 1) + ': ' + (MM_LETTER[v] || 'empty') + ', tap to change', done)));
     cur.appendChild(btn('pz-btn pz-go', 'Guess', () => { mmSubmit(s); change(); }, 'Submit guess', done || s.guess.some(v => !v)));
     host.appendChild(cur);
-    host.appendChild(el('div', 'pz-note', '● right colour, right place  ·  ○ right colour, wrong place'));
+    host.appendChild(el('div', 'pz-note', '● right phase, right place  ·  ○ right phase, wrong place'));
   }
 
   function renderLights(host, s, change, done) {
     host.textContent = '';
     const board = el('div', 'pz-board pz-grid4');
-    s.cells.forEach((on, i) => board.appendChild(btn('pz-cell pz-bulb' + (on ? ' pz-on pz-glow' : ''), on ? '●' : '',
+    s.cells.forEach((on, i) => board.appendChild(btn('pz-cell pz-bulb' + (on ? ' pz-on pz-glow' : ''), on ? '★' : '',
       () => { loPress(s, i); s.moves++; change(); },
-      'Row ' + (Math.floor(i / LO_N) + 1) + ', column ' + (i % LO_N + 1) + ': ' + (on ? 'lit' : 'dark'), done)));
+      'Row ' + (Math.floor(i / LO_N) + 1) + ', column ' + (i % LO_N + 1) + ': ' + (on ? 'shining' : 'dark'), done)));
     host.appendChild(board);
     host.appendChild(el('div', 'pz-note', s.moves + ' taps'));
   }
@@ -565,15 +565,15 @@
         s.msg = '';
         if (s.from === null) { if (s.pegs[p].length) s.from = p; }
         else if (s.from === p) s.from = null;
-        else { if (!hanoiMove(s, s.from, p)) s.msg = 'A bigger disc cannot go on a smaller one.'; s.from = null; }
+        else { if (!hanoiMove(s, s.from, p)) s.msg = 'A bigger moon cannot rest on a smaller one.'; s.from = null; }
         change();
-      }, 'Peg ' + (p + 1) + (p === s.target ? ' (goal)' : '') + ': ' + (s.pegs[p].length ? 'top disc ' + s.pegs[p][s.pegs[p].length - 1] : 'empty'), done);
+      }, 'Tower ' + (p + 1) + (p === s.target ? ' (goal)' : '') + ': ' + (s.pegs[p].length ? 'top disc ' + s.pegs[p][s.pegs[p].length - 1] : 'empty'), done);
       for (let k = s.pegs[p].length - 1; k >= 0; k--) {
         const d = el('span', 'pz-disc d' + s.pegs[p][k]);
         d.style.width = (22 + s.pegs[p][k] * 17) + '%';
         col.appendChild(d);
       }
-      col.appendChild(el('span', 'pz-peg-base', p === s.target ? '★' : ''));
+      col.appendChild(el('span', 'pz-peg-base', p === s.target ? '☾' : ''));
       row.appendChild(col);
     }
     host.appendChild(row);
@@ -601,7 +601,7 @@
         else if (s.from === i) s.from = null;
         else { const next = jugsPourState(s.vols, s.caps, s.from, i); if (next) { s.vols = next; s.moves++; } s.from = null; }
         change();
-      }, 'Jug ' + (i + 1) + ': ' + s.vols[i] + ' of ' + cap, done);
+      }, 'Tide pool ' + (i + 1) + ': ' + s.vols[i] + ' of ' + cap, done);
       jug.style.height = (44 + cap * 11) + 'px';
       const fill = el('span', 'pz-fill'); fill.style.height = (s.vols[i] / cap * 100) + '%';
       jug.appendChild(fill);
@@ -609,7 +609,7 @@
       row.appendChild(jug);
     });
     host.appendChild(row);
-    host.appendChild(el('div', 'pz-note', 'Get exactly ' + s.target + ' into one jug  ·  ' + s.moves + ' pours'));
+    host.appendChild(el('div', 'pz-note', 'Get exactly ' + s.target + ' into one pool  ·  ' + s.moves + ' pours'));
     host.appendChild(btn('pz-btn', 'Start over', () => { s.vols = s.start.slice(); s.from = null; s.moves = 0; change(); }, 'Start this puzzle over', done));
   }
 
@@ -641,34 +641,34 @@
         TL_NAMES[i] + ': ' + (v === null ? 'undecided' : v ? 'tells the truth' : 'lies') + ', tap to change', done));
       host.appendChild(row);
     });
-    host.appendChild(el('div', 'pz-note', 'Mark each person as Truth or Liar.'));
+    host.appendChild(el('div', 'pz-note', 'Mark each moon-watcher as Truth or Liar.'));
   }
 
   // ---- Registry ---------------------------------------------------------
   const PUZZLES = [
-    { id: 'timing', name: 'Logic & Timing', rule: 'Find a tick when every lamp is lit at the same time.',
-      make: timingMake, solved: s => s.done, status: s => 'Tick ' + s.tick, render: renderTiming },
-    { id: 'grid', name: 'Grid Match', rule: 'Fill the grid: each symbol once in every row and column.',
-      make: gridMake, solved: s => latinValid(s.cells), status: s => s.cells.filter(Boolean).length + '/16 filled', render: renderGrid },
-    { id: 'light', name: 'Spatial Light Routing', rule: 'Place mirrors so the beam from ✦ reaches ◎. Tap a square to turn it ╱, ╲, or clear.',
+    { id: 'timing', name: 'Lunar Cycles', rule: 'Find a night when every moon is full at the same time.',
+      make: timingMake, solved: s => s.done, status: s => 'Night ' + s.tick, render: renderTiming },
+    { id: 'grid', name: 'Phase Grid', rule: 'Fill the sky: each moon symbol once in every row and column.',
+      make: gridMake, solved: s => latinValid(s.cells), status: s => s.cells.filter(Boolean).length + '/16 placed', render: renderGrid },
+    { id: 'light', name: 'Moonbeam Mirrors', rule: 'Place mirrors so the moonbeam from ☾ reaches ◎. Tap a square to turn it ╱, ╲, or clear.',
       make: lightMake, solved: lightSolved, status: s => 'Mirrors ' + lightCount(s) + '/' + s.max, render: renderLight },
-    { id: 'math', name: 'Math & Combinatorics', rule: 'Pick exactly the right amount of numbers that add up to the target.',
-      make: mathMake, solved: mathSolved, status: s => s.picked.length + '/' + s.k + ' picked', render: renderMath },
-    { id: 'sequence', name: 'Sequence Programming', rule: 'Fill every slot with an instruction so the machine ends on the target.',
+    { id: 'math', name: 'Moonstones', rule: 'Pick exactly the right number of moonstones whose weights add up to the target.',
+      make: mathMake, solved: mathSolved, status: s => s.picked.length + '/' + s.k + ' stones', render: renderMath },
+    { id: 'sequence', name: 'Waxing Machine', rule: 'Fill every slot with a step so the moon machine ends on the target.',
       make: seqMake, solved: seqSolved, status: s => s.slots.filter(Boolean).length + '/' + SEQ_SLOTS + ' slots', render: renderSequence },
-    { id: 'mastermind', name: 'Mastermind Variant', rule: 'Crack the 4-colour code. Five colours, no colour used twice in the code.',
+    { id: 'mastermind', name: 'Phase Code', rule: 'Crack the 4-phase sky. Five phases, none used twice. N new, C crescent, Q quarter, G gibbous, F full.',
       make: mmMake, solved: s => s.won, status: s => s.history.length + '/' + MM_TRIES + ' guesses', render: renderMastermind },
-    { id: 'lightsout', name: 'Lights Out', rule: 'Tapping a lamp flips it and its neighbours (up, down, left, right). Switch every lamp off.',
-      make: loMake, solved: s => loLit(s) === 0, status: s => loLit(s) + ' lit', render: renderLights },
-    { id: 'hanoi', name: 'Tower Shift', rule: 'Move one disc at a time, never a bigger one onto a smaller one, until all four sit on the ★ peg.',
+    { id: 'lightsout', name: 'Dim the Stars', rule: 'Tapping a star flips it and its neighbours (up, down, left, right). Make every star go dark.',
+      make: loMake, solved: s => loLit(s) === 0, status: s => loLit(s) + ' shining', render: renderLights },
+    { id: 'hanoi', name: 'Moon Tower', rule: 'Move one moon at a time, never a bigger one onto a smaller one, until all four rest on the ☾ tower.',
       make: hanoiMake, solved: s => s.pegs[s.target].length === HANOI_DISCS, status: s => s.moves + ' moves', render: renderHanoi },
-    { id: 'slide', name: 'Slide Tiles', rule: 'Slide the tiles into order 1 to 8 with the blank in the last corner.',
+    { id: 'slide', name: 'Phase Slide', rule: 'Slide the eight phases into order 1 to 8 with the empty space in the last corner.',
       make: slideMake, solved: slideSolved, status: s => s.moves + ' slides', render: renderSlide },
-    { id: 'jugs', name: 'Pour Puzzle', rule: 'Pour water between the jugs until one holds exactly the target amount.',
+    { id: 'jugs', name: 'Tide Pools', rule: 'Pour water between the tide pools until one holds exactly the target amount.',
       make: jugsMake, solved: jugsSolved, status: s => s.moves + ' pours', render: renderJugs },
-    { id: 'picross', name: 'Picross', rule: 'Numbers give the lengths of the filled runs in each row and column. Fill the picture to match.',
+    { id: 'picross', name: 'Moon Mosaic', rule: 'Numbers give the lengths of the lit runs in each row and column. Light the mosaic to match.',
       make: picMake, solved: picSolved, status: s => s.cells.filter(Boolean).length + ' filled', render: renderPicross },
-    { id: 'truth', name: 'Truth & Lies', rule: 'Each person always tells the truth or always lies. Work out who is which.',
+    { id: 'truth', name: 'Moonlit Oaths', rule: 'Each moon-watcher always tells the truth or always lies. Work out who is which.',
       make: tlMake, solved: tlSolved, status: s => s.guess.filter(v => v !== null).length + '/' + TL_PEOPLE + ' marked', render: renderTruth }
   ];
   const byId = id => PUZZLES.find(p => p.id === id) || null;

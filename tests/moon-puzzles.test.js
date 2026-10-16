@@ -12,7 +12,7 @@ const RUNS = 150;
 
 check('there are exactly the twelve logic puzzle types', () => {
   assert.deepStrictEqual(P.PUZZLES.map(p => p.id), ['timing', 'grid', 'light', 'math', 'sequence', 'mastermind', 'lightsout', 'hanoi', 'slide', 'jugs', 'picross', 'truth']);
-  assert.deepStrictEqual(P.PUZZLES.map(p => p.name), ['Logic & Timing', 'Grid Match', 'Spatial Light Routing', 'Math & Combinatorics', 'Sequence Programming', 'Mastermind Variant', 'Lights Out', 'Tower Shift', 'Slide Tiles', 'Pour Puzzle', 'Picross', 'Truth & Lies']);
+  assert.deepStrictEqual(P.PUZZLES.map(p => p.name), ['Lunar Cycles', 'Phase Grid', 'Moonbeam Mirrors', 'Moonstones', 'Waxing Machine', 'Phase Code', 'Dim the Stars', 'Moon Tower', 'Phase Slide', 'Tide Pools', 'Moon Mosaic', 'Moonlit Oaths']);
 });
 
 check('no puzzle is trivia: no question/answer text, no lookup tables', () => {
@@ -26,6 +26,10 @@ check('pickType never repeats the type just shown, and reaches all twelve', () =
   let last = null;
   for (let i = 0; i < 300; i++) { const t = P.pickType(rnd, last); assert.notStrictEqual(t, last); seen.add(t); last = t; }
   assert.strictEqual(seen.size, 12);
+});
+
+check('every puzzle is moon themed (its name or rule mentions moon, star, phase, tide, night or lunar)', () => {
+  P.PUZZLES.forEach(p => assert.ok(/moon|star|phase|tide|night|lunar|lunar/i.test(p.name + ' ' + p.rule), p.id));
 });
 
 check('every puzzle starts unsolved', () => {
