@@ -50,4 +50,17 @@ check('there is no puzzle button in the lock screen markup', () => {
   assert.ok(!html.includes('night-lock-puzzle-btn'));
 });
 
+check('solving a puzzle shatters the glass before the reader opens', () => {
+  const src = require('fs').readFileSync(__dirname + '/../app/src/main/assets/moon-lock.js', 'utf8');
+  assert.ok(/function shatterAfterPuzzle/.test(src) && /shatterAfterPuzzle\(\);/.test(src));
+  assert.ok(!/finishTimer = setTimeout\(\(\) => \{\s*unlockReady = true;/.test(src));   // no more bare flash-then-open
+});
+
+check('reopening the locked app picks a new secret star', () => {
+  const lock = require('fs').readFileSync(__dirname + '/../app/src/main/assets/moon-lock.js', 'utf8');
+  const reader = require('fs').readFileSync(__dirname + '/../app/src/main/assets/reader.js', 'utf8');
+  assert.ok(/function resetStar/.test(lock) && /resetStar,/.test(lock));
+  assert.ok(/NovelMoonLock\.resetStar\(\)/.test(reader));
+});
+
 console.log(n + ' checks passed');

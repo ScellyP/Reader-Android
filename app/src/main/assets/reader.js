@@ -2430,7 +2430,7 @@
     const readingPanel = document.getElementById('theme-panel');
     if (readingPanel) readingPanel.classList.add('hidden');
     nightLockNowEl.textContent = 'Test mode';
-    nightLockOpensEl.textContent = 'Tap the moon';
+    nightLockOpensEl.textContent = 'Tap the moon, or the ringed star for a puzzle';
     moonTestExitBtn.classList.remove('hidden');
     nightLockEl.classList.remove('hidden');
     window.NovelMoonLock.startSession({ test: true });
@@ -2488,7 +2488,11 @@
   updateNightLock(); // already locked at launch? cover the screen right away
   setInterval(updateNightLock, 1000);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') updateNightLock();
+    if (document.visibilityState === 'visible') {
+      // Reopened while still locked: new secret star, puzzle put away.
+      if (nightLocked && !moonTest && window.NovelMoonLock && window.NovelMoonLock.resetStar) window.NovelMoonLock.resetStar();
+      updateNightLock();
+    }
   });
 
   /* ---------------------------------------------------------------------

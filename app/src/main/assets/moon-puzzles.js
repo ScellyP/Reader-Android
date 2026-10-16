@@ -1,5 +1,5 @@
 /* Moonlit Lock puzzles (loaded before moon-lock.js).
-   Six pure-logic puzzles, no trivia and no general knowledge: everything needed to
+   Twelve pure-logic puzzles, no trivia and no general knowledge: everything needed to
    solve one is on the screen. Each generator builds a puzzle that can always be solved.
 
    1. timing     Logic & Timing           find the tick at which every lamp is lit
@@ -8,7 +8,12 @@
    4. math       Math & Combinatorics     pick exactly k numbers that add up to the target
    5. sequence   Sequence Programming     fill the program slots so the number machine hits the target
    6. mastermind Mastermind Variant       crack a 4-peg code (5 colours, no repeats) in 8 guesses
-
+   7. lightsout  Lights Out               tapping a lamp flips it and its neighbours; switch all off
+   8. hanoi      Tower Shift              Tower of Hanoi from a random position, onto the starred peg
+   9. slide      Slide Tiles              8-puzzle: order the tiles 1-8
+  10. jugs       Pour Puzzle              pour between jugs to measure an exact amount
+  11. picross    Picross                  5x5 nonogram from run-length clues
+  12. truth      Truth & Lies             who always tells the truth and who always lies
    A puzzle is { id, name, rule, make(rand), solved(state), status(state), render(host, state, change, done) }.
    make/solved/status are pure (tested in tests/moon-puzzles.test.js); render builds the DOM. */
 (function () {
@@ -223,6 +228,198 @@
     return fb;
   }
 
+  // ---- 7. Lights Out ----------------------------------------------------
+  // Tapping a lamp flips it and the lamps directly above, below, left and right of it.
+  const LO_N = 4;
+  function loPress(s, i) {
+    const N = LO_N, r = Math.floor(i / N), c = i % N;
+    [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]].forEach(d => {
+      const rr = r + d[0], cc = c + d[1];
+      if (rr >= 0 && rr < N && cc >= 0 && cc < N) s.cells[rr * N + cc] = !s.cells[rr * N + cc];
+    });
+  }
+  function loLit(s) { return s.cells.filter(Boolean).length; }
+  function loMake(rnd) {
+    // Start dark and press a few random lamps: pressing the same lamps again always undoes it.
+    for (let tries = 0; tries < 200; tries++) {
+      const s = { cells: Array(LO_N * LO_N).fill(false), moves: 0 };
+      shuffle(rnd, Array.from({ length: LO_N * LO_N }, (_, i) => i)).slice(0, int(rnd, 3, 4)).forEach(i => loPress(s, i));
+      if (loLit(s) >= 3) return s;
+    }
+    const s = { cells: Array(LO_N * LO_N).fill(false), moves: 0 };
+    [0, 5, 10].forEach(i => loPress(s, i));
+    return s;
+  }
+
+  // ---- 8. Tower Shift (Tower of Hanoi from a random position) ------------
+  // Four discs sit on three pegs. Move one disc at a time, never a bigger disc onto a smaller
+  // one, until all four are stacked on the starred peg.
+  const HANOI_DISCS = 4;
+  function hanoiCanMove(s, from, to) {
+    const a = s.pegs[from], b = s.pegs[to];
+    if (from === to || !a.length) return false;
+    return !b.length || b[b.length - 1] > a[a.length - 1];
+  }
+  function hanoiMove(s, from, to) {
+    if (!hanoiCanMove(s, from, to)) return false;
+    s.pegs[to].push(s.pegs[from].pop()); s.moves++;
+    return true;
+  }
+  function hanoiMake(rnd) {
+    for (let tries = 0; tries < 100; tries++) {
+      const pegs = [[], [], []];
+      for (let d = HANOI_DISCS; d >= 1; d--) pegs[int(rnd, 0, 2)].push(d);   // any split is a legal position
+      const target = int(rnd, 0, 2);
+      if (pegs[target].length < HANOI_DISCS) return { pegs, target, from: null, moves: 0, msg: '' };
+    }
+    return { pegs: [[4, 3, 2, 1], [], []], target: 2, from: null, moves: 0, msg: '' };
+  }
+
+  // ---- 9. Slide Tiles (8-puzzle) ----------------------------------------
+  // Slide the numbered tiles into order, blank in the last corner. The start is made by sliding
+  // tiles around from the finished picture, so it can always be undone.
+  const SLIDE_N = 3;
+  const SLIDE_DONE = [1, 2, 3, 4, 5, 6, 7, 8, 0];
+  function slideNeighbours(i) {
+    const N = SLIDE_N, r = Math.floor(i / N), c = i % N, out = [];
+    if (r > 0) out.push(i - N); if (r < N - 1) out.push(i + N);
+    if (c > 0) out.push(i - 1); if (c < N - 1) out.push(i + 1);
+    return out;
+  }
+  function slideMove(s, i) {
+    const blank = s.tiles.indexOf(0);
+    if (!slideNeighbours(blank).includes(i)) return false;
+    s.tiles[blank] = s.tiles[i]; s.tiles[i] = 0; s.moves++;
+    return true;
+  }
+  function slideSolved(s) { return s.tiles.every((v, i) => v === SLIDE_DONE[i]); }
+  function slideMake(rnd) {
+    for (let tries = 0; tries < 50; tries++) {
+      const s = { tiles: SLIDE_DONE.slice(), moves: 0 };
+      let prev = -1;
+      for (let k = int(rnd, 22, 34); k > 0; k--) {
+        const blank = s.tiles.indexOf(0), opts = slideNeighbours(blank).filter(n => n !== prev);
+        const n = pick(rnd, opts); prev = blank; slideMove(s, n);
+      }
+      s.moves = 0;
+      if (!slideSolved(s)) return s;
+    }
+    return { tiles: [1, 2, 3, 4, 0, 6, 7, 5, 8], moves: 0 };
+  }
+
+  // ---- 10. Pour Puzzle (water jugs) -------------------------------------
+  // Pour water between jugs (a pour stops when the source is empty or the target is full).
+  // Get exactly the target amount into any one jug.
+  function jugsPourState(vols, caps, from, to) {
+    const amt = Math.min(vols[from], caps[to] - vols[to]);
+    if (from === to || amt <= 0) return null;
+    const next = vols.slice(); next[from] -= amt; next[to] += amt;
+    return next;
+  }
+  // Fewest pours (breadth-first) from `start` until some jug holds exactly `target`; -1 if never.
+  function jugsMinMoves(caps, start, target) {
+    const seen = new Set([start.join()]);
+    let layer = [start], dist = 0;
+    while (layer.length) {
+      if (layer.some(v => v.includes(target))) return dist;
+      const next = [];
+      layer.forEach(v => { for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) {
+        const w = jugsPourState(v, caps, a, b);
+        if (w && !seen.has(w.join())) { seen.add(w.join()); next.push(w); }
+      } });
+      layer = next; dist++;
+    }
+    return -1;
+  }
+  function jugsMake(rnd) {
+    for (let tries = 0; tries < 300; tries++) {
+      const big = int(rnd, 8, 13), mid = int(rnd, 4, big - 3), small = int(rnd, 2, mid - 1);
+      if (mid === small) continue;
+      const caps = [big, mid, small], vols = [big, 0, 0], goods = [];
+      for (let t = 1; t < big; t++) {
+        if (caps.includes(t)) continue;
+        const m = jugsMinMoves(caps, vols, t);
+        if (m >= 4 && m <= 7) goods.push(t);
+      }
+      if (goods.length) return { caps, vols: vols.slice(), start: vols.slice(), target: pick(rnd, goods), from: null, moves: 0 };
+    }
+    return { caps: [8, 5, 3], vols: [8, 0, 0], start: [8, 0, 0], target: 4, from: null, moves: 0 };
+  }
+  function jugsSolved(s) { return s.vols.includes(s.target); }
+
+  // ---- 11. Picross (5x5 nonogram) ---------------------------------------
+  // The numbers beside a row or above a column give the lengths of its runs of filled squares,
+  // in order. Any picture that satisfies every clue counts.
+  const PIC_N = 5;
+  function picRuns(line) {
+    const out = []; let run = 0;
+    line.forEach(v => { if (v) run++; else if (run) { out.push(run); run = 0; } });
+    if (run) out.push(run);
+    return out.length ? out : [0];
+  }
+  function picLine(cells, kind, k) {
+    return Array.from({ length: PIC_N }, (_, j) => cells[kind === 'row' ? k * PIC_N + j : j * PIC_N + k]);
+  }
+  function picClues(cells) {
+    return {
+      rows: Array.from({ length: PIC_N }, (_, k) => picRuns(picLine(cells, 'row', k))),
+      cols: Array.from({ length: PIC_N }, (_, k) => picRuns(picLine(cells, 'col', k)))
+    };
+  }
+  function picSolved(s) {
+    const now = picClues(s.cells);
+    return JSON.stringify(now.rows) === JSON.stringify(s.rows) && JSON.stringify(now.cols) === JSON.stringify(s.cols);
+  }
+  function picMake(rnd) {
+    for (let tries = 0; tries < 300; tries++) {
+      const picture = Array.from({ length: PIC_N * PIC_N }, () => rnd() < .55);
+      const filled = picture.filter(Boolean).length;
+      if (filled < 11 || filled > 17) continue;
+      const cl = picClues(picture);
+      if (cl.rows.some(r => r[0] === 0) || cl.cols.some(c => c[0] === 0)) continue;   // no empty line
+      return { rows: cl.rows, cols: cl.cols, cells: Array(PIC_N * PIC_N).fill(false), picture };
+    }
+    const picture = [1,1,0,0,1, 0,1,1,1,0, 1,0,1,0,1, 0,1,1,0,1, 1,1,0,1,1].map(Boolean);
+    const cl = picClues(picture);
+    return { rows: cl.rows, cols: cl.cols, cells: Array(PIC_N * PIC_N).fill(false), picture };
+  }
+
+  // ---- 12. Truth & Lies (knights and knaves) ----------------------------
+  // Four people, each always tells the truth or always lies. Each says one thing about someone.
+  // Work out who is who. Only one assignment fits what everybody said.
+  const TL_PEOPLE = 4, TL_NAMES = ['A', 'B', 'C', 'D'];
+  function tlTrue(st, who, kinds) {
+    const other = kinds[st.j];
+    if (st.k === 'truthful') return other;
+    if (st.k === 'liar') return !other;
+    if (st.k === 'same') return other === kinds[who];
+    return other !== kinds[who];          // 'diff'
+  }
+  function tlFits(stmts, kinds) { return stmts.every((st, who) => tlTrue(st, who, kinds) === kinds[who]); }
+  function tlAssignments() {
+    const out = [];
+    for (let m = 0; m < (1 << TL_PEOPLE); m++) out.push(Array.from({ length: TL_PEOPLE }, (_, i) => !!(m & (1 << i))));
+    return out;
+  }
+  function tlSolutions(stmts) { return tlAssignments().filter(k => tlFits(stmts, k)); }
+  function tlText(st) {
+    const o = TL_NAMES[st.j];
+    return st.k === 'truthful' ? o + ' always tells the truth.' : st.k === 'liar' ? o + ' always lies.'
+      : st.k === 'same' ? o + ' and I are the same kind.' : o + ' and I are different kinds.';
+  }
+  const TL_FALLBACK = [{ k: 'liar', j: 1 }, { k: 'same', j: 2 }, { k: 'diff', j: 3 }, { k: 'truthful', j: 0 }];
+  function tlMake(rnd) {
+    for (let tries = 0; tries < 3000; tries++) {
+      const stmts = Array.from({ length: TL_PEOPLE }, (_, who) => {
+        let j = int(rnd, 0, TL_PEOPLE - 1); if (j === who) j = (j + 1) % TL_PEOPLE;
+        return { k: pick(rnd, ['truthful', 'liar', 'same', 'diff']), j };
+      });
+      if (tlSolutions(stmts).length === 1) return { stmts, guess: Array(TL_PEOPLE).fill(null) };
+    }
+    return { stmts: TL_FALLBACK.map(s => Object.assign({}, s)), guess: Array(TL_PEOPLE).fill(null) };
+  }
+  function tlSolved(s) { return s.guess.every(v => v !== null) && tlFits(s.stmts, s.guess); }
+
   // ---- Rendering --------------------------------------------------------
   function el(tag, cls, text) {
     const e = document.createElement(tag);
@@ -350,6 +547,103 @@
     host.appendChild(el('div', 'pz-note', '● right colour, right place  ·  ○ right colour, wrong place'));
   }
 
+  function renderLights(host, s, change, done) {
+    host.textContent = '';
+    const board = el('div', 'pz-board pz-grid4');
+    s.cells.forEach((on, i) => board.appendChild(btn('pz-cell pz-bulb' + (on ? ' pz-on pz-glow' : ''), on ? '●' : '',
+      () => { loPress(s, i); s.moves++; change(); },
+      'Row ' + (Math.floor(i / LO_N) + 1) + ', column ' + (i % LO_N + 1) + ': ' + (on ? 'lit' : 'dark'), done)));
+    host.appendChild(board);
+    host.appendChild(el('div', 'pz-note', s.moves + ' taps'));
+  }
+
+  function renderHanoi(host, s, change, done) {
+    host.textContent = '';
+    const row = el('div', 'pz-pegs');
+    for (let p = 0; p < 3; p++) {
+      const col = btn('pz-peg-col' + (s.from === p ? ' pz-on' : '') + (p === s.target ? ' pz-target' : ''), '', () => {
+        s.msg = '';
+        if (s.from === null) { if (s.pegs[p].length) s.from = p; }
+        else if (s.from === p) s.from = null;
+        else { if (!hanoiMove(s, s.from, p)) s.msg = 'A bigger disc cannot go on a smaller one.'; s.from = null; }
+        change();
+      }, 'Peg ' + (p + 1) + (p === s.target ? ' (goal)' : '') + ': ' + (s.pegs[p].length ? 'top disc ' + s.pegs[p][s.pegs[p].length - 1] : 'empty'), done);
+      for (let k = s.pegs[p].length - 1; k >= 0; k--) {
+        const d = el('span', 'pz-disc d' + s.pegs[p][k]);
+        d.style.width = (22 + s.pegs[p][k] * 17) + '%';
+        col.appendChild(d);
+      }
+      col.appendChild(el('span', 'pz-peg-base', p === s.target ? '★' : ''));
+      row.appendChild(col);
+    }
+    host.appendChild(row);
+    host.appendChild(el('div', 'pz-note', s.msg || (s.moves + ' moves')));
+  }
+
+  function renderSlide(host, s, change, done) {
+    host.textContent = '';
+    const board = el('div', 'pz-board pz-slide');
+    s.tiles.forEach((v, i) => {
+      const b = btn('pz-cell' + (v ? ' pz-tile' : ' pz-blank'), v ? String(v) : '', () => { slideMove(s, i); change(); },
+        v ? 'Tile ' + v : 'Blank', done || !v);
+      board.appendChild(b);
+    });
+    host.appendChild(board);
+    host.appendChild(el('div', 'pz-note', s.moves + ' slides'));
+  }
+
+  function renderJugs(host, s, change, done) {
+    host.textContent = '';
+    const row = el('div', 'pz-jugs');
+    s.caps.forEach((cap, i) => {
+      const jug = btn('pz-jug' + (s.from === i ? ' pz-on' : ''), '', () => {
+        if (s.from === null) { if (s.vols[i] > 0) s.from = i; }
+        else if (s.from === i) s.from = null;
+        else { const next = jugsPourState(s.vols, s.caps, s.from, i); if (next) { s.vols = next; s.moves++; } s.from = null; }
+        change();
+      }, 'Jug ' + (i + 1) + ': ' + s.vols[i] + ' of ' + cap, done);
+      jug.style.height = (44 + cap * 11) + 'px';
+      const fill = el('span', 'pz-fill'); fill.style.height = (s.vols[i] / cap * 100) + '%';
+      jug.appendChild(fill);
+      jug.appendChild(el('span', 'pz-jug-n', s.vols[i] + '/' + cap));
+      row.appendChild(jug);
+    });
+    host.appendChild(row);
+    host.appendChild(el('div', 'pz-note', 'Get exactly ' + s.target + ' into one jug  ·  ' + s.moves + ' pours'));
+    host.appendChild(btn('pz-btn', 'Start over', () => { s.vols = s.start.slice(); s.from = null; s.moves = 0; change(); }, 'Start this puzzle over', done));
+  }
+
+  function renderPicross(host, s, change, done) {
+    host.textContent = '';
+    const N = PIC_N, board = el('div', 'pz-board pz-pic');
+    board.appendChild(el('span', 'pz-clue', ''));
+    s.cols.forEach(c => board.appendChild(el('span', 'pz-clue pz-clue-col', c.join('\n'))));
+    for (let r = 0; r < N; r++) {
+      board.appendChild(el('span', 'pz-clue pz-clue-row', s.rows[r].join(' ')));
+      for (let c = 0; c < N; c++) {
+        const i = r * N + c, on = s.cells[i];
+        board.appendChild(btn('pz-cell pz-pixel' + (on ? ' pz-on pz-fillcell' : ''), '', () => { s.cells[i] = !s.cells[i]; change(); },
+          'Row ' + (r + 1) + ', column ' + (c + 1) + ': ' + (on ? 'filled' : 'empty'), done));
+      }
+    }
+    host.appendChild(board);
+  }
+
+  function renderTruth(host, s, change, done) {
+    host.textContent = '';
+    s.stmts.forEach((st, i) => {
+      const row = el('div', 'pz-row pz-say');
+      row.appendChild(el('span', 'pz-who', TL_NAMES[i]));
+      row.appendChild(el('span', 'pz-rule', '“' + tlText(st) + '”'));
+      const v = s.guess[i];
+      row.appendChild(btn('pz-btn pz-kind' + (v === null ? '' : v ? ' pz-on' : ' pz-bad'), v === null ? '?' : v ? 'Truth' : 'Liar',
+        () => { s.guess[i] = s.guess[i] === null ? true : s.guess[i] ? false : null; change(); },
+        TL_NAMES[i] + ': ' + (v === null ? 'undecided' : v ? 'tells the truth' : 'lies') + ', tap to change', done));
+      host.appendChild(row);
+    });
+    host.appendChild(el('div', 'pz-note', 'Mark each person as Truth or Liar.'));
+  }
+
   // ---- Registry ---------------------------------------------------------
   const PUZZLES = [
     { id: 'timing', name: 'Logic & Timing', rule: 'Find a tick when every lamp is lit at the same time.',
@@ -363,7 +657,19 @@
     { id: 'sequence', name: 'Sequence Programming', rule: 'Fill every slot with an instruction so the machine ends on the target.',
       make: seqMake, solved: seqSolved, status: s => s.slots.filter(Boolean).length + '/' + SEQ_SLOTS + ' slots', render: renderSequence },
     { id: 'mastermind', name: 'Mastermind Variant', rule: 'Crack the 4-colour code. Five colours, no colour used twice in the code.',
-      make: mmMake, solved: s => s.won, status: s => s.history.length + '/' + MM_TRIES + ' guesses', render: renderMastermind }
+      make: mmMake, solved: s => s.won, status: s => s.history.length + '/' + MM_TRIES + ' guesses', render: renderMastermind },
+    { id: 'lightsout', name: 'Lights Out', rule: 'Tapping a lamp flips it and its neighbours (up, down, left, right). Switch every lamp off.',
+      make: loMake, solved: s => loLit(s) === 0, status: s => loLit(s) + ' lit', render: renderLights },
+    { id: 'hanoi', name: 'Tower Shift', rule: 'Move one disc at a time, never a bigger one onto a smaller one, until all four sit on the ★ peg.',
+      make: hanoiMake, solved: s => s.pegs[s.target].length === HANOI_DISCS, status: s => s.moves + ' moves', render: renderHanoi },
+    { id: 'slide', name: 'Slide Tiles', rule: 'Slide the tiles into order 1 to 8 with the blank in the last corner.',
+      make: slideMake, solved: slideSolved, status: s => s.moves + ' slides', render: renderSlide },
+    { id: 'jugs', name: 'Pour Puzzle', rule: 'Pour water between the jugs until one holds exactly the target amount.',
+      make: jugsMake, solved: jugsSolved, status: s => s.moves + ' pours', render: renderJugs },
+    { id: 'picross', name: 'Picross', rule: 'Numbers give the lengths of the filled runs in each row and column. Fill the picture to match.',
+      make: picMake, solved: picSolved, status: s => s.cells.filter(Boolean).length + ' filled', render: renderPicross },
+    { id: 'truth', name: 'Truth & Lies', rule: 'Each person always tells the truth or always lies. Work out who is which.',
+      make: tlMake, solved: tlSolved, status: s => s.guess.filter(v => v !== null).length + '/' + TL_PEOPLE + ' marked', render: renderTruth }
   ];
   const byId = id => PUZZLES.find(p => p.id === id) || null;
   // A random puzzle type, never the one just shown.
@@ -381,7 +687,9 @@
     lightTrace, lightCount, lightSolved, reflect, LIGHT_N,
     mathWays, mathSum, mathSolved,
     seqApply, seqRun, seqSolved, seqWays, SEQ_SLOTS,
-    mmScore, mmMake, mmSubmit, MM_TRIES, MM_LEN
+    mmScore, mmMake, mmSubmit, MM_TRIES, MM_LEN,
+    loPress, loLit, LO_N, hanoiCanMove, hanoiMove, HANOI_DISCS, slideMove, slideSolved, slideNeighbours, SLIDE_DONE,
+    jugsPourState, jugsMinMoves, jugsSolved, picClues, picSolved, PIC_N, tlFits, tlSolutions, tlSolved, TL_PEOPLE
   };
   if (typeof window !== 'undefined') window.MoonPuzzles = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

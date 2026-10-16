@@ -10,9 +10,9 @@ function check(name, fn) { fn(); n++; console.log('ok -', name); }
 function seeded(seed) { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; }
 const RUNS = 150;
 
-check('there are exactly the six logic puzzle types', () => {
-  assert.deepStrictEqual(P.PUZZLES.map(p => p.id), ['timing', 'grid', 'light', 'math', 'sequence', 'mastermind']);
-  assert.deepStrictEqual(P.PUZZLES.map(p => p.name), ['Logic & Timing', 'Grid Match', 'Spatial Light Routing', 'Math & Combinatorics', 'Sequence Programming', 'Mastermind Variant']);
+check('there are exactly the twelve logic puzzle types', () => {
+  assert.deepStrictEqual(P.PUZZLES.map(p => p.id), ['timing', 'grid', 'light', 'math', 'sequence', 'mastermind', 'lightsout', 'hanoi', 'slide', 'jugs', 'picross', 'truth']);
+  assert.deepStrictEqual(P.PUZZLES.map(p => p.name), ['Logic & Timing', 'Grid Match', 'Spatial Light Routing', 'Math & Combinatorics', 'Sequence Programming', 'Mastermind Variant', 'Lights Out', 'Tower Shift', 'Slide Tiles', 'Pour Puzzle', 'Picross', 'Truth & Lies']);
 });
 
 check('no puzzle is trivia: no question/answer text, no lookup tables', () => {
@@ -21,11 +21,11 @@ check('no puzzle is trivia: no question/answer text, no lookup tables', () => {
   P.PUZZLES.forEach(p => { assert.strictEqual(typeof p.rule, 'string'); assert.ok(p.rule.length > 10); });
 });
 
-check('pickType never repeats the type just shown, and reaches all six', () => {
+check('pickType never repeats the type just shown, and reaches all twelve', () => {
   const rnd = seeded(3), seen = new Set();
   let last = null;
   for (let i = 0; i < 300; i++) { const t = P.pickType(rnd, last); assert.notStrictEqual(t, last); seen.add(t); last = t; }
-  assert.strictEqual(seen.size, 6);
+  assert.strictEqual(seen.size, 12);
 });
 
 check('every puzzle starts unsolved', () => {
@@ -163,6 +163,100 @@ check('mastermind: a simple solver cracks every code within the 8 guesses', () =
     worst = Math.max(worst, guesses);
   });
   assert.ok(worst <= P.MM_TRIES, 'worst case ' + worst);
+});
+
+// 7. lights out
+check('lightsout: always solvable by undoing the generating taps; a lone tap is not a solution', () => {
+  for (let i = 1; i <= RUNS; i++) {
+    const s = P.make('lightsout', seeded(i));
+    assert.ok(P.LO_N === 4 && s.cells.length === 16 && P.loLit(s) >= 3);
+    // brute force: some set of taps (taps commute) switches everything off
+    let ok = false;
+    for (let m = 0; m < 65536 && !ok; m++) {
+      const t = { cells: s.cells.slice(), moves: 0 };
+      for (let k = 0; k < 16; k++) if (m & (1 << k)) P.loPress(t, k);
+      ok = P.loLit(t) === 0;
+    }
+    assert.ok(ok);
+  }
+  const s = { cells: Array(16).fill(false), moves: 0 }; P.loPress(s, 0); assert.strictEqual(P.loLit(s), 3);
+});
+
+// 8. tower shift
+check('hanoi: legal start, never solved, bigger-on-smaller refused, can be solved', () => {
+  for (let i = 1; i <= RUNS; i++) {
+    const s = P.make('hanoi', seeded(i));
+    s.pegs.forEach(peg => peg.forEach((d, k) => { if (k) assert.ok(peg[k - 1] > d); }));
+    assert.strictEqual(s.pegs.reduce((a, p) => a + p.length, 0), P.HANOI_DISCS);
+    assert.ok(s.pegs[s.target].length < P.HANOI_DISCS);
+  }
+  const s = { pegs: [[4, 3], [1], [2]], target: 2, from: null, moves: 0 };
+  assert.ok(!P.hanoiMove(s, 0, 1));            // 3 onto 1: refused
+  assert.ok(P.hanoiMove(s, 1, 2));              // 1 onto 2 is allowed
+  const t = { pegs: [[4, 3, 2, 1], [], []], target: 2, from: null, moves: 0 };
+  // classic recursive solution
+  (function mv(n, a, b, c) { if (!n) return; mv(n - 1, a, c, b); assert.ok(P.hanoiMove(t, a, c)); mv(n - 1, b, a, c); })(4, 0, 1, 2);
+  assert.strictEqual(t.pegs[2].length, 4); assert.strictEqual(t.moves, 15);
+});
+
+// 9. slide tiles
+check('slide: a permutation of 0-8, reachable from solved (parity), never solved, moves only next to the blank', () => {
+  for (let i = 1; i <= RUNS; i++) {
+    const s = P.make('slide', seeded(i));
+    assert.deepStrictEqual(s.tiles.slice().sort(), [0, 1, 2, 3, 4, 5, 6, 7, 8]);
+    const flat = s.tiles.filter(Boolean); let inv = 0;
+    for (let a = 0; a < 8; a++) for (let b = a + 1; b < 8; b++) if (flat[a] > flat[b]) inv++;
+    assert.strictEqual(inv % 2, 0);
+    assert.ok(!P.slideSolved(s));
+  }
+  const s = { tiles: [1, 2, 3, 4, 5, 6, 7, 0, 8], moves: 0 };
+  assert.ok(!P.slideMove(s, 0)); assert.ok(P.slideMove(s, 8)); assert.ok(P.slideSolved(s));
+});
+
+// 10. pour puzzle
+check('jugs: the target is reachable in 4-7 pours (also the fallback), pours conserve water', () => {
+  assert.strictEqual(P.jugsMinMoves([8, 5, 3], [8, 0, 0], 4) > 0, true);
+  for (let i = 1; i <= RUNS; i++) {
+    const s = P.make('jugs', seeded(i));
+    const m = P.jugsMinMoves(s.caps, s.vols, s.target);
+    assert.ok(m >= 4 && m <= 7 || (s.caps.join() === '8,5,3'), 'moves ' + m);
+    assert.ok(!P.jugsSolved(s));
+    const total = s.vols.reduce((a, b) => a + b, 0);
+    const w = P.jugsPourState(s.vols, s.caps, 0, 1); assert.strictEqual(w.reduce((a, b) => a + b, 0), total);
+    assert.ok(w.every((v, k) => v <= s.caps[k]));
+  }
+});
+
+// 11. picross
+check('picross: clues come from a real picture, an empty board is wrong, any matching picture is right', () => {
+  for (let i = 1; i <= RUNS; i++) {
+    const s = P.make('picross', seeded(i));
+    assert.ok(!P.picSolved(s));
+    s.cells = s.picture.slice(); assert.ok(P.picSolved(s));
+    const flipped = s.picture.slice(); flipped[0] = !flipped[0]; s.cells = flipped; assert.ok(!P.picSolved(s));
+  }
+  assert.deepStrictEqual(P.picClues([1,1,0,1,0, 0,0,0,0,0, 1,1,1,1,1, 0,1,0,1,0, 1,0,0,0,1]).rows, [[2, 1], [0], [5], [1, 1], [1, 1]]);
+});
+
+// 12. truth & lies
+check('truth: exactly one assignment fits what everyone said, and only it is accepted', () => {
+  for (let i = 1; i <= RUNS; i++) {
+    const s = P.make('truth', seeded(i)), sol = P.tlSolutions(s.stmts);
+    assert.strictEqual(sol.length, 1);
+    assert.ok(!P.tlSolved(s));
+    s.guess = sol[0].slice(); assert.ok(P.tlSolved(s));
+    const wrong = sol[0].slice(); wrong[0] = !wrong[0]; s.guess = wrong; assert.ok(!P.tlSolved(s));
+    s.guess = sol[0].slice(); s.guess[2] = null; assert.ok(!P.tlSolved(s));
+  }
+});
+check('generators rarely fall back to their fixed puzzle (truth, jugs, picross)', () => {
+  let tl = 0, jg = 0, pc = 0;
+  for (let i = 1; i <= RUNS; i++) {
+    const t = P.make('truth', seeded(i)); if (t.stmts[0].k === 'liar' && t.stmts[0].j === 1 && t.stmts[3].k === 'truthful' && t.stmts[3].j === 0) tl++;
+    if (P.make('jugs', seeded(i)).caps.join() === '8,5,3') jg++;
+    if (P.make('picross', seeded(i)).picture.join() === [1,1,0,0,1, 0,1,1,1,0, 1,0,1,0,1, 0,1,1,0,1, 1,1,0,1,1].map(Boolean).join()) pc++;
+  }
+  assert.ok(tl < RUNS / 4 && jg < RUNS / 4 && pc < RUNS / 4, [tl, jg, pc].join());
 });
 
 console.log(n + ' checks passed');

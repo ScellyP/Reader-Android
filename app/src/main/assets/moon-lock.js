@@ -353,7 +353,7 @@
   }
   function animate(now) {
     frame = 0;
-    const duration = state && state.done ? 900 : 350;
+    const duration = lastProgressMs || (state && state.done ? 900 : 350);
     const t = clamp((now-lastProgressAt)/duration), eased = t*t*(3-2*t);
     shown = lastProgressFrom + (lastProgressTo-lastProgressFrom)*eased;
     render();
@@ -366,10 +366,10 @@
       }
     }, 250);
   }
-  let lastProgressFrom=0, lastProgressTo=0;
-  function setProgress(to) {
+  let lastProgressFrom=0, lastProgressTo=0, lastProgressMs=0;
+  function setProgress(to, ms) {
     if (frame) cancelAnimationFrame(frame);
-    clearTimeout(finishTimer); lastProgressFrom=shown; lastProgressTo=to; lastProgressAt=performance.now();
+    clearTimeout(finishTimer); lastProgressMs=ms||0; lastProgressFrom=shown; lastProgressTo=to; lastProgressAt=performance.now();
     frame=requestAnimationFrame(animate);
   }
 
@@ -419,6 +419,21 @@
     });
     const pool = free.length ? free : STAR_SPOTS;
     secretStar = pool[randomIndex(pool.length)];
+    updateStarMark();
+  }
+  // Hidden test run only (the moon in the Reading panel): a faint ring shows where the secret
+  // star is, so the puzzles are easy to reach. The real lock never marks it.
+  function updateStarMark() {
+    if (!stage) return;
+    let m = $('night-lock-star-mark');
+    const show = state && state.test && puzzleAvailable && secretStar && !(lockBox && lockBox.classList.contains('puzzle-open'));
+    if (!show) { if (m) m.remove(); return; }
+    if (!m) {
+      m = document.createElement('div'); m.id = 'night-lock-star-mark'; m.setAttribute('aria-hidden', 'true');
+      m.style.cssText = 'position:absolute;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;border:1px solid var(--text);opacity:.45;pointer-events:none;z-index:0';
+      stage.appendChild(m);
+    }
+    m.style.left = secretStar[0] + '%'; m.style.top = secretStar[1] + '%';
   }
 
   function renderPuzzle() {
@@ -448,16 +463,26 @@
     puzzleKind = null; newPuzzle();
     puzzlePanel.classList.remove('hidden');
     if (lockBox) lockBox.classList.add('puzzle-open');
+    updateStarMark();
   }
   function closePuzzle() {
     if (puzzlePanel) puzzlePanel.classList.add('hidden');
     if (lockBox) lockBox.classList.remove('puzzle-open');
+    updateStarMark();
   }
   // Called by startSession: the secret star only exists on non-holiday days (or in the hidden test run).
   function resetPuzzle(available) {
     puzzleAvailable = available && !!MP; puzzleKind = null; puzzleState = null; puzzleDone = false;
     closePuzzle();
     if (puzzleAvailable) pickSecretStar(); else secretStar = null;
+  }
+  // Called when the app is reopened while still locked: a fresh random star, and any
+  // half-played puzzle is put away. Does nothing once a puzzle has been solved.
+  function resetStar() {
+    if (!puzzleAvailable || puzzleDone) return;
+    puzzleKind = null; puzzleState = null;
+    closePuzzle();
+    pickSecretStar();
   }
   function onPuzzleSolved() {
     puzzleDone = true; renderPuzzle();
@@ -474,12 +499,24 @@
       return;
     }
     if (puzzleMsg) puzzleMsg.textContent = 'Unlocked for 30 minutes.';
-    finalFlash();
-    clearTimeout(finishTimer);
-    finishTimer = setTimeout(() => {
-      unlockReady = true;
-      if (window.NovelMoonLock && window.NovelMoonLock.onUnlocked) window.NovelMoonLock.onUnlocked();
-    }, 1100);
+    shatterAfterPuzzle();
+  }
+  // The screen cracks and shatters over the solved puzzle, then (same path as the moon taps)
+  // animate() waits a moment and calls onUnlocked, which opens the reader.
+  function shatterAfterPuzzle() {
+    if (!state) return;
+    if (!state.active) {                            // puzzle day: the glass was not started with the session
+      try {
+        clearCanvases(); lastDrawQ = -1; shown = 0; system = null; shatterOn = false;
+        const sg = shatterReady();
+        if (sg) { sg.begin(seed); shatterOn = true; }
+        else { const size = prepareCanvases(); system = generateGlass(size.w, size.h, seed); }
+      } catch (error) { system = null; shatterOn = false; }
+      state.active = true;
+    }
+    state.done = true; state.progress = 1;
+    shakeForProgress(1); finalFlash();
+    setProgress(1, 1600);
   }
   if (stage) stage.addEventListener('click', function (e) {
     if (!puzzleAvailable || !secretStar || (lockBox && lockBox.classList.contains('puzzle-open'))) return;
@@ -544,6 +581,7 @@
     try { clearCanvases(); if(sgInst)sgInst.reset(); } catch (_) { /* nothing to clear */ }
     shatterOn=false;
     state=null; tracker=null; system=null; shown=0; lastDrawQ=-1;
+    updateStarMark();
   }
-  window.NovelMoonLock = { moonPhaseInfo, moonPhasePath, isUnlocked, canDismiss:() => unlockReady, startSession, stopSession, onUnlocked:null, onTestFinished:null, isCheatDay, _secretStar:() => secretStar };
+  window.NovelMoonLock = { moonPhaseInfo, moonPhasePath, isUnlocked, canDismiss:() => unlockReady, startSession, stopSession, resetStar, onUnlocked:null, onTestFinished:null, isCheatDay, _secretStar:() => secretStar };
 })();
