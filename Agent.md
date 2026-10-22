@@ -21,6 +21,7 @@ Key files:
 - `AdaptiveBrightness.kt` — the "Adaptive brightness" setting: light sensor → this window's brightness (log curve, smoothed). The Kotlin was written without being compiled or run; test it on a device.
 - `NativeCrossfade.kt` — native crossfade: two ExoPlayers, equal-power ramp, session hand-over.
 - `ReplayGainReader.kt` — reads ReplayGain tags from the file bytes (pure `java.io`, testable on a plain JVM).
+- `tests/audio-startup.test.js` — last-song restore and Bluetooth start-up (11 checks, with a fake Android bridge; run with `node tests/audio-startup.test.js`)
 - `tests/audio-player.smoke.test.js` — `audio-player.js` loads under Node with stubbed globals; no playback-speed code remains (run with `node tests/audio-player.smoke.test.js`)
 
 These are the only tests in the repo. Earlier notes mentioned tests for the audio
@@ -138,6 +139,8 @@ top-of-file comment for the architecture, and `PlaybackService.kt` /
 | Playback speed with pitch preservation | Removed — the speed control is gone; playback is always 1× |
 | Volume normalisation (replay gain) | **Working**⁴ — off / track / album, from the ReplayGain tags in your files |
 | Resume-at-position per track | Removed — every track starts at 0 (only a live engine hand-off keeps its position) |
+| Remember the last song | **Working**⁶ — saved as `lastTrackId` in the audio prefs (so in `settings.txt`) every time a track starts; the next launch's first scan (`MediaLibrary.onScanned`) makes it the current song, not started, from 0. Dropped back to "All songs" if it is outside the saved playlist; ignored if the file is gone |
+| Start by itself over Bluetooth | **Working**⁶ — `StartupPlayback` in `audio-player.js` waits for the first library scan *and* the native player, then, if `AndroidBridge.isBluetoothAudioConnected()` is true, plays the current song (or the first in the queue). Once per page load; skipped for an empty library or if something is already playing |
 | A-B repeat | **Working** — A / B buttons under the seek bar |
 | Graceful handling of unplayable files (skip, don't stall) | **Working** |
 
@@ -238,6 +241,11 @@ starts, sharing the audio session so the loudness boost covers both players. **T
 Kotlin half was written without being compiled or run** — test it on a device
 before relying on it.
 `tests/crossfade.test.js` checks the JS side.
+
+⁶ `isBluetoothAudioConnected()` (MainActivity.kt) looks for a Bluetooth music output in
+`AudioManager.getDevices()` (A2DP, hearing aid, BLE headset/speaker; not the phone-call SCO link),
+which needs no permission. **That Kotlin half was written without being compiled or run** — test
+it on a device with a real Bluetooth device before relying on it.
 
 ## Audio feature framework
 

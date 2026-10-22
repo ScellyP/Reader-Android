@@ -143,6 +143,9 @@ window.NovelAudio = (function () {
 
     // Playback
     currentTrackId: null,
+    // The song that was current when the app was last closed (read from the saved prefs at
+    // launch). onScanned() brings it back as the current song, from the start.
+    lastTrackId: null,
     playing: false,
     positionSec: 0,
     durationSec: 0,
@@ -217,6 +220,19 @@ window.NovelAudio = (function () {
     onScanned(tracks) {
       state.tracks = Array.isArray(tracks) ? tracks : [];
       state.scanning = false;
+
+      // First scan after launch: bring back the song that was playing when the app was last
+      // closed. It becomes the current song (shown in the player, and what Play starts) but is
+      // not started here, and like every track it starts from the beginning, not where it was
+      // left. If it is no longer in the selected playlist, fall back to the whole library.
+      const remembered = !state.currentTrackId && state.lastTrackId ? this.getTrack(state.lastTrackId) : null;
+      if (remembered) {
+        state.currentTrackId = remembered.id;
+        state.durationSec = remembered.durationSec || 0;
+        state.positionSec = 0;
+        if (!this.currentSelectionIds().includes(remembered.id)) state.activePlaylist = 'all';
+      }
+
       AudioFeatures.emit('libraryChanged');
       AudioUI.setNote(state.tracks.length ? '' : 'No audio files found in /storage/emulated/0/Novel/Audio.');
       AudioUI.renderPlaylistOptions();
@@ -234,6 +250,7 @@ window.NovelAudio = (function () {
         PlaybackQueue.jumpTo(currentId);
       }
       AudioUI.render();
+      StartupPlayback.libraryScanned(state.tracks.length > 0);
     },
 
     getTrack(id) {
@@ -1071,6 +1088,7 @@ window.NovelAudio = (function () {
         if (typeof saved.shuffle === 'boolean') state.shuffle = saved.shuffle;
         if (typeof saved.repeat === 'string') state.repeat = saved.repeat;
         if (typeof saved.activePlaylist === 'string') state.activePlaylist = saved.activePlaylist;
+        if (typeof saved.lastTrackId === 'string') state.lastTrackId = saved.lastTrackId;
         AudioFeatures.restore(saved.features);
       } catch (e) { /* corrupt prefs are not worth crashing over */ }
     },
@@ -1082,6 +1100,9 @@ window.NovelAudio = (function () {
           shuffle: state.shuffle,
           repeat: state.repeat,
           activePlaylist: state.activePlaylist,
+          // Kept even before anything has played this session, so opening the app and closing
+          // it again never forgets the song.
+          lastTrackId: state.currentTrackId || state.lastTrackId,
           features: AudioFeatures.serialize(),
         }));
       } catch (e) { /* storage full — non-fatal */ }
@@ -1406,6 +1427,16 @@ window.NovelAudio = (function () {
     },
     getIds() { return state.features.history.ids.slice(); },
     clear() { state.features.history.ids = []; Prefs.save(); },
+  });
+
+  /* ---- Remember the last song ---------------------------------------------------
+     Every time a track starts, the audio prefs are saved with it as `lastTrackId`
+     (see Prefs.save), so the next launch can bring that song back. */
+  AudioFeatures.register({
+    id: 'lastTrack', label: 'Remember last song', status: 'working',
+    defaults: {},
+    persistKeys: [],
+    trackStart() { Prefs.save(); },
   });
 
   /* ---- Liked tracks ---------------------------------------------------------
@@ -2267,6 +2298,41 @@ window.NovelAudio = (function () {
     },
   };
 
+  /* ---- Music that starts by itself ---------------------------------------------
+     When the app is opened with a Bluetooth audio device connected (headphones, speaker, car),
+     the music starts on its own: the remembered song if there is one, otherwise the first in
+     the queue. Once per launch, never on a later rescan or when the app is merely brought back
+     to the front. It waits for both the library scan and the native player, because the
+     native player is the one that keeps playing with the screen off. */
+  const StartupPlayback = {
+    done: false,
+    libraryReady: false,
+    nativeReady: false,
+
+    libraryScanned(hasTracks) {
+      if (this.done) return;
+      if (!hasTracks) { this.done = true; return; }
+      this.libraryReady = true;
+      this._tryStart();
+    },
+
+    nativePlayerReady() {
+      this.nativeReady = true;
+      this._tryStart();
+    },
+
+    _tryStart() {
+      if (this.done || !this.libraryReady || !this.nativeReady) return;
+      this.done = true;
+      const bridge = window.AndroidBridge;
+      if (!bridge || !bridge.isBluetoothAudioConnected || state.playing) return;
+      let connected = false;
+      try { connected = !!bridge.isBluetoothAudioConnected(); } catch (e) { /* treat as not connected */ }
+      const id = state.currentTrackId || PlaybackQueue.current();
+      if (connected && id) AudioEngine.play(id);
+    },
+  };
+
   /* =======================================================================
      9. PUBLIC API
      ======================================================================= */
@@ -2330,6 +2396,7 @@ window.NovelAudio = (function () {
       } else {
         AudioUI.render();
       }
+      StartupPlayback.nativePlayerReady();
     },
 
     // window.onNativeAudio* callbacks, defined at the bottom of this

@@ -7,6 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.media.MediaMetadataRetriever
 import android.net.Uri
@@ -1253,6 +1254,16 @@ class MainActivity : ComponentActivity() {
             menuOpen = open
         }
 
+        // True when a Bluetooth audio device (headphones, speaker, car, hearing
+        // aid) is connected as an output. audio-player.js asks once at start-up
+        // to decide whether the music should start by itself. Needs no
+        // permission: AudioManager only lists the devices.
+        @JavascriptInterface
+        fun isBluetoothAudioConnected(): Boolean {
+            val am = getSystemService(AudioManager::class.java) ?: return false
+            return am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { isBluetoothMusicOutput(it.type) }
+        }
+
         // Mirrors the "Adaptive brightness" switch in the theme panel (see
         // AdaptiveBrightness.kt). Returns false when the phone has no light
         // sensor, so the page can put the switch back off.
@@ -1892,6 +1903,17 @@ class MainActivity : ComponentActivity() {
     private fun callPage(fn: String, args: String = "") {
         if (!::webView.isInitialized) return
         webView.evaluateJavascript("window.$fn && window.$fn($args);", null)
+    }
+
+    /**
+     * Bluetooth outputs that carry music. The phone-call link (SCO) is left out on purpose: it
+     * shows up for a headset during calls, not for listening.
+     */
+    private fun isBluetoothMusicOutput(type: Int): Boolean = when (type) {
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> true
+        AudioDeviceInfo.TYPE_HEARING_AID -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+        AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+        else -> false
     }
 
     /** Tells the page whether the native player is playing (window.onNativeAudioState). */

@@ -299,6 +299,8 @@ capitals) naming which playlist it came from.
 | A-B repeat (A / B buttons under the seek bar) | ✅ Implemented |
 | Likes (heart button on the now-playing card, plus a "Liked" playlist) | ✅ Implemented |
 | Recently played (entry in the playlist picker) | ✅ Implemented |
+| Remembers the last song: the song that was playing when the app was closed comes back as the current song on the next launch (press Play to start it, from the beginning, not from where it stopped) | ✅ Implemented |
+| Starts playing by itself when the app is opened with a Bluetooth audio device connected (headphones, speaker, car): the remembered song, or the first one in the library. Once per launch | ✅ Implemented |
 | Custom playlist editor ("New playlist" in the Library) | ✅ Implemented |
 | Crossfade between tracks (1-12 s slider in the music panel) | ✅ Implemented |
 | Volume normalisation (ReplayGain: off / track / album) | ✅ Implemented |

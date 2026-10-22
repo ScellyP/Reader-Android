@@ -141,6 +141,8 @@
       volume: numIn(0, 1), shuffle: isBool,
       repeat: oneOf(['off', 'all', 'one']),
       activePlaylist: function (v) { return typeof v === 'string' && v.length <= 255 && NO_CTRL.test(v); },
+      // The remembered song: its file path, only ever looked up in the scanned library.
+      lastTrackId: function (v) { return typeof v === 'string' && v.length <= 1024 && NO_CTRL.test(v); },
       // Nested per-feature state: must be a plain object of modest size
       // (its own fields are checked again by the audio player when restored).
       features: function (v) {
