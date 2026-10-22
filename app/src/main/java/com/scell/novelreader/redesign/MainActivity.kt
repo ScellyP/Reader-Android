@@ -42,7 +42,6 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
-import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -68,6 +67,7 @@ class MainActivity : ComponentActivity() {
     private var insetsController: WindowInsetsControllerCompat? = null
 
     private lateinit var webView: WebView
+    private val adaptiveBrightness by lazy { AdaptiveBrightness(this) }
     private var hasLoadedOnce = false
 
     // Keeps the screen awake while the user is active, then lets it time
@@ -180,27 +180,7 @@ class MainActivity : ComponentActivity() {
         return super.dispatchTouchEvent(ev)
     }
 
-    // Demo builds (application id ends in ".demo", see app/build.gradle) share
-    // /storage/emulated/0/Novel with the normal app, so they must NOT share its
-    // settings.txt - a test build writing new keys there could upset the real
-    // app. A demo build uses settings-demo.txt instead, seeded once with a copy
-    // of settings.txt so it starts with your usual look and music settings.
-    private val isDemoBuild get() = packageName.endsWith(".demo")
-
-    private val settingsFile: File
-        get() {
-            if (!isDemoBuild) return File(novelRoot, "settings.txt")
-            val demo = File(novelRoot, "settings-demo.txt")
-            try {
-                val normal = File(novelRoot, "settings.txt")
-                if (!demo.exists() && normal.isFile && normal.length() <= MAX_SETTINGS_BYTES) {
-                    normal.copyTo(demo)
-                }
-            } catch (e: Exception) {
-                // No seed copy - the demo just starts from defaults.
-            }
-            return demo
-        }
+    private val settingsFile get() = File(novelRoot, "settings.txt")
 
     // The native audio engine (audio-player.js's NativeAudioEngine) talks
     // to PlaybackService's real ExoPlayer through this controller — see
@@ -215,14 +195,8 @@ class MainActivity : ComponentActivity() {
     private val progressHandler = Handler(Looper.getMainLooper())
     private var progressRunnable: Runnable? = null
 
-    // Android 13+ requires this to actually be granted for the media
-    // notification to display; requested once at startup. If the user
-    // declines, playback and the in-app UI still work fine — they just
-    // won't see the system notification or its transport controls.
-    // Startup asks for notifications first, then (when that dialog is
-    // answered) folder access, so both prompts appear back-to-back on first
-    // launch. The second step is chained here because Android can't show
-    // two permission screens at once.
+    // True once the page has finished loading. Permission answers that arrive
+    // earlier leave the novel listing to onPageFinished().
     private var pageLoaded = false
 
     // Set once the WebView's renderer process has died and the view has been
@@ -234,6 +208,13 @@ class MainActivity : ComponentActivity() {
     private var permissionFlowActive = false
     private var permissionFlowStarted = false
 
+    // Android 13+ requires notification access for the media notification to
+    // display; requested once at startup. If the user declines, playback and
+    // the in-app UI still work fine — they just won't see the system
+    // notification or its transport controls. Startup asks for notifications
+    // first, then (when that dialog is answered) folder access, so both
+    // prompts appear back-to-back on first launch. The second step is chained
+    // here because Android can't show two permission screens at once.
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) {
@@ -504,11 +485,7 @@ class MainActivity : ComponentActivity() {
                 // callback hit a page that had no handler yet and was
                 // silently dropped (leaving the player on the WebView
                 // fallback engine). Re-announce it now.
-                if (mediaController != null) {
-                    view.evaluateJavascript(
-                        "window.onNativeAudioReady && window.onNativeAudioReady();", null
-                    )
-                }
+                if (mediaController != null) callPage("onNativeAudioReady")
             }
         }
         webView.addJavascriptInterface(AndroidBridge(), "AndroidBridge")
@@ -621,18 +598,14 @@ class MainActivity : ComponentActivity() {
                 // through.
                 PlaybackService.queueNavigationListener = object : PlaybackService.QueueNavigationListener {
                     override fun onSkipToNext() {
-                        webView.post {
-                            webView.evaluateJavascript("window.onNativeAudioSkipNext && window.onNativeAudioSkipNext();", null)
-                        }
+                        webView.post { callPage("onNativeAudioSkipNext") }
                     }
                     override fun onSkipToPrevious() {
-                        webView.post {
-                            webView.evaluateJavascript("window.onNativeAudioSkipPrevious && window.onNativeAudioSkipPrevious();", null)
-                        }
+                        webView.post { callPage("onNativeAudioSkipPrevious") }
                     }
                 }
 
-                webView.evaluateJavascript("window.onNativeAudioReady && window.onNativeAudioReady();", null)
+                callPage("onNativeAudioReady")
             } catch (e: Exception) {
                 // Native engine unavailable (e.g. the service failed to
                 // bind) — audio-player.js's LocalAudioEngine keeps
@@ -654,11 +627,7 @@ class MainActivity : ComponentActivity() {
      */
     private val nativePlayerListener = object : Player.Listener {
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            val stateJson = JSONObject().put("playing", isPlaying).toString()
-            webView.evaluateJavascript(
-                "window.onNativeAudioState && window.onNativeAudioState(${JSONObject.quote(stateJson)});",
-                null
-            )
+            reportPlaying(isPlaying)
             if (isPlaying) startProgressUpdates() else stopProgressUpdates()
         }
 
@@ -667,20 +636,14 @@ class MainActivity : ComponentActivity() {
                 Player.STATE_READY -> {
                     val durationMs = mediaController?.duration ?: C.TIME_UNSET
                     val durationSec = if (durationMs != C.TIME_UNSET) durationMs / 1000.0 else 0.0
-                    webView.evaluateJavascript(
-                        "window.onNativeAudioLoaded && window.onNativeAudioLoaded($durationSec);",
-                        null
-                    )
+                    callPage("onNativeAudioLoaded", durationSec.toString())
                 }
-                Player.STATE_ENDED -> {
-                    webView.evaluateJavascript("window.onNativeAudioEnded && window.onNativeAudioEnded();", null)
-                }
+                Player.STATE_ENDED -> callPage("onNativeAudioEnded")
             }
         }
 
         override fun onPlayerError(error: PlaybackException) {
-            val msg = JSONObject.quote(error.message ?: "Playback error")
-            webView.evaluateJavascript("window.onNativeAudioError && window.onNativeAudioError($msg);", null)
+            callPage("onNativeAudioError", JSONObject.quote(error.message ?: "Playback error"))
         }
     }
 
@@ -698,10 +661,7 @@ class MainActivity : ComponentActivity() {
                     val posSec = controller.currentPosition / 1000.0
                     val durMs = controller.duration
                     val durSec = if (durMs != C.TIME_UNSET && durMs > 0) durMs / 1000.0 else 0.0
-                    webView.evaluateJavascript(
-                        "window.onNativeAudioProgress && window.onNativeAudioProgress($posSec, $durSec);",
-                        null
-                    )
+                    callPage("onNativeAudioProgress", "$posSec, $durSec")
                 }
                 // Screen visible: 500 ms keeps the seek bar smooth. App in the
                 // background / screen off: nobody sees the bar, so tick slowly
@@ -770,22 +730,16 @@ class MainActivity : ComponentActivity() {
         applySystemBarsForMenuState(open = false)
 
         ViewCompat.setOnApplyWindowInsetsListener(webView) { view, insets ->
-            val navBarInsets = insets.getInsets(WindowInsetsCompat.Type.navigationBars())
-            val cutoutInsets = insets.getInsets(WindowInsetsCompat.Type.displayCutout())
-            view.setPadding(0, 0, 0, navBarInsets.bottom)
-            reportTopGapInset(cutoutInsets.top)
-            reportNavBarInset(navBarInsets.bottom)
+            view.setPadding(0, 0, 0, insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom)
+            reportInsets(insets)
             insets
         }
         ViewCompat.requestApplyInsets(webView)
 
         val currentInsets = ViewCompat.getRootWindowInsets(webView)
         if (currentInsets != null) {
-            val navBarInsets = currentInsets.getInsets(WindowInsetsCompat.Type.navigationBars())
-            val cutoutInsets = currentInsets.getInsets(WindowInsetsCompat.Type.displayCutout())
-            webView.setPadding(0, 0, 0, navBarInsets.bottom)
-            reportTopGapInset(cutoutInsets.top)
-            reportNavBarInset(navBarInsets.bottom)
+            webView.setPadding(0, 0, 0, currentInsets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom)
+            reportInsets(currentInsets)
         }
     }
 
@@ -822,32 +776,21 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Tells the web page how tall the front-camera cutout gap is, in CSS px (not raw device px). */
-    private fun reportTopGapInset(topPx: Int) {
-        if (!::webView.isInitialized) return
+    /**
+     * Tells the page an inset height in CSS px (not raw device px) through
+     * window.[handler]. Two are reported: the front-camera cutout gap
+     * (onStatusBarInset) and the transparent navigation bar (onNavBarInset).
+     * reader.js uses the latter to keep fixed-position elements, like the
+     * sidebar, from extending underneath the back/home/recents icons.
+     */
+    private fun reportInset(handler: String, px: Int) {
         val density = resources.displayMetrics.density
-        val topDp = if (density > 0f) topPx / density else topPx.toFloat()
-        webView.evaluateJavascript(
-            "window.onStatusBarInset && window.onStatusBarInset(${topDp});",
-            null
-        )
+        callPage(handler, (if (density > 0f) px / density else px.toFloat()).toString())
     }
 
-    /**
-     * Tells the web page how tall the transparent navigation bar is, in
-     * CSS px. reader.js uses this to keep fixed-position elements (like
-     * the sidebar, which is position:fixed on mobile and so ignores the
-     * WebView's own bottom padding) from extending underneath the
-     * back/home/recents icons.
-     */
-    private fun reportNavBarInset(bottomPx: Int) {
-        if (!::webView.isInitialized) return
-        val density = resources.displayMetrics.density
-        val bottomDp = if (density > 0f) bottomPx / density else bottomPx.toFloat()
-        webView.evaluateJavascript(
-            "window.onNavBarInset && window.onNavBarInset(${bottomDp});",
-            null
-        )
+    private fun reportInsets(insets: WindowInsetsCompat) {
+        reportInset("onStatusBarInset", insets.getInsets(WindowInsetsCompat.Type.displayCutout()).top)
+        reportInset("onNavBarInset", insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -887,11 +830,7 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             // Not permitted right now — ignore.
         }
-        if (::webView.isInitialized) {
-            webView.evaluateJavascript(
-                "window.NovelAudio && window.NovelAudio.syncVolume && window.NovelAudio.syncVolume();", null
-            )
-        }
+        syncPageVolume()
     }
 
     @SuppressLint("UnspecifiedRegisterReceiverFlag")
@@ -921,11 +860,7 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             // Not permitted in the current device state (e.g. Do Not Disturb) — ignore.
         }
-        if (::webView.isInitialized) {
-            webView.evaluateJavascript(
-                "window.NovelAudio && window.NovelAudio.syncVolume && window.NovelAudio.syncVolume();", null
-            )
-        }
+        syncPageVolume()
     }
 
     // True while any in-app menu/panel is open; set from reader.js via
@@ -1013,6 +948,7 @@ class MainActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
         appInForeground = false
+        adaptiveBrightness.onPause()
         screenHandler.removeCallbacks(releaseScreenRunnable)
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (::webView.isInitialized && !webViewGone) {
@@ -1023,6 +959,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         appInForeground = true
+        adaptiveBrightness.onResume()
         // Push the current position right away (the poll may have been in slow mode).
         if (mediaController?.isPlaying == true) startProgressUpdates()
         keepScreenAwake()
@@ -1090,16 +1027,9 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // Called live from reader.js's syncScrim() every time the sidebar
-        // drawer opens or closes — see applySystemBarsForMenuState() for
-        // what this actually changes.
-        // Settings file: /storage/emulated/0/Novel/settings.txt. Returns
-        // null when storage isn't accessible yet, "" when the file doesn't
-        // exist, otherwise its text. See settings-file.js for the format.
-        // True in demo (branch) builds; version.js uses it to label the version.
-        @JavascriptInterface
-        fun isDemoBuild(): Boolean = this@MainActivity.isDemoBuild
-
+        // Settings file: /storage/emulated/0/Novel/settings.txt. Returns null when storage isn't accessible yet, ""
+        // when the file doesn't exist, otherwise its text. See settings-file.js
+        // for the format.
         @JavascriptInterface
         fun readSettingsFile(): String? {
             if (!hasStoragePermission()) return null
@@ -1158,18 +1088,22 @@ class MainActivity : ComponentActivity() {
             }
         }
 
+        // Called live from reader.js's syncScrim() every time the sidebar
+        // drawer opens or closes — see applySystemBarsForMenuState() for
+        // what this actually changes.
         @JavascriptInterface
         fun setMenuOpen(open: Boolean) {
             runOnUiThread { applySystemBarsForMenuState(open) }
         }
 
-        // Scans /storage/emulated/0/Novel/Audio for playable audio files
-        // and reports them to audio-player.js's MediaLibrary. Mirrors
-        // loadNovel() above: same permission, same background-thread +
-        // runOnUiThread(evaluateJavascript) shape.
+        // Rescan button / explicit scan: always walk the folder again and
+        // report the result to audio-player.js's MediaLibrary (see runAudioScan()).
         @JavascriptInterface
         fun scanAudio() {
-            runOnUiThread { listAudioFiles() }
+            runOnUiThread {
+                jsWantsAudio = true
+                runAudioScan()
+            }
         }
 
         // Called once by the page at start-up: hands over the scan that was
@@ -1178,13 +1112,6 @@ class MainActivity : ComponentActivity() {
         fun scanAudioStartup() {
             runOnUiThread { requestAudioListAtStartup() }
         }
-
-        // The five calls behind audio-player.js's NativeAudioEngine —
-        // each just forwards to the MediaController connected in
-        // connectNativePlayer(). All are no-ops if that connection
-        // hasn't completed yet (mediaController is still null), which
-        // matches NativeAudioEngine only ever being reachable from JS
-        // after window.onNativeAudioReady has already fired.
 
         // Novel cover for the library screen: an image inside that novel's
         // own folder (cover/folder/poster/... .jpg|.png|.webp, or failing
@@ -1211,12 +1138,7 @@ class MainActivity : ComponentActivity() {
          */
         private fun buildAudioItem(path: String, title: String, artist: String, album: String): MediaItem? {
             val audioFile = resolveAudioFile(path) ?: run {
-                runOnUiThread {
-                    val msg = JSONObject.quote("That file can't be played.")
-                    webView.evaluateJavascript(
-                        "window.onNativeAudioError && window.onNativeAudioError($msg);", null
-                    )
-                }
+                runOnUiThread { callPage("onNativeAudioError", JSONObject.quote("That file can't be played.")) }
                 return null
             }
             // Cover art, so the notification and lock screen can show it.
@@ -1236,6 +1158,12 @@ class MainActivity : ComponentActivity() {
                 .build()
         }
 
+        // The nativeAudio* calls are what audio-player.js's NativeAudioEngine
+        // runs on: each forwards to the MediaController connected in
+        // connectNativePlayer(). They are no-ops until that connection has
+        // completed (mediaController is still null), which matches
+        // NativeAudioEngine only being reachable from JS after
+        // window.onNativeAudioReady has fired.
         @JavascriptInterface
         fun nativeAudioLoad(path: String, title: String, artist: String, album: String) {
             val item = buildAudioItem(path, title, artist, album) ?: return
@@ -1281,12 +1209,9 @@ class MainActivity : ComponentActivity() {
         fun nativeAudioSyncState() {
             runOnUiThread {
                 val c = mediaController
-                val playing = c != null && c.playWhenReady &&
-                    (c.playbackState == Player.STATE_READY || c.playbackState == Player.STATE_BUFFERING)
-                val json = JSONObject().put("playing", playing).toString()
-                webView.evaluateJavascript(
-                    "window.onNativeAudioState && window.onNativeAudioState(${JSONObject.quote(json)});",
-                    null
+                reportPlaying(
+                    c != null && c.playWhenReady &&
+                        (c.playbackState == Player.STATE_READY || c.playbackState == Player.STATE_BUFFERING)
                 )
             }
         }
@@ -1328,6 +1253,16 @@ class MainActivity : ComponentActivity() {
             menuOpen = open
         }
 
+        // Mirrors the "Adaptive brightness" switch in the theme panel (see
+        // AdaptiveBrightness.kt). Returns false when the phone has no light
+        // sensor, so the page can put the switch back off.
+        @JavascriptInterface
+        fun setAdaptiveBrightness(enabled: Boolean): Boolean {
+            if (enabled && !adaptiveBrightness.isSupported) return false
+            runOnUiThread { adaptiveBrightness.setEnabled(enabled) }
+            return true
+        }
+
         // Mirrors the "Volume button scroll" switch in the theme panel.
         @JavascriptInterface
         fun setVolumeScrollEnabled(enabled: Boolean) {
@@ -1359,48 +1294,11 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        @JavascriptInterface
-        fun nativeAudioSetSpeed(speed: Double) {
-            runOnUiThread {
-                // Single-arg PlaybackParameters(speed) defaults pitch to
-                // 1f — i.e. pitch stays constant while speed changes,
-                // matching the WebView engine's preservesPitch=true.
-                mediaController?.playbackParameters = PlaybackParameters(speed.toFloat())
-            }
-        }
-
-        // ---- Native equalizer / replay-gain boost (see NativeAudioEffects.kt) ----
-
-        /** bandsJson: JSON array of 10 dB values, one per UI band. */
-        @JavascriptInterface
-        fun nativeAudioSetEqualizer(bandsJson: String, preampDb: Double) {
-            runOnUiThread {
-                try {
-                    val arr = JSONArray(bandsJson)
-                    val bands = FloatArray(arr.length()) { i -> arr.optDouble(i, 0.0).toFloat() }
-                    PlaybackService.effects?.setEqualizer(bands, preampDb.toFloat())
-                } catch (e: Exception) {
-                    // Malformed input from the page: ignore rather than crash playback.
-                }
-            }
-        }
-
+        // Replay-gain boost for quiet tracks (see NativeAudioEffects.kt).
         @JavascriptInterface
         fun nativeAudioSetBoostDb(db: Double) {
             runOnUiThread {
                 PlaybackService.effects?.setBoostDb(db.toFloat())
-            }
-        }
-
-        /** Answers asynchronously through window.onNativeAudioEffectsInfo(json). */
-        @JavascriptInterface
-        fun nativeAudioEffectsRequestInfo() {
-            runOnUiThread {
-                val json = PlaybackService.effects?.describe() ?: "{\"available\":false}"
-                webView.evaluateJavascript(
-                    "window.onNativeAudioEffectsInfo && window.onNativeAudioEffectsInfo(${JSONObject.quote(json)});",
-                    null
-                )
             }
         }
     }
@@ -1492,9 +1390,8 @@ class MainActivity : ComponentActivity() {
                     return@Thread
                 }
 
-                // Audio/ is where scanAudio()/listAudioFiles() looks for music
-                // (and now playlist subfolders — see listAudioFiles()), not a
-                // novel — it must never show up in the novel picker. Matched
+                // Audio/ is where the music scan (runAudioScan()) looks for
+                // music and playlist subfolders, not a novel — it must never show up in the novel picker. Matched
                 // by name case-insensitively rather than by exact File equality
                 // so it's still excluded even if listFiles() returns a
                 // differently-cased or differently-rooted File instance for
@@ -1513,10 +1410,7 @@ class MainActivity : ComponentActivity() {
 
                 runOnUiThread {
                     hasLoadedOnce = true
-                    webView.evaluateJavascript(
-                        "window.onNovelsListed && window.onNovelsListed(${JSONObject.quote(namesArray.toString())});",
-                        null
-                    )
+                    callPage("onNovelsListed", JSONObject.quote(namesArray.toString()))
                 }
             } catch (e: Exception) {
                 runOnUiThread { notifyError("Could not read /storage/emulated/0/Novel: ${e.message}") }
@@ -1565,59 +1459,13 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                val folderNameEscaped = JSONObject.quote(safeName)
-                val filesJson = filesArray.toString()
-                val filesJsonEscaped = JSONObject.quote(filesJson)
-
                 runOnUiThread {
-                    webView.evaluateJavascript(
-                        "window.onFolderPicked($folderNameEscaped, $filesJsonEscaped);",
-                        null
-                    )
+                    callPage("onFolderPicked", JSONObject.quote(safeName) + ", " + JSONObject.quote(filesArray.toString()))
                 }
             } catch (e: Exception) {
                 runOnUiThread { notifyError("Could not read that novel's folder: ${e.message}") }
             }
         }.start()
-    }
-
-    /**
-     * Recursively scans audioRoot for files with a recognised extension,
-     * reads title/artist/album/duration tags off each with
-     * MediaMetadataRetriever, and sends the result to
-     * window.onAudioListed() as a JSON array — the contract
-     * audio-player.js's MediaLibrary.onScanned() expects: each entry has
-     * id, path (a file:// URI), title, artist, album, durationSec, playlist.
-     *
-     * Runs on a background thread, same reasoning as listNovels()/
-     * loadNovelChapters(): MediaMetadataRetriever is slow enough per file
-     * (opening and parsing the container) that a few hundred tracks would
-     * visibly freeze the UI thread otherwise.
-     *
-     * Every retriever call is individually try/caught with its own
-     * fallback (filename as title, empty artist/album, zero duration) so
-     * that one malformed or DRM'd file can't abort the whole scan — this
-     * is the "VLC-style robustness" half of the brief: a library scan
-     * should degrade gracefully per file, never fail wholesale.
-     *
-     * PLAYLISTS: subfolders directly under Audio/ become playlists named
-     * after the folder, and everything inside them (however deep) belongs
-     * to that playlist; files sitting directly in Audio/ itself are
-     * reported with no playlist (audio-player.js's MediaLibrary treats
-     * that as "not in a playlist" rather than an error). Example:
-     *   Audio/
-     *     Lo-fi Focus/2AM.mp3       -> playlist "Lo-fi Focus"
-     *     Lo-fi Focus/Rain.mp3      -> playlist "Lo-fi Focus"
-     *     Podcasts/Ep1/part1.mp3    -> playlist "Podcasts" (nested folders
-     *                                  inside a playlist still count as
-     *                                  that same playlist — there's only
-     *                                  one level of grouping)
-     *     standalone-track.mp3      -> no playlist
-     */
-    private fun listAudioFiles() {
-        // Rescan button / explicit scan: always walk the folder again.
-        jsWantsAudio = true
-        runAudioScan()
     }
 
     // ---- Audio library scan: starts at launch, runs in parallel, caches tags ----
@@ -1632,10 +1480,7 @@ class MainActivity : ComponentActivity() {
     @Volatile private var audioScanAt = 0L
 
     private fun deliverAudioList(tracksJson: String) {
-        webView.evaluateJavascript(
-            "window.onAudioListed && window.onAudioListed(${JSONObject.quote(tracksJson)});",
-            null
-        )
+        callPage("onAudioListed", JSONObject.quote(tracksJson))
     }
 
     /** Page start-up request: reuse a fresh early scan, or wait for the one in flight. */
@@ -1675,6 +1520,39 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * Recursively scans audioRoot for files with a recognised extension,
+     * reads title/artist/album/duration tags off each with
+     * MediaMetadataRetriever, and sends the result to
+     * window.onAudioListed() as a JSON array — the contract
+     * audio-player.js's MediaLibrary.onScanned() expects: each entry has
+     * id, path (a file:// URI), title, artist, album, durationSec, playlist.
+     *
+     * Runs on a background thread, same reasoning as listNovels()/
+     * loadNovelChapters(): MediaMetadataRetriever is slow enough per file
+     * (opening and parsing the container) that a few hundred tracks would
+     * visibly freeze the UI thread otherwise.
+     *
+     * Every retriever call is individually try/caught with its own
+     * fallback (filename as title, empty artist/album, zero duration) so
+     * that one malformed or DRM'd file can't abort the whole scan — this
+     * is the "VLC-style robustness" half of the brief: a library scan
+     * should degrade gracefully per file, never fail wholesale.
+     *
+     * PLAYLISTS: subfolders directly under Audio/ become playlists named
+     * after the folder, and everything inside them (however deep) belongs
+     * to that playlist; files sitting directly in Audio/ itself are
+     * reported with no playlist (audio-player.js's MediaLibrary treats
+     * that as "not in a playlist" rather than an error). Example:
+     *   Audio/
+     *     Lo-fi Focus/2AM.mp3       -> playlist "Lo-fi Focus"
+     *     Lo-fi Focus/Rain.mp3      -> playlist "Lo-fi Focus"
+     *     Podcasts/Ep1/part1.mp3    -> playlist "Podcasts" (nested folders
+     *                                  inside a playlist still count as
+     *                                  that same playlist — there's only
+     *                                  one level of grouping)
+     *     standalone-track.mp3      -> no playlist
+     */
     private fun runAudioScan() {
         if (audioScanRunning) return
         audioScanRunning = true
@@ -2003,8 +1881,30 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun notifyError(message: String) {
-        val msg = JSONObject.quote(message)
-        webView.evaluateJavascript("window.onFolderPickError && window.onFolderPickError($msg);", null)
+        callPage("onFolderPickError", JSONObject.quote(message))
+    }
+
+    /**
+     * Calls window.[fn]([args]) in the page, if the page has defined it yet.
+     * [args] must already be valid JavaScript: numbers as they are, strings
+     * through JSONObject.quote().
+     */
+    private fun callPage(fn: String, args: String = "") {
+        if (!::webView.isInitialized) return
+        webView.evaluateJavascript("window.$fn && window.$fn($args);", null)
+    }
+
+    /** Tells the page whether the native player is playing (window.onNativeAudioState). */
+    private fun reportPlaying(playing: Boolean) {
+        callPage("onNativeAudioState", JSONObject.quote(JSONObject().put("playing", playing).toString()))
+    }
+
+    /** Asks the audio panel to re-read the phone's media volume. */
+    private fun syncPageVolume() {
+        if (!::webView.isInitialized) return
+        webView.evaluateJavascript(
+            "window.NovelAudio && window.NovelAudio.syncVolume && window.NovelAudio.syncVolume();", null
+        )
     }
 }
 

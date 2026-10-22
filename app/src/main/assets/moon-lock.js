@@ -374,9 +374,8 @@
   }
 
   // ---- Logic puzzles (non-holiday days) ---------------------------------
-  // Six pure-logic puzzles live in moon-puzzles.js (window.MoonPuzzles): timing, grid match,
-  // light routing, math & combinatorics, sequence programming and a Mastermind variant.
-  // No trivia. A random type is shown each time; solving any one grants the unlock.
+  // The puzzles live in moon-puzzles.js (window.MoonPuzzles): click-only, no trivia. A random
+  // type is shown each time (never the one just shown); solving any one grants the unlock.
   const MP = window.MoonPuzzles || null;
 
   const puzzlePanel = $('night-lock-puzzle');

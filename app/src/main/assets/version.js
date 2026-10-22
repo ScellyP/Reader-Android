@@ -42,8 +42,6 @@ window.APP_VERSION = 'v1.06.02';
 (function () {
   var el = document.getElementById('app-version');
   if (el) {
-    // Always labelled "demo" for now, so this build can't be mistaken for the
-    // real app. (Remove the next line to go back to demo-build-only labelling.)
-    el.textContent = window.APP_VERSION + ' \u00b7 demo';
+    el.textContent = window.APP_VERSION;
   }
 })();

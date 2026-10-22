@@ -32,7 +32,7 @@
    rather than restarting.
 
    Both engines implement the same shape — play/pause/toggle/seek/
-   setVolume/setSpeed/onTrackEnded/onError — and everything else in this
+   setVolume/onTrackEnded/onError — and everything else in this
    file (PlaybackQueue, AudioUI, the reading-session break integration)
    talks to whichever one is current through the single `AudioEngine`
    binding, never to a specific engine by name. That's what lets the
@@ -129,8 +129,6 @@ window.NovelAudio = (function () {
      it reads and writes doesn't move.
   ======================================================================= */
 
-  const EQ_BAND_HZ = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
-
   const state = {
     // Library
     tracks: [],              // [{ id, path, title, artist, album, durationSec }]
@@ -149,13 +147,6 @@ window.NovelAudio = (function () {
     positionSec: 0,
     durationSec: 0,
     volume: 0.8,             // 0..1
-    speed: 1.0,
-
-    // Equalizer — only reaches LocalAudioEngine (see the Web Audio graph
-    // below); NativeAudioEngine.setEqualizer() documents the native
-    // equivalent as a further step.
-    eqBands: EQ_BAND_HZ.map(() => 0),  // dB, one per EQ_BAND_HZ entry
-    eqPreampDb: 0,
 
     // Extras
     sleepTimerMinutes: 0,    // 0 = off, -1 = stop at end of current track
@@ -475,14 +466,12 @@ window.NovelAudio = (function () {
      `webUrl` (https://appassets.androidplatform.net/audio/<path under
      Audio/>), which MainActivity.kt serves from Novel/Audio with Range
      support so seeking works. The page runs on that same https origin, so
-     the Web Audio equalizer can process the sound, and the WebView needs
-     no file:// access at all. (`path`, the file:// URI, is still what the
+     the WebView needs no file:// access at all. (`path`, the file:// URI, is still what the
      native engine and artwork lookups use.) mediaPlaybackRequiresUserGesture
      is false so programmatic play() calls aren't blocked.
 
-     WHAT THIS GETS YOU: play/pause/seek/volume/speed, resume-at-position,
-     shuffle/repeat, auto-skip past a file that fails to decode, and (new)
-     a real 10-band Web Audio equalizer.
+     WHAT THIS GETS YOU: play/pause/seek/volume, shuffle/repeat, and auto-skip past a file that fails to
+     decode.
 
      WHAT IT STILL DOESN'T GET YOU: reliable playback once the WebView is
      backgrounded (Android suspends it), lock-screen/notification
@@ -501,7 +490,6 @@ window.NovelAudio = (function () {
     _preloadEl: null,      // hidden element used to pre-buffer the next track
     _preloadedTrackId: null,
     _pendingSeek: null,    // seconds to apply once 'loadedmetadata' fires
-    _eqGraph: null,        // lazily-built { ctx, source, source2, filters, preamp }
 
     init() {
       this._el = new Audio();
@@ -509,8 +497,6 @@ window.NovelAudio = (function () {
       [this._el, this._el2].forEach(el => {
         el.preload = 'auto';
         el.volume = el === this._el ? gain() : 0;
-        el.playbackRate = state.speed;
-        this._applyPitchPreservation(el);
         this._wire(el);
       });
 
@@ -571,14 +557,6 @@ window.NovelAudio = (function () {
       });
     },
 
-    // Some browsers/WebViews use the unprefixed property, older ones a
-    // vendor-prefixed one; setting whichever exist is harmless.
-    _applyPitchPreservation(el) {
-      if ('preservesPitch' in el) el.preservesPitch = true;
-      if ('mozPreservesPitch' in el) el.mozPreservesPitch = true;
-      if ('webkitPreservesPitch' in el) el.webkitPreservesPitch = true;
-    },
-
     /* Load and play a track. Safe to call with no argument to
      * resume/start whatever is current. */
     play(trackId) {
@@ -606,8 +584,6 @@ window.NovelAudio = (function () {
       }
 
       this._applyVolume();
-      this._el.playbackRate = state.speed;
-      this._applyPitchPreservation(this._el);
 
       // Set optimistically, then correct via events if needed — see the
       // 'play'/'pause' listeners above. Waiting for the element's own
@@ -616,13 +592,6 @@ window.NovelAudio = (function () {
       // takes.
       state.playing = true;
       AudioUI.render();
-
-      // A suspended AudioContext (created lazily by the EQ, see below)
-      // needs an explicit resume() after user interaction — play() is
-      // as close to that gesture as this engine gets a hook for.
-      if (this._eqGraph && this._eqGraph.ctx.state === 'suspended') {
-        this._eqGraph.ctx.resume();
-      }
 
       const playResult = this._el.play();
       // Autoplay-policy rejections are the single most common cause of
@@ -687,95 +656,6 @@ window.NovelAudio = (function () {
       this._applyVolume();
       Prefs.save();
       AudioUI.render();
-    },
-
-    setSpeed(rate) {
-      state.speed = rate;
-      if (this._el) this._el.playbackRate = rate;
-      if (this._el2) this._el2.playbackRate = rate;
-      Prefs.save();
-      AudioUI.render();
-    },
-
-    /* -------------------------------------------------------------------
-       10-band equalizer via the Web Audio API.
-       -------------------------------------------------------------------
-       Graph: <audio> element -> MediaElementSourceNode -> band1 -> band2
-       -> ... -> band10 -> preamp GainNode -> ctx.destination.
-
-       Built lazily (on first EQ use, not at init()) for two reasons:
-       browsers commonly start an AudioContext 'suspended' until a user
-       gesture occurs, so creating it eagerly at page-load just means an
-       extra resume() dance for no benefit; and createMediaElementSource
-       can only ever be called ONCE per <audio> element for its entire
-       lifetime — building the graph once, on demand, and caching it is
-       what makes that safe to rely on.
-
-       The element's own .volume keeps working as the main volume control
-       even once routed through this graph (per spec, the element's
-       "effective playback volume" is applied before its audio enters the
-       Web Audio graph) — so setVolume() above needs no changes, and the
-       preamp GainNode here is purely for EQ headroom, not overall volume.
-       ------------------------------------------------------------------- */
-    _ensureEqGraph() {
-      if (this._eqGraph) return this._eqGraph;
-      if (!this._el) return null;
-      const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (!Ctx) return null; // Web Audio unsupported in this environment
-
-      try {
-        const ctx = new Ctx();
-        const source = ctx.createMediaElementSource(this._el);
-        // The spare element (used for crossfades) feeds the same chain. Each
-        // element can only ever be wrapped once, so both are wrapped here.
-        const source2 = this._el2 ? ctx.createMediaElementSource(this._el2) : null;
-        const filters = EQ_BAND_HZ.map(freq => {
-          const f = ctx.createBiquadFilter();
-          f.type = 'peaking';
-          f.frequency.value = freq;
-          f.Q.value = 1.0;
-          f.gain.value = 0;
-          return f;
-        });
-        const preamp = ctx.createGain();
-        preamp.gain.value = 1;
-
-        let node = source;
-        filters.forEach(f => { node.connect(f); node = f; });
-        if (source2) source2.connect(filters[0]);
-        node.connect(preamp);
-        preamp.connect(ctx.destination);
-
-        this._eqGraph = { ctx, source, source2, filters, preamp };
-      } catch (e) {
-        console.error('Web Audio EQ graph could not be created', e);
-        this._eqGraph = null;
-      }
-      return this._eqGraph;
-    },
-
-    /* bandsDb: array of 10 gain values in dB, one per EQ_BAND_HZ entry
-     * (typical UI range roughly -12..+12). Silently does nothing if Web
-     * Audio isn't available in this environment — callers don't need to
-     * feature-detect themselves. */
-    setEqualizer(bandsDb) {
-      state.eqBands = bandsDb.slice(0, EQ_BAND_HZ.length);
-      Prefs.save(); // persist regardless — if Web Audio becomes available later, these apply automatically
-      const graph = this._ensureEqGraph();
-      if (!graph) {
-        AudioUI.setNote('The equalizer isn\u2019t available on this device.');
-        return;
-      }
-      graph.filters.forEach((f, i) => { f.gain.value = state.eqBands[i] || 0; });
-      if (graph.ctx.state === 'suspended') graph.ctx.resume();
-    },
-
-    setPreamp(db) {
-      state.eqPreampDb = db;
-      Prefs.save();
-      const graph = this._ensureEqGraph();
-      if (!graph) return;
-      graph.preamp.gain.value = Math.pow(10, db / 20); // dB -> linear
     },
 
     onTrackEnded() { handleTrackEnded(this); },
@@ -846,8 +726,6 @@ window.NovelAudio = (function () {
       const started = switchForCrossfade(nextId, (outGain, inGain) => {
         inEl.src = next.webUrl || next.path;
         inEl.volume = 0;
-        inEl.playbackRate = state.speed;
-        this._applyPitchPreservation(inEl);
 
         this._el = inEl;                 // from here on the new track is the live element
         this._el2 = outEl;
@@ -855,7 +733,6 @@ window.NovelAudio = (function () {
         this._xf = { outEl, inEl, outGain, inGain, fadeMs, createdMs: Date.now(), startMs: null, timer: null };
         this._xf.timer = setInterval(() => this._xfTick(), 40);
 
-        if (this._eqGraph && this._eqGraph.ctx.state === 'suspended') this._eqGraph.ctx.resume();
         const r = inEl.play();
         if (r && typeof r.catch === 'function') {
           r.catch(() => {
@@ -1049,34 +926,6 @@ window.NovelAudio = (function () {
       AudioUI.render();
     },
 
-    setSpeed(rate) {
-      state.speed = rate;
-      const bridge = this._bridge();
-      if (bridge) bridge.nativeAudioSetSpeed(rate);
-      Prefs.save();
-      AudioUI.render();
-    },
-
-    /* Native equalizer. The Web Audio graph built for LocalAudioEngine never
-     * sees audio played through ExoPlayer, so the curve is handed to
-     * android.media.audiofx.Equalizer on ExoPlayer's audio session instead
-     * (AudioFeatures → nativeEffects → AndroidBridge.nativeAudioSetEqualizer
-     * → NativeAudioEffects.kt). Device bands (commonly 5) are interpolated
-     * from our 10 on the native side. If the bridge method is missing, fall
-     * back to the old behaviour: the curve is stored and applies the next
-     * time the WebView engine plays. */
-    setEqualizer(bandsDb) {
-      state.eqBands = bandsDb.slice(0, EQ_BAND_HZ.length);
-      Prefs.save();
-      if (AudioFeatures.nativeEffects.apply()) return;
-      AudioUI.setNote('The equalizer only affects playback while the app is open. It isn\u2019t applied to background playback yet.');
-    },
-    setPreamp(db) {
-      state.eqPreampDb = db;
-      Prefs.save();
-      AudioFeatures.nativeEffects.apply();
-    },
-
     // Called by window.onNativeAudioLoaded once the native side reaches
     // STATE_READY — this engine's equivalent of the <audio> element's
     // 'loadedmetadata' event.
@@ -1219,14 +1068,9 @@ window.NovelAudio = (function () {
       try {
         const saved = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
         if (typeof saved.volume === 'number') state.volume = saved.volume;
-        state.speed = 1.0; // speed control removed: always normal speed
         if (typeof saved.shuffle === 'boolean') state.shuffle = saved.shuffle;
         if (typeof saved.repeat === 'string') state.repeat = saved.repeat;
         if (typeof saved.activePlaylist === 'string') state.activePlaylist = saved.activePlaylist;
-        if (Array.isArray(saved.eqBands) && saved.eqBands.length === EQ_BAND_HZ.length) {
-          state.eqBands = saved.eqBands.slice();
-        }
-        if (typeof saved.eqPreampDb === 'number') state.eqPreampDb = saved.eqPreampDb;
         AudioFeatures.restore(saved.features);
       } catch (e) { /* corrupt prefs are not worth crashing over */ }
     },
@@ -1235,12 +1079,9 @@ window.NovelAudio = (function () {
       try {
         localStorage.setItem(PREFS_KEY, JSON.stringify({
           volume: state.volume,
-          speed: state.speed,
           shuffle: state.shuffle,
           repeat: state.repeat,
           activePlaylist: state.activePlaylist,
-          eqBands: state.eqBands,
-          eqPreampDb: state.eqPreampDb,
           features: AudioFeatures.serialize(),
         }));
       } catch (e) { /* storage full — non-fatal */ }
@@ -1391,16 +1232,6 @@ window.NovelAudio = (function () {
       if (!ids) return null;
       const known = new Set(state.tracks.map(t => t.id));
       return ids.filter(id => known.has(id));
-    },
-
-    // For a future playlist picker: every virtual playlist worth listing.
-    listVirtualPlaylists() {
-      const out = [];
-      const add = (id, label) => out.push({ id, label, count: (this.selectionFor(id) || []).length });
-      add('@recent', 'Recently played');
-      add('@liked', 'Liked');
-      this.customPlaylists.list().forEach(p => add('@list:' + p.id, p.name));
-      return out.filter(p => p.count > 0 || p.id.indexOf('@list:') === 0);
     },
   };
 
@@ -1616,11 +1447,6 @@ window.NovelAudio = (function () {
       Prefs.save();
       return p.id;
     },
-    rename(id, name) {
-      const p = this._find(id), clean = String(name || '').trim().slice(0, 60);
-      if (!p || !clean) return false;
-      p.name = clean; Prefs.save(); return true;
-    },
     remove(id) {
       const s = state.features.customPlaylists, n = s.lists.length;
       s.lists = s.lists.filter(p => String(p.id) !== String(id));
@@ -1642,45 +1468,23 @@ window.NovelAudio = (function () {
     },
   });
 
-  /* ---- Native effects (equalizer + replay-gain boost) --------------------------
-     Bridges the UI's 10 EQ sliders to android.media.audiofx.Equalizer on
-     ExoPlayer's audio session, so the EQ is audible for background playback
-     too (see NativeAudioEffects.kt — the device's own band layout is
-     interpolated from our 10 bands there). The state stays in state.eqBands
-     / state.eqPreampDb, shared with the Web Audio EQ, so switching engines
-     keeps the same curve. */
+  /* ---- Native loudness boost (replay gain) -------------------------------------
+     The WebView engine can only turn a track down (volume <= 1); a quiet track
+     is turned UP by Android's LoudnessEnhancer on ExoPlayer's audio session
+     (see NativeAudioEffects.kt). This module pushes that boost to the native
+     side when the native engine takes over and whenever a track starts. */
   AudioFeatures.register({
-    id: 'nativeEffects', label: 'Native equalizer', status: 'framework',
+    id: 'nativeEffects', label: 'Native loudness boost', status: 'framework',
     defaults: {},
     persistKeys: [],
-    info: null,                                    // set by window.onNativeAudioEffectsInfo
-    _bridge() { return window.AndroidBridge || null; },
-    supported() { const b = this._bridge(); return !!(b && b.nativeAudioSetEqualizer); },
-    requestInfo() {
-      const b = this._bridge();
-      if (b && b.nativeAudioEffectsRequestInfo) { try { b.nativeAudioEffectsRequestInfo(); } catch (e) { /* ignore */ } }
-    },
-    // Push the current curve. Returns true when the call was made.
-    apply() {
-      const b = this._bridge();
-      if (!b || !b.nativeAudioSetEqualizer) return false;
-      try { b.nativeAudioSetEqualizer(JSON.stringify(state.eqBands), state.eqPreampDb); return true; }
-      catch (e) { console.error('native EQ apply failed', e); return false; }
-    },
     pushBoost() {
-      const b = this._bridge();
+      const b = window.AndroidBridge;
       if (!b || !b.nativeAudioSetBoostDb) return;
       const db = AudioFeatures.replayGain.boostDb(MediaLibrary.getTrack(state.currentTrackId));
       try { b.nativeAudioSetBoostDb(db); } catch (e) { /* ignore */ }
     },
-    engineChanged(engine) { if (engine === NativeAudioEngine) { this.requestInfo(); this.apply(); this.pushBoost(); } },
-    trackStart() { if (AudioEngine === NativeAudioEngine) { this.apply(); this.pushBoost(); } },
-    onInfo(info) {
-      this.info = info || null;
-      if (this.info && this.info.available === false && AudioEngine === NativeAudioEngine) {
-        AudioUI.setNote('This device doesn\u2019t offer an equalizer for background playback.');
-      }
-    },
+    engineChanged(engine) { if (engine === NativeAudioEngine) this.pushBoost(); },
+    trackStart() { if (AudioEngine === NativeAudioEngine) this.pushBoost(); },
   });
 
   /* =======================================================================
@@ -1723,10 +1527,6 @@ window.NovelAudio = (function () {
     const s = Math.max(0, Math.floor(seconds || 0));
     const m = Math.floor(s / 60);
     return m + ':' + String(s % 60).padStart(2, '0');
-  }
-
-  function formatBandLabel(hz) {
-    return hz >= 1000 ? (hz / 1000) + 'k' : String(hz);
   }
 
   // Keeps a range input's amber fill (--pct, see index.html) in sync
@@ -1780,11 +1580,6 @@ window.NovelAudio = (function () {
       els.queue = document.getElementById('audio-queue');
       els.empty = document.getElementById('audio-empty');
       els.note = document.getElementById('audio-status-note');
-      els.eqToggle = document.getElementById('audio-eq-toggle');
-      els.eqPanel = document.getElementById('audio-eq-panel');
-      els.eqBands = document.getElementById('audio-eq-bands');
-      els.eqPreamp = document.getElementById('audio-eq-preamp');
-      els.eqReset = document.getElementById('audio-eq-reset');
       els.playlistRow = document.getElementById('audio-playlist-row');
       els.playlistBtn = document.getElementById('audio-playlist-btn');
       els.playlistBtnLabel = document.getElementById('audio-playlist-btn-label');
@@ -1944,37 +1739,6 @@ window.NovelAudio = (function () {
         if (next) AudioEngine.play(next);
       });
 
-      els.eqToggle.addEventListener('click', () => {
-        const nowHidden = els.eqPanel.classList.toggle('hidden');
-        els.eqToggle.setAttribute('aria-expanded', nowHidden ? 'false' : 'true');
-      });
-
-      // One delegated listener for all 10 band sliders, rather than 10
-      // separate bindings — each slider's index lives in its own
-      // data-band-index attribute (see buildEqSliders()).
-      els.eqBands.addEventListener('input', (e) => {
-        const slider = e.target.closest('input[data-band-index]');
-        if (!slider) return;
-        const bands = state.eqBands.slice();
-        bands[parseInt(slider.dataset.bandIndex, 10)] = parseFloat(slider.value);
-        syncSliderFill(slider);
-        AudioEngine.setEqualizer(bands);
-        AudioUI.updateEqReadouts();
-      });
-
-      els.eqPreamp.addEventListener('input', () => {
-        syncSliderFill(els.eqPreamp);
-        AudioEngine.setPreamp(parseFloat(els.eqPreamp.value));
-        AudioUI.updateEqReadouts();
-      });
-
-      els.eqReset.addEventListener('click', () => {
-        AudioEngine.setEqualizer(EQ_BAND_HZ.map(() => 0));
-        AudioEngine.setPreamp(0);
-        AudioUI.buildEqSliders();
-      });
-
-      AudioUI.buildEqSliders();
       AudioUI.renderPlaylistOptions();
     },
 
@@ -2316,49 +2080,6 @@ window.NovelAudio = (function () {
       if (addCurrent) AudioUI.setNote('Added to \u201c' + name.slice(0, 60) + '\u201d.');
       else AudioUI.selectPlaylist('@list:' + id);
       AudioUI._updatePlaylistSelectionUI();
-    },
-
-    /* Built once (not part of render()) since sliders are stateful DOM
-     * elements — rebuilding them every render() would fight the user's
-     * own drag. Called again only after an explicit reset. */
-    buildEqSliders() {
-      if (!els.eqBands) return;
-      els.eqBands.innerHTML = '';
-      EQ_BAND_HZ.forEach((hz, i) => {
-        const col = document.createElement('div');
-        col.className = 'eq-band';
-
-        const input = document.createElement('input');
-        input.type = 'range';
-        input.min = '-12';
-        input.max = '12';
-        input.step = '1';
-        input.value = String(state.eqBands[i] || 0);
-        input.dataset.bandIndex = String(i);
-        input.className = 'eq-band-slider';
-        syncSliderFill(input);
-
-        const label = document.createElement('span');
-        label.className = 'eq-band-label';
-        label.textContent = formatBandLabel(hz);
-
-        col.appendChild(input);
-        col.appendChild(label);
-        els.eqBands.appendChild(col);
-      });
-      els.eqPreamp.value = String(state.eqPreampDb || 0);
-      syncSliderFill(els.eqPreamp);
-      this.updateEqReadouts();
-    },
-
-    updateEqReadouts() {
-      if (!els.eqBands) return;
-      els.eqBands.querySelectorAll('input[data-band-index]').forEach(input => {
-        input.title = (parseFloat(input.value) > 0 ? '+' : '') + input.value + ' dB';
-      });
-      if (els.eqPreamp) {
-        els.eqPreamp.title = (state.eqPreampDb > 0 ? '+' : '') + state.eqPreampDb + ' dB preamp';
-      }
     },
 
     /* Two sleep modes: a wall-clock deadline in minutes, or -1 meaning
@@ -2723,16 +2444,4 @@ window.onNativeAudioSkipNext = function () {
 };
 window.onNativeAudioSkipPrevious = function () {
   window.NovelAudio._nativeOnSkipPrevious();
-};
-
-// Native → JS: what the device's equalizer looks like (band layout, dB range,
-// or available:false). Requested by AudioFeatures.nativeEffects.requestInfo()
-// when the native engine takes over — see NativeAudioEffects.kt.
-window.onNativeAudioEffectsInfo = function (json) {
-  try {
-    const info = typeof json === 'string' ? JSON.parse(json) : json;
-    window.NovelAudio.features.nativeEffects.onInfo(info);
-  } catch (e) {
-    console.error('Failed to parse native effects info', e);
-  }
 };

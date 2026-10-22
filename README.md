@@ -15,7 +15,7 @@ Everything stays on your phone: no account, no internet needed.
 - [Library (novel selector)](#library-novel-selector)
 - [Settings, screen timeout and auto-close](#settings-file)
 - [Version number](#version-number)
-- [Security features to add](#security-features-to-add)
+- [Security](#security)
 - [For developers](#for-developers)
 
 ## Quick start
@@ -78,7 +78,7 @@ install again. Your settings come back from `Novel/settings.txt`.
    there is nothing to pick again.
 
 **Note:** the folder is hardcoded. To point the app somewhere else, change the
-path in `MainActivity.kt` (search for `chaptersDir`) and rebuild.
+path in `MainActivity.kt` (search for `novelRoot`) and rebuild.
 
 ## Using the app
 
@@ -162,6 +162,7 @@ separately from the dropdown in the top bar.
 | **Smart scroll** | Off by default. A tap scrolls just far enough to bring the paragraph cut off at the screen edge fully into view, so you never stop mid-sentence. While it is on, **Tap scroll** is greyed out |
 | **Volume keys in audio player** | See [Volume buttons](#volume-buttons) |
 | **Volume button scroll** | See [Volume buttons](#volume-buttons) |
+| **Adaptive brightness** | Off by default. The screen follows the phone's light sensor: full brightness in strong light, dimmest in a dark room, with smooth changes in between. It only changes this app's brightness, not the phone's setting, and switching it off hands brightness back to the phone. Saved in `settings.txt` as `adaptiveBrightness`. If the phone has no light sensor the switch stays off. |
 | **Tap scroll** | How many lines a tap moves the page (3 to 30) |
 | **Reset to default** | Puts the reading settings back to their defaults |
 
@@ -202,49 +203,11 @@ Open it with the ⏱ button in the sidebar header. Two modes:
   next occurrence. Switching between the two tabs never arms or disarms
   anything; only **Start** / **Set reminder** do.
 
-### Moonlit Lock (sleep lock)
-
-Between **12:00 AM and 6:00 AM** the app locks itself: a full-screen
-"Moonlit Lock" / "Time to sleep" screen covers everything, music is paused,
-and the Android back button just leaves the app. It lifts by itself at
-6:00 AM. The lock window follows the phone's local clock.
-
-The moon on the lock starts on tonight's **real moon phase** (computed on the
-phone, no internet needed) with its name underneath, e.g. "Waxing Crescent".
-Each tap on the moon steps it on to the next phase.
-
-**Unlocking the Moonlit Lock.** How you get past it depends on the day:
-
-- **Holidays, Sundays and odd Saturdays:** tap the moon until the glass
-  shatters. That unlocks the app for **1 hour**.
-- **Every other day:** tap the one secret star in the lock screen's sky and
-  solve a logic puzzle. Solving it unlocks the app for **30 minutes**, then the
-  lock comes back and you can do another puzzle. There is no button and nothing
-  marks the star: it is one of the stars on screen, picked at random each time
-  the lock appears, and tapping any other star or spot does nothing.
-
-  The puzzles are pure logic and problem solving: **no trivia and no general
-  knowledge**, everything you need is on the screen. A random one is picked each
-  time (**New puzzle** swaps it for a different type), and every one is built so
-  it can always be solved:
-
-  | Puzzle | What you do |
-  | ------ | ----------- |
-  | Logic & Timing | Lamps repeat "lit for a few ticks, dark for a few ticks" from different starting points. Find a tick when all of them are lit together. |
-  | Grid Match | Fill a 4x4 grid so each of the four symbols appears once in every row and column. |
-  | Spatial Light Routing | A beam enters from the left. Place `╱` and `╲` mirrors (limited number, some squares are walls) so it reaches the target `◎`. |
-  | Math & Combinatorics | Pick exactly the stated number of numbers that add up to the target. |
-  | Sequence Programming | Fill the slots of a number machine (+, −, ×) so that, run in order from the start value, it ends on the target. |
-  | Mastermind Variant | Crack a 4-colour code (5 colours, none repeated in the code) in 8 guesses, using the right-colour-right-place and right-colour-wrong-place counts. |
-
-Both unlocks are kept and timed by the app itself, not by the page, so
-changing the phone's clock does not stretch them.
-
 ### Moon and space theme
 
 The whole app is dressed for the night sky: a moonrise splash, twinkling
 stars (with an occasional shooting star) behind the library, loading screen,
-break reminder and Moonlit Lock, a crescent-and-star rule under each chapter
+break reminder, a crescent-and-star rule under each chapter
 title and above Previous / Next, an orbiting mark while the library loads, a
 planet for novels without a cover, and a small live moon-phase badge in the
 library heading and the status strip. Stars and ornaments follow your reading
@@ -281,10 +244,8 @@ paused it yourself, raising the volume won't start it again.
 same as its ✕ button. Dragging the sliders, scrolling the lists and the track
 options sheet are not affected.
 
-> **Currently hidden:** the **Sleep timer** and the **Equalizer** controls are
-> switched off in the music panel (the code is kept, so they can be shown
-> again). The feature tables below describe what is built, not what is
-> visible today.
+> **Note:** the **Sleep timer** row is hidden in the music panel itself; the
+> timer is set from the "..." sheet instead.
 
 **Playlists** are just subfolders of `Audio/` — no separate playlist
 file or in-app "create playlist" step. A folder's name becomes the
@@ -324,8 +285,7 @@ capitals) naming which playlist it came from.
 | Now-playing bar with artwork, seek scrubber | ✅ Working |
 | Broad format support (mp3, m4a/aac, flac, ogg, opus, wav) | ✅ Working |
 | Near-gapless playback (next track pre-buffered) | ✅ Working |
-| 10-band equalizer + preamp | ✅ Built, ⚠️ hidden in the panel |
-| Sleep timer (fixed minutes, or end-of-track), with a fade-out | ✅ Built, ⚠️ hidden in the panel |
+| Sleep timer (fixed minutes, or end-of-track), with a fade-out | ✅ Built (set from the "..." sheet) |
 | Auto-pause when a reading-break reminder appears, and resume on dismiss | ✅ Working |
 | True background playback (screen off, app switched away) | ✅ Working |
 | System media notification (artwork, title/artist, play/pause) | ✅ Working |
@@ -335,7 +295,6 @@ capitals) naming which playlist it came from.
 | Pauses automatically when headphones/Bluetooth disconnect | ✅ Working |
 | Pauses when the volume is muted and resumes when it is raised | ✅ Implemented |
 | Swipe the music panel left-to-right to close it | ✅ Implemented |
-| Moonlit Lock puzzle unlock (30 minutes) on non-holiday days, opened by a secret random star; six pure-logic puzzle types, no trivia | ✅ Implemented |
 | Graceful handling of unplayable files (skip, don't stall) | ✅ Working |
 | A-B repeat (A / B buttons under the seek bar) | ✅ Implemented |
 | Likes (heart button on the now-playing card, plus a "Liked" playlist) | ✅ Implemented |
@@ -405,41 +364,39 @@ when you want that commit built; see [When does a build run?](#when-does-a-build
 This number is separate from Android's `versionCode`, which follows the
 Actions run number. The full rules are in [Agent.md](Agent.md#version-number).
 
-## Security features to add
+## Security
 
-The following are known gaps to close. None of these are fixed yet.
+How the app limits what the page, other apps and files on the phone can do:
 
-1. **Chapter `Source:` line runs as HTML.** `reader.js` puts `ch.source`
-   into `innerHTML`. A crafted `.txt` file could run script with access to
-   `AndroidBridge`. Build the link with DOM calls and allow only `http` or
-   `https`.
-2. **Keep keystores out of the repo.** Signing now comes from GitHub
-   secrets (see [Signing and updates](#signing-and-updates)) and `*.keystore`
-   is git-ignored, but older keystore files may still sit in your local copy
-   or in git history. Make sure none were ever committed; if one was, rotate
-   the key.
-3. **Bridge accepts any file path.** `getArtwork` and `nativeAudioLoad`
-   take any path, and the app holds all-files access. Restrict paths to
-   `Novel/Audio` after resolving them.
-4. **Playback service has no caller check.** `PlaybackService` is
-   `exported="true"` and `onGetSession` returns the session to anyone.
-   Validate the controller's package.
-5. **Sleep lock and unlock are easy to bypass.** The unlock time sits in
-   plain `localStorage`, and the lock relies on the phone clock. Changing
-   the clock or clearing app data defeats it. Track time with
-   `SystemClock.elapsedRealtime()` and keep the unlock state on the native
-   side.
-6. **WebView is too open.** Switch to `WebViewAssetLoader` instead of
-   `file://`, turn off `allowFileAccess`, and add a Content-Security-Policy.
-   Also add `shouldOverrideUrlLoading` so links open only in the external
-   browser.
-7. **`allowBackup="true"`.** Set it to `false`, or add backup rules.
-8. **`settings.txt` and `crash_log.txt` sit in shared storage.** Any app
-   with storage access can edit or read them, and the file overrides saved
-   settings on startup. Validate values on load, and move the crash log into
-   app-private storage.
-9. **Release build has `minifyEnabled false`.** Turn on R8 and ship a
-   release build, not debug.
+- **The page is served from an https origin**
+  (`https://appassets.androidplatform.net/`) through `WebViewAssetLoader`, not
+  `file://`. The WebView has file and content access switched off, blocks mixed
+  content, and the page carries a strict Content-Security-Policy (no network
+  access at all). Links the user taps open in the external browser; any other
+  navigation is dropped.
+- **The JavaScript bridge only touches the music folder for audio.** A path
+  from the page is accepted only if it resolves to a real audio file inside
+  `Novel/Audio` (`resolveAudioFile()` in `MainActivity.kt`).
+- **The playback service checks who connects.** `PlaybackService.onGetSession`
+  only hands the media session to this app, the system, and known notification,
+  car and Wear OS controllers.
+- **`settings.txt` is untrusted input.** Only known keys are read, every value
+  is checked for type and range, and a file over 256 KB is ignored.
+- **The crash log is private.** It is written to the app's own folder under
+  `Android/data/`, not to the shared `Novel/` folder.
+- **Backups leave app data out.** `allowBackup` is on, but the backup and
+  device-transfer rules exclude the app's private data.
+- **Release builds use R8** (`minifyEnabled true`), without renaming, so crash
+  logs stay readable.
+- **Signing keys are not in the repo.** They come from GitHub secrets, and
+  `*.keystore` / `*.jks` are git-ignored.
+
+Known gaps:
+
+1. **`settings.txt` sits in shared storage.** Any app with all-files access can
+   read it or edit it (edits are validated when the app reads it back).
+2. **Check your git history for keystores.** Older keystore files may still be in
+   your local copy or in history; if one was ever committed, rotate the key.
 
 ## For developers
 
@@ -454,11 +411,8 @@ runs a quick check and only starts the real build when the push is opted in:
 | What you do | Builds? |
 | --- | --- |
 | Commit message contains a version number, e.g. `v1.04.02: fix volume keys` | ✅ Yes |
-| Commit message contains `[build]`, e.g. `tweak splash [build]` | ✅ Yes |
-| Push a git tag starting with `v`, e.g. `v1.04.02` | ✅ Yes |
 | **Actions → Build APK → Run workflow** (manual) | ✅ Yes |
 | Any other commit (e.g. `fix typo in readme`) | ❌ No |
-| Commit message contains `[skip build]` | ❌ No, even with a version number |
 
 Notes:
 
@@ -471,6 +425,7 @@ Notes:
   run's summary to see why.
 - Putting `[skip ci]` in a message skips the whole workflow, which is GitHub's
   own switch.
+- Only pushes to `main`/`master` build; other branches never do.
 
 ### Signing and updates
 

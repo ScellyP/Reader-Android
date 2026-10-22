@@ -453,6 +453,5 @@
   };
 
   ShatterGlass.buildGeometry = buildGeometry;
-  if (typeof module !== 'undefined' && module.exports) module.exports = ShatterGlass;
-  else root.ShatterGlass = ShatterGlass;
+  root.ShatterGlass = ShatterGlass;
 })(typeof window !== 'undefined' ? window : this);

@@ -3,10 +3,6 @@ plugins {
     id 'org.jetbrains.kotlin.android'
 }
 
-// DEMO BUILD switch. The demo workflow sets NR_DEMO=true and also passes
-// -PnrDemo=true; either one is enough. Android Studio and main builds set neither.
-def isDemo = ((System.getenv("NR_DEMO") ?: findProperty("nrDemo") ?: "false").toString() == "true")
-
 android {
     namespace 'com.scell.novelreader.redesign'
     compileSdk 34
@@ -21,18 +17,6 @@ android {
         def runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
         versionCode runNumber
         versionName "1.0.${runNumber}"
-
-        // DEMO BUILDS (branch builds). CI sets NR_DEMO=true for every branch
-        // except main/master (see .github/workflows/build-apk.yml). A demo
-        // build gets its own application id (.demo suffix) and its own label,
-        // so it installs NEXT TO the normal app instead of replacing it. It
-        // also uses its own settings file (settings-demo.txt) - see
-        // MainActivity.kt. Builds from Android Studio / main are unaffected.
-        if (isDemo) {
-            applicationIdSuffix ".demo"
-            versionNameSuffix "-demo"
-        }
-        manifestPlaceholders = [appLabel: isDemo ? "Novel Reader (Demo)" : "@string/app_name"]
     }
 
     // The signing key is NOT stored in the repo. Android only lets a new APK
@@ -46,7 +30,7 @@ android {
     // If any of them is missing (e.g. a build from Android Studio), the build
     // falls back to Android's default debug key: that APK installs, but it
     // cannot update an app that was installed from a build signed with the
-    // real key (see UPDATE_SIGNING.md).
+    // real key (see "Signing and updates" in README.md).
     def signingPath = System.getenv("ANDROID_KEYSTORE_PATH")
     def signingStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
     def signingAlias = System.getenv("ANDROID_KEY_ALIAS")
@@ -76,16 +60,6 @@ android {
             // crash_log.txt stay readable. Resource shrinking is not enabled.
             minifyEnabled true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
-    }
-
-    // Demo APKs get their own file names (novel-reader-demo-release.apk), so they
-    // can't be mistaken for - or overwrite - the normal app-release.apk.
-    if (isDemo) {
-        applicationVariants.all { variant ->
-            variant.outputs.all {
-                outputFileName = "novel-reader-demo-${variant.buildType.name}.apk"
-            }
         }
     }
 

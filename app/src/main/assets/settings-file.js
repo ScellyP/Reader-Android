@@ -125,13 +125,12 @@
     return typeof v === 'string' && v.length >= 1 && v.length <= 255 && NO_CTRL.test(v) && !/[\/\\]/.test(v);
   }
   var HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-  var eqNum = numIn(-12, 12);
 
   // Allowed fields of each object-valued setting, with their checks
   // (ranges match the sliders in the app).
   var FIELD_RULES = {
     appearance: {
-      audioVolumeKeys: isBool, smartScroll: isBool, volumeScroll: isBool,
+      audioVolumeKeys: isBool, smartScroll: isBool, volumeScroll: isBool, adaptiveBrightness: isBool,
       fontSize: numIn(13, 32), lineHeight: numIn(1.2, 2.6), letterSpacing: numIn(-0.5, 3),
       flipDuration: numIn(200, 3000), tapScrollLines: numIn(3, 30),
       fontFamily: strMatch(/^[A-Za-z0-9 ,'"._-]{1,200}$/),
@@ -139,11 +138,9 @@
       themePreset: strMatch(/^[a-z0-9_-]{1,32}$/)
     },
     audio: {
-      volume: numIn(0, 1), speed: numIn(0.25, 4), shuffle: isBool,
+      volume: numIn(0, 1), shuffle: isBool,
       repeat: oneOf(['off', 'all', 'one']),
       activePlaylist: function (v) { return typeof v === 'string' && v.length <= 255 && NO_CTRL.test(v); },
-      eqBands: function (v) { return Array.isArray(v) && v.length === 10 && v.every(eqNum); },
-      eqPreampDb: eqNum,
       // Nested per-feature state: must be a plain object of modest size
       // (its own fields are checked again by the audio player when restored).
       features: function (v) {

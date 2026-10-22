@@ -279,11 +279,9 @@
   // those calls don't fire an 'input' event, so this covers the rest.
   document.addEventListener('DOMContentLoaded', () => initSliderFills());
   if (document.readyState !== 'loading') initSliderFills();
-  // The 10 equalizer-band sliders (and the playlist <select>, though that
-  // doesn't need a fill) are built by audio-player.js's buildEqSliders()
-  // well after this file has already run its startup scan — catch those
-  // the moment they're inserted rather than needing that file to know
-  // this one exists.
+  // Sliders inserted after this file's startup scan (by other scripts) get
+  // their fill the moment they are added, without those scripts needing to
+  // know this one exists.
   new MutationObserver((mutations) => {
     mutations.forEach(m => m.addedNodes.forEach(node => {
       if (node.nodeType !== 1) return;
@@ -434,9 +432,6 @@
       return new Set();
     }
   }
-  function saveDeletedSet(set) {
-    localStorage.setItem(deletedStorageKey(), JSON.stringify(Array.from(set)));
-  }
   function saveLastChapter(filename) {
     localStorage.setItem(lastChapterStorageKey(), filename);
   }
@@ -524,9 +519,6 @@
     const raw = localStorage.getItem(scrollProgressKey(filename));
     const value = raw !== null ? parseFloat(raw) : NaN;
     return isNaN(value) ? 0 : value;
-  }
-  function clearScrollProgress(filename) {
-    localStorage.removeItem(scrollProgressKey(filename));
   }
 
   /* ---------------------------------------------------------------------
@@ -1041,6 +1033,12 @@
   const DEFAULT_AUDIO_VOLUME_KEYS = true;
   let audioVolumeKeysEnabled = DEFAULT_AUDIO_VOLUME_KEYS;
 
+  // Screen brightness follows the phone's light sensor (see AdaptiveBrightness.kt): brighter in
+  // strong light, down to the dimmest in a dark room. Off by default, so the phone's own
+  // brightness setting applies until it is switched on in the theme panel.
+  const DEFAULT_ADAPTIVE_BRIGHTNESS = false;
+  let adaptiveBrightnessEnabled = DEFAULT_ADAPTIVE_BRIGHTNESS;
+
   function loadPreferences() {
     try {
       return JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
@@ -1159,6 +1157,20 @@
     tapScrollRow.classList.toggle('disabled', smartScrollEnabled);
   }
 
+  // Returns the setting actually in force: it stays off on a phone with no light sensor.
+  function applyAdaptiveBrightness(enabled) {
+    adaptiveBrightnessEnabled = !!enabled;
+    const bridge = window.AndroidBridge;
+    if (bridge && bridge.setAdaptiveBrightness) {
+      try {
+        if (!bridge.setAdaptiveBrightness(adaptiveBrightnessEnabled)) adaptiveBrightnessEnabled = false;
+      } catch (e) { adaptiveBrightnessEnabled = false; }
+    }
+    adaptiveBrightnessToggle.classList.toggle('on', adaptiveBrightnessEnabled);
+    adaptiveBrightnessToggle.setAttribute('aria-checked', String(adaptiveBrightnessEnabled));
+    return adaptiveBrightnessEnabled;
+  }
+
   function applyVolumeScroll(enabled) {
     volumeScrollEnabled = !!enabled;
     const btn = document.getElementById('volume-scroll-toggle');
@@ -1196,6 +1208,7 @@
   const tapScrollLinesInput = document.getElementById('tap-scroll-lines-input');
   const tapScrollRow = document.getElementById('tap-scroll-row');
   const smartScrollToggle = document.getElementById('smart-scroll-toggle');
+  const adaptiveBrightnessToggle = document.getElementById('adaptive-brightness-toggle');
   const themeResetBtn = document.getElementById('theme-reset-btn');
   const audioToggleBtn = document.getElementById('audio-toggle');
   const audioToggleTopBtn = document.getElementById('audio-toggle-top');
@@ -1471,6 +1484,10 @@
     savePreference('smartScroll', smartScrollEnabled);
   });
 
+  adaptiveBrightnessToggle.addEventListener('click', () => {
+    savePreference('adaptiveBrightness', applyAdaptiveBrightness(!adaptiveBrightnessEnabled));
+  });
+
   document.getElementById('volume-scroll-toggle').addEventListener('click', () => {
     applyVolumeScroll(!volumeScrollEnabled);
     savePreference('volumeScroll', volumeScrollEnabled);
@@ -1492,6 +1509,8 @@
     savePreference('volumeScroll', DEFAULT_VOLUME_SCROLL);
     applyAudioVolumeKeys(DEFAULT_AUDIO_VOLUME_KEYS);
     savePreference('audioVolumeKeys', DEFAULT_AUDIO_VOLUME_KEYS);
+    applyAdaptiveBrightness(DEFAULT_ADAPTIVE_BRIGHTNESS);
+    savePreference('adaptiveBrightness', DEFAULT_ADAPTIVE_BRIGHTNESS);
     savePreference('readBg', DEFAULT_BG);
     savePreference('readText', DEFAULT_TEXT);
     savePreference('lineHeight', DEFAULT_LINE_HEIGHT);
@@ -1524,6 +1543,7 @@
     applySmartScroll(typeof prefs.smartScroll === 'boolean' ? prefs.smartScroll : DEFAULT_SMART_SCROLL);
     applyVolumeScroll(typeof prefs.volumeScroll === 'boolean' ? prefs.volumeScroll : DEFAULT_VOLUME_SCROLL);
     applyAudioVolumeKeys(typeof prefs.audioVolumeKeys === 'boolean' ? prefs.audioVolumeKeys : DEFAULT_AUDIO_VOLUME_KEYS);
+    applyAdaptiveBrightness(typeof prefs.adaptiveBrightness === 'boolean' ? prefs.adaptiveBrightness : DEFAULT_ADAPTIVE_BRIGHTNESS);
   })();
 
   /* ---- Bookmarking UI: chapter toggle button, paragraph long-press,

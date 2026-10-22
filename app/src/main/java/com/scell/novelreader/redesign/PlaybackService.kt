@@ -5,13 +5,9 @@ import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
 import android.graphics.Color
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
-import android.content.pm.ServiceInfo
-import android.os.Build
 import androidx.core.app.NotificationCompat
-import androidx.core.app.ServiceCompat
 import android.content.Context
 import android.content.Intent
 import androidx.annotation.OptIn
@@ -206,7 +202,7 @@ class PlaybackService : MediaSessionService() {
         var queueNavigationListener: QueueNavigationListener? = null
 
         /**
-         * Equalizer / loudness effects attached to the ExoPlayer's audio
+         * Loudness effect (replay-gain boost) attached to the ExoPlayer's audio
          * session (see NativeAudioEffects). Same single-process reasoning as
          * queueNavigationListener: MainActivity's bridge methods reach it
          * directly. Null while the service isn't running.
@@ -257,12 +253,12 @@ class PlaybackService : MediaSessionService() {
             .setHandleAudioBecomingNoisy(true)
             .build()
 
-        // The equalizer attaches to the player's audio session. The provider
+        // The loudness boost attaches to the player's audio session. The provider
         // is called lazily, always from the main thread (see NativeAudioEffects).
         effects = NativeAudioEffects { player.audioSessionId }
 
         // Crossfade needs a second player. It is created on first use, shares
-        // this player's audio session (so the equalizer above covers both) and
+        // this player's audio session (so the loudness boost above covers both) and
         // does NOT handle audio focus until the session is handed to it — see
         // NativeCrossfade. The session id is read lazily: it is the one the
         // effects are attached to.

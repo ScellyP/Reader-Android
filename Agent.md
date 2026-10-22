@@ -1,4 +1,4 @@
-# Agents.md — Developer / AI Notes
+# Agent.md — Developer / AI Notes
 
 This file is for AI agents and developers working on Novel Reader.
 User/install/usage docs are in [README.md](README.md).
@@ -8,29 +8,25 @@ User/install/usage docs are in [README.md](README.md).
 Key files:
 
 - `app/src/main/assets/index.html` — main app UI.
-- `app/src/main/assets/reader.js` — reading UI, gestures, night-lock constants (`NIGHT_LOCK_START`, `NIGHT_LOCK_END`).
+- `app/src/main/assets/reader.js` — reading UI, gestures.
 - `app/src/main/assets/audio-player.js` — audio UI, queue, engines, audio feature framework.
 - `app/src/main/assets/spotify-ui.js` — Spotify-kit music panel glue: switches the library / songs / now-playing views, mirrors player state into the mini player and "..." sheet. Styles are the `spotify-kit` block in `index.html`; `audio-player.js` is untouched apart from two-line queue rows.
 - `app/src/main/assets/settings-file.js` — mirrors settings to `/storage/emulated/0/Novel/settings.txt`.
 - `app/src/main/assets/version.js` — `APP_VERSION`.
 - `app/src/main/assets/color-wheel.js` — Page/Text colour wheel.
-- `app/src/main/assets/moon-puzzles.js` — the twelve pure-logic puzzles for the Moonlit Lock (`window.MoonPuzzles`); loaded before `moon-lock.js`.
-- `app/src/main/assets/moon-lock.js` — Moonlit Lock (night-lock) UI; shows the real moon phase via `moonPhaseInfo()` / `moonPhasePath()`.
-- `app/src/main/assets/moon-theme.js` — fills the `[data-moon]` phase badges (uses `NovelMoonLock.moonPhaseInfo/moonPhasePath`). The rest of the moon/space theme is CSS in `<style id="moon-theme">` in `index.html` (`.sky` starfield, ornaments, splash moon).
-- `app/src/main/assets/shatter-glass.js` — Canvas 2D shattered-glass renderer.
-- `MainActivity.kt` — Android host, hardcoded `chaptersDir`, `connectNativePlayer()`, `listAudioFiles()`.
+- `app/src/main/assets/moon-theme.js` — fills the `[data-moon]` phase badges. The rest of the moon/space theme is CSS in `<style id="moon-theme">` in `index.html` (`.sky` starfield, ornaments, splash moon).
+- `MainActivity.kt` — Android host, hardcoded `novelRoot` (one subfolder per novel), `connectNativePlayer()`, `runAudioScan()`.
 - `PlaybackService.kt` — Media3 foreground service, `QueueAwarePlayer`, notification controls.
-- `NativeAudioEffects.kt` — native equalizer/boost bridge.
+- `NativeAudioEffects.kt` — native loudness boost (positive replay gain).
+- `AdaptiveBrightness.kt` — the "Adaptive brightness" setting: light sensor → this window's brightness (log curve, smoothed). The Kotlin was written without being compiled or run; test it on a device.
 - `NativeCrossfade.kt` — native crossfade: two ExoPlayers, equal-power ramp, session hand-over.
 - `ReplayGainReader.kt` — reads ReplayGain tags from the file bytes (pure `java.io`, testable on a plain JVM).
-- `MoonUnlockStore.kt` — native signed night-lock unlock store.
-- `tests/audio-features.test.js`
-- `tests/crossfade.test.js`
-- `tests/replaygain.test.js`, `tests/replaygain-reader/` (see footnote ⁴)
-- `tests/moon-lock.test.js`
-- `tests/moon-puzzle.test.js` — unlock rules and secret star of the Moonlit Lock (run with `node tests/moon-puzzle.test.js`)
-- `tests/moon-puzzles.test.js` — the twelve Moonlit Lock puzzles: every generated puzzle is solvable, wrong answers are refused (run with `node tests/moon-puzzles.test.js`)
-- `tests/shatter-glass.test.js`
+- `tests/audio-player.smoke.test.js` — `audio-player.js` loads under Node with stubbed globals; no playback-speed code remains (run with `node tests/audio-player.smoke.test.js`)
+
+These are the only tests in the repo. Earlier notes mentioned tests for the audio
+feature framework, crossfade and ReplayGain (JS and the Kotlin tag reader); those
+files are not present, so that code
+is currently unchecked by anything automated.
 
 ## Version number
 
@@ -63,54 +59,23 @@ installs over the last one.
 
 ## Build trigger (GitHub Actions)
 
-`.github/workflows/build-apk.yml` has two jobs. `gate` runs on every push and
-decides; `build` only runs when `gate` outputs `build=true`. A push builds when
-**any** of these holds (checked in this order):
+`.github/workflows/build-apk.yml` has two jobs. `check` runs on every push to
+`main`/`master` and decides; `build` only runs when `check` outputs
+`should_build=true`. A push builds when **either** holds:
 
-1. manual run (`workflow_dispatch`), or a pushed tag starting with `v`;
-2. otherwise, `[skip build]` in any pushed commit message -> **no build**
-   (beats rules 3 and 4);
-3. `[build]` in any pushed commit message;
-4. a version number matching `v<digits>.<digits>.<digits>` in any pushed commit
-   message (e.g. `v1.04.02: fix volume keys`).
+1. it is a manual run (`workflow_dispatch`), or
+2. a version number matching `v<digits>.<digits>.<digits>` appears in any pushed
+   commit message (e.g. `v1.04.02: fix volume keys`).
 
-Commit messages are passed to the script through environment variables, never
-interpolated into the shell, so keep it that way. `versionCode` is still
+Nothing else builds: there is no `[build]` / `[skip build]` switch and tags do not
+trigger it (GitHub's own `[skip ci]` still skips the whole workflow). Commit
+messages are passed to the script through environment variables, never
+interpolated into the shell, so keep it that way. `versionCode` is
 `GITHUB_RUN_NUMBER`; skipped pushes use up numbers, which only leaves gaps.
 
 When you give the owner a change, suggest a commit message that starts with the
-new `APP_VERSION` number (e.g. `v1.04.02`; a suffix like `-alpha` is optional) so
-the push builds; for docs-only or CI-only changes, suggest a message without a version
-number (or with `[skip build]`).
-
-## Demo builds (feature branches)
-
-Demo builds have their **own workflow file**, separate from the normal one:
-
-| File | Runs on | Builds | Artifacts |
-| --- | --- | --- | --- |
-| `.github/workflows/build-apk.yml` | pushes to `main`/`master` | the normal app | `novel-reader-*-apk` |
-| `.github/workflows/build-demo-apk.yml` | pushes to every other branch (e.g. `crossfade-replaygain`), or a manual run | the **demo app** | `novel-reader-demo-*-apk` |
-
-The demo workflow sets `NR_DEMO=true`; `app/build.gradle` then adds
-`applicationIdSuffix ".demo"` (`com.scell.novelreader.redesign.demo`),
-`versionNameSuffix "-demo"` and the label "Novel Reader (Demo)" (manifest
-placeholder `appLabel`). It installs **next to** the normal app. Both files use
-the same commit-message rule (a `vX.Y.Z` in the message, or run by hand from the
-Actions tab). Branch builds never touch `main`'s workflow or artifacts, and a
-newer push to a branch cancels that branch's older running demo build.
-
-- Demo APK files are named `novel-reader-demo-release.apk` / `novel-reader-demo-debug.apk` (never `app-release.apk`). The demo workflow checks with `aapt2` that the built APK really has the `.demo` id and fails the build if not, so a demo can never silently try to update the normal app.
-- The demo is a separate app to Android: it needs its own "All files access"
-  grant and has its own private data (moon-unlock record, WebView storage).
-- Shared storage (`Novel/`, `Novel/Audio/`) is shared, but the demo reads and
-  writes `Novel/settings-demo.txt`, never `settings.txt`. First launch seeds it
-  with a copy of `settings.txt`. Delete `settings-demo.txt` to re-seed.
-- `AndroidBridge.isDemoBuild()` lets the page know; `version.js` appends
-  " · demo" to the version label.
-- GitHub runs the workflow file as it exists **on the pushed branch**, so the
-  branch must contain `build-demo-apk.yml` (create it from `main` after this
-  change lands). Merging into `main` is safe: `main` only runs `build-apk.yml`.
+new `APP_VERSION` number (e.g. `v1.04.02`) so the push builds; for docs-only or
+CI-only changes, suggest a message without a version number.
 
 ## Packaging rule for generated packages
 
@@ -171,7 +136,6 @@ top-of-file comment for the architecture, and `PlaybackService.kt` /
 | Broad format support (mp3, m4a/aac, flac, ogg, opus, wav) | **Working** |
 | Near-gapless playback (next track pre-buffered) | **Working**¹ |
 | Playback speed with pitch preservation | Removed — the speed control is gone; playback is always 1× |
-| 10-band equalizer + preamp | **Working**² (native engine: built, see footnote) |
 | Volume normalisation (replay gain) | **Working**⁴ — off / track / album, from the ReplayGain tags in your files |
 | Resume-at-position per track | Removed — every track starts at 0 (only a live engine hand-off keeps its position) |
 | A-B repeat | **Working** — A / B buttons under the seek bar |
@@ -204,7 +168,7 @@ top-of-file comment for the architecture, and `PlaybackService.kt` /
 | Pauses automatically when headphones/Bluetooth disconnect | **Working** |
 
 Audio files are expected in `/storage/emulated/0/Novel/Audio` (created
-automatically on first scan if it doesn't exist). Tap 🎧 → "Scan the sky" to load it, then 🎧 → "Equalizer ▾" for the 10-band EQ.
+automatically on first scan if it doesn't exist). Tap 🎧 → "Scan the sky" to load it.
 
 **Playlists** are just subfolders of `Audio/` — no separate playlist
 file or in-app "create playlist" step. A folder's name becomes the
@@ -236,18 +200,10 @@ current one plays, which removes the network/disk delay that causes
 most audible gaps, but the transition is still a normal src-swap rather
 than a sample-accurate crossfade-capable handoff.
 
-² The WebView engine's equalizer is a real 10-band Web Audio graph
-(`<audio>` element → 10 peaking `BiquadFilterNode`s → preamp `GainNode` →
-destination). Audio played through the native background engine never
-passes through the page's `AudioContext`, so the native engine uses
-Android's own `android.media.audiofx.Equalizer` on ExoPlayer's audio
-session instead (`NativeAudioEffects.kt`). Devices expose their own band
-layout (commonly 5 bands), so the 10 UI bands are interpolated onto
-whatever the device has, in log-frequency. Both engines share the same
-curve (`state.eqBands`), so switching engines keeps the sound. **This
-native half was written without being compiled or run** — test it on a
-device before relying on it; if a device has no equalizer effect the app
-says so in the music panel's note line.
+² The native engine turns quiet tracks up with Android's `LoudnessEnhancer` on
+ExoPlayer's audio session (`NativeAudioEffects.kt`); the WebView engine can
+only turn a track down. **That native half was written without being compiled
+or run** — test it on a device before relying on it.
 
 ³ ExoPlayer only ever holds one track at a time (JS owns the queue —
 see `audio-player.js`'s architecture note), so it normally has no
@@ -278,9 +234,9 @@ setting crossfades over half its length. Pausing, seeking or choosing another
 track ends the overlap at once. WebView engine: a second `<audio>` element and
 two timed volume ramps. Native engine: a second ExoPlayer in `PlaybackService`
 (`NativeCrossfade.kt`) that takes over the media session the moment the overlap
-starts, sharing the audio session so the equalizer covers both players. **The
+starts, sharing the audio session so the loudness boost covers both players. **The
 Kotlin half was written without being compiled or run** — test it on a device
-(a demo build from a feature branch is ideal) before relying on it.
+before relying on it.
 `tests/crossfade.test.js` checks the JS side.
 
 ## Audio feature framework
@@ -329,21 +285,18 @@ data or native support), `stub` (stores a value, nothing consumes it),
 | `crossfade` | working | `setSeconds()` (0–12, whole seconds), persisted; `curve(t)` = equal-power fade. When the track is within `seconds + 0.5 s` of its end it calls `AudioEngine.beginCrossfade(nextId, seconds)`; the engine returns `false` to be asked again next tick. On success the queue/state move to the next track immediately and the engine fades the old one out underneath. WebView: second `<audio>` + timed ramps. Native: second ExoPlayer (`NativeCrossfade.kt`) | Test the native half on a device (see footnote ⁵). Possible later: per-track fade-out points, a gapless (no-fade) mode |
 | `history` | working | Newest-first, deduped, capped at 100, persisted; virtual playlist `@recent` | Done: "Recently played" appears in the Library |
 | `likes` | working | `toggle(id?)`, `isLiked()`, `getIds()`; virtual playlist `@liked` | Done: heart button on the now-playing card |
-| `customPlaylists` | working | `create/rename/remove/addTracks/removeTrack/list`; virtual playlist `@list:<id>` | Done: "New playlist" editor and picker entries. Possible later: drag to reorder |
-| `nativeEffects` | framework | Pushes the EQ curve + preamp + replay-gain boost to the native side on engine switch, track start and every slider change | Verify on a device (see footnote ²) |
+| `customPlaylists` | working | `create/remove/addTracks/removeTrack/list`; virtual playlist `@list:<id>` | Done: "New playlist" editor and picker entries. Possible later: drag to reorder |
+| `nativeEffects` | framework | Pushes the replay-gain boost to the native side on engine switch and track start | Verify on a device (see footnote ²) |
 
 **Virtual playlists.** `state.activePlaylist` may be `'all'`, a folder name,
 or `'@recent'`, `'@liked'`, `'@list:<id>'`. `MediaLibrary.currentSelectionIds()`
 resolves the virtual ones through `AudioFeatures.selectionFor()`, dropping any
 track no longer in the library, so shuffle/repeat/next/previous work on them
-unchanged. `AudioFeatures.listVirtualPlaylists()` returns what a picker should
-offer. The existing folder dropdown does not list them yet.
+unchanged.
 
 **Native bridge added for this** (Kotlin side in `NativeAudioEffects.kt`,
-created and released by `PlaybackService`): `nativeAudioSetEqualizer(bandsJson,
-preampDb)`, `nativeAudioSetBoostDb(db)`, and `nativeAudioEffectsRequestInfo()`,
-which answers asynchronously through `window.onNativeAudioEffectsInfo(json)`.
-`NativeAudioEffects` keeps the last curve and re-applies it if the audio
+created and released by `PlaybackService`): `nativeAudioSetBoostDb(db)`.
+`NativeAudioEffects` keeps the last boost and re-applies it if the audio
 session changes or the service restarts.
 
 **Native bridge for crossfade:** `nativeAudioCrossfade(path, title, artist, album,
@@ -362,41 +315,21 @@ with an honest status, and add checks to `tests/audio-features.test.js`.
 
 **Tests.** `tests/audio-features.test.js` loads `audio-player.js` under Node
 with stubbed browser globals and checks the framework (registry, persistence,
-A-B loop, replay-gain maths, virtual playlists, crossfade trigger, native EQ
-fallback). Run it from the project root: `node tests/audio-features.test.js`.
+A-B loop, replay-gain maths, virtual playlists, crossfade trigger). Run it from the project root: `node tests/audio-features.test.js`.
 It cannot exercise the Kotlin side or real audio.
-
-**Moonlit Lock puzzle.** On non-holiday days (`!isCheatDay`) the lock has a logic puzzle, opened only by tapping one secret star (no button, no hint: `STAR_SPOTS` mirrors the `.sky` stars in `index.html`; `pickSecretStar()` chooses one at random per lock session, and `isStarHit()` accepts taps within `STAR_HIT` px of it; keep `STAR_SPOTS` in step with the CSS, a test checks this) (the star code is in `moon-lock.js`; the puzzles are in `moon-puzzles.js`, see below). Solving it calls `grantUnlock('puzzle')`, then `shatterAfterPuzzle()` runs the glass from 0 to 1 over 1.6 s (the same renderer as the moon taps) and the reader opens through the normal `onUnlocked` path. `resetStar()` (called from the `visibilitychange` handler in `reader.js` when the app is reopened while locked) picks a new secret star and puts away any open puzzle. Solving it also, which uses the native `AndroidBridge.moonUnlockGrantPuzzle()` (fixed 30 minutes, see `moonPuzzleUnlockMs` in `MainActivity.kt`); holidays keep the 1-hour tap unlock. The hidden test run also has the secret star and never saves an unlock.
-
-**Moonlit Lock puzzles (`moon-puzzles.js`).** Twelve pure-logic types, **no trivia or general-knowledge puzzles, ever**, and every puzzle is moon themed (names, rules, symbols): `timing` (Lunar Cycles), `grid` (Phase Grid, 4x4 Latin square), `light` (Moonbeam Mirrors, mirrors), `math` (Moonstones, pick k numbers for a sum), `sequence` (Waxing Machine, fill a number machine) `mastermind` (Phase Code), `lightsout` (Dim the Stars, 4x4), `hanoi` (Moon Tower, 4 discs from a random position), `slide` (Phase Slide, 8-puzzle), `jugs` (Tide Pools, BFS-checked 4-7 pours), `picross` (Moon Mosaic, 5x5 nonogram) and `truth` (Moonlit Oaths, unique solution among 16 assignments). Each entry in `MoonPuzzles.PUZZLES` is `{id, name, rule, make(rand), solved(state), status(state), render(host, state, change, done)}`. `make` must always return a solvable puzzle that does not start solved (every generator has a fixed fallback), and `solved` must accept any valid answer, not only the generator's. `moon-lock.js` picks a type with `MoonPuzzles.pickType()` (never the same twice in a row), calls `render` after every change and `grantUnlock('puzzle')` once `solved` is true. To add a type: add a generator, a `solved` check, a renderer and a registry entry, then add a solvability test to `tests/moon-puzzles.test.js`.
-
-**Moonlit Lock checks.** (The lock was renamed from "moon lock"; file and `NovelMoonLock` names are unchanged.) The moon icon uses `moonPhaseInfo(date)` (real phase from sun/moon longitudes) and `moonPhasePath(fraction, cx, cy, r)`; tap count no longer changes the icon. Add checks for these to the test below. `tests/moon-lock.test.js` checks eligible dates, moon
-phases, tap completion, four-side impact geometry, 26-ray density, random web
-staggering, facet progression, screen shake, and terminal contrast. Run it from
-the project root: `node tests/moon-lock.test.js`.
 
 **Colour wheel.** The Page and Text colour swatches in the Reading panel open a
 colour wheel (`color-wheel.js`: hue/saturation wheel, brightness slider, hex field)
 instead of the system colour dialog. The native colour inputs stay in the page as
 the source of truth, so saving, recent colours and presets work as before.
 
-**Shattered-glass renderer.** The moon-lock glass is drawn by
-`app/src/main/assets/shatter-glass.js`: a dependency-free Canvas 2D module that
-builds a seeded, irregular low-poly glass layout (Delaunay facets around four
-staggered impact points plus long branching cracks) once per lock session, then
-only redraws when tap progress changes (the existing 40-step quantisation).
-The last 18% of progress turns the glass into a plain inverse-colour fill
-(cracks fade out, no lines in the final frame).
-If the module or canvas is unavailable, `moon-lock.js` falls back to its older
-layered renderer. Run `node tests/shatter-glass.test.js` for its geometry checks.
-
 ## AI assistant instructions
 
-- **Bump the version automatically** in the same change for every real bug fix or feature. State the new version in your reply. Follow `Agents.md#version-number`.
+- **Bump the version automatically** in the same change for every real bug fix or feature. State the new version in your reply. Follow `Agent.md#version-number`.
 - **Broken builds never change the version.** If a build fails or is redone, leave the number alone.
 - **Update `README.md`** for user-facing changes: setup, build steps, gestures, settings, visible features.
-- **Update `Agents.md`** for internal changes: architecture, feature framework, native bridge, tests, versioning, packaging.
+- **Update `Agent.md`** for internal changes: architecture, feature framework, native bridge, tests, versioning, packaging.
 - **Keep tests updated.** Add or adjust checks in `tests/` when behaviour changes.
 - **Follow the packaging rule.** Generated zips must contain one top-level folder named `novelreader`; GitHub uploads must put `app/src/main/assets/index.html` and `.github/workflows/` at repo root.
-- **Suggest a commit message.** Start it with the new version (e.g. `v1.04.02: fix volume keys`) so the push builds. Docs/CI-only changes get a message with no version number, or `[skip build]`. See `Agent.md#build-trigger-github-actions`.
+- **Suggest a commit message.** Start it with the new version (e.g. `v1.04.02: fix volume keys`) so the push builds. Docs/CI-only changes get a message with no version number, See `Agent.md#build-trigger-github-actions`.
 - **Do not commit keystores.** Update signing is handled through GitHub secrets; see the "Signing and updates" section of `README.md`.

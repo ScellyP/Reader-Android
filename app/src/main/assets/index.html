@@ -644,10 +644,6 @@ select option { background: var(--panel-2); color: var(--text); }
 }
 .panel-close .ico { width: 16px; height: 16px; }
 .panel-close:hover { color: var(--text); background: var(--panel-2); border-color: var(--border); }
-/* The audio panel already had its own header row (title + Rescan); this
-   keeps that pair as one flexible group so the shared close button can
-   sit to its right without a third item cramming the row. */
-.audio-title-group { flex: 1; min-width: 0; }
 
 /* Shared range slider: an amber fill that shows how far along you are. */
 input[type="range"] {
@@ -903,13 +899,9 @@ input[type="range"]:disabled::-webkit-slider-thumb { background: var(--faint); }
    previously sized it as a floating card like the other three panels;
    see the comment there for why Music is a right-side drawer instead. */
 #audio-panel { gap: 12px; }
-/* Sleep timer and equalizer toggle: hidden per spec, not deleted — see
-   the HTML comment on these elements. */
+/* The sleep timer's own row: hidden, the "..." sheet drives it instead. */
 .hidden-feature { display: none !important; }
 
-#audio-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; }
-#audio-panel-title { display: flex; align-items: center; gap: 8px; font-family: var(--font-book); font-size: 19px; font-weight: 500; color: var(--text); }
-#audio-panel-title .ico { color: var(--accent); width: 18px; height: 18px; }
 
 #audio-scan-btn {
   display: flex; align-items: center; gap: 6px;
@@ -1091,31 +1083,6 @@ input[type="range"]:disabled::-webkit-slider-thumb { background: var(--faint); }
   border-radius: var(--r-pill); padding: 2px 9px; max-width: 96px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-
-#audio-eq-toggle {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  background: transparent; color: var(--text);
-  border: 1px solid var(--border); border-radius: var(--r-sm);
-  padding: 10px 12px; font-size: 13px; font-weight: 600; cursor: pointer; flex-shrink: 0;
-  transition: border-color .12s ease, background .12s ease;
-}
-#audio-eq-toggle:hover { background: var(--panel-2); border-color: var(--border-strong); }
-#audio-eq-toggle .ico { width: 16px; height: 16px; color: var(--muted); transition: transform .2s var(--ease); }
-#audio-eq-toggle[aria-expanded="true"] .ico { transform: rotate(180deg); }
-
-#audio-eq-panel {
-  display: flex; flex-direction: column; gap: 12px;
-  background: var(--panel-2); border: 1px solid var(--border);
-  border-radius: var(--r-md); padding: 14px 12px; flex-shrink: 0;
-}
-#audio-eq-panel.hidden { display: none; }
-#audio-eq-bands { display: flex; align-items: flex-end; justify-content: space-between; gap: 2px; height: 108px; }
-.eq-band { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; height: 100%; }
-.eq-band-slider { writing-mode: vertical-lr; direction: rtl; width: 22px; height: 100%; }
-.eq-band-slider::-webkit-slider-runnable-track { background: var(--raised) !important; width: 4px; height: auto; }
-.eq-band-slider::-webkit-slider-thumb { margin-top: 0; margin-left: -6px; }
-.eq-band-label { font-size: 10px; font-weight: 600; color: var(--faint); margin-top: 4px; }
-#audio-eq-reset { align-self: stretch; }
 
 /* ---------------------------------------------------------------------
    Bookmarks
@@ -1516,7 +1483,6 @@ input[type="range"]:disabled::-webkit-slider-thumb { background: var(--faint); }
 
 /* Music drawer: inline sections expand with a soft entrance. */
 #audio-playlist-list:not(.hidden),
-#audio-eq-panel:not(.hidden) { animation: panelIn .22s var(--ease) both; transform-origin: top center; }
 
 /* Music: the play button glows gently while audio is playing, and the
    now-playing row in the queue has a slow pulse on its accent. */
@@ -1697,7 +1663,6 @@ body.peek-active #panel-scrim { opacity: 0 !important; background: transparent !
   --r-lg: 20px;
   --faint: #8e93a4;                         /* lifted: >=5:1 on panel, ~4.7:1 on panel-2 */
   --control-edge: #4a5167;                  /* >=3:1 edge for toggles / sliders (WCAG 1.4.11) */
-  --ease-press: cubic-bezier(.3, .7, .4, 1);
   --shadow-float: 0 28px 64px rgba(0,0,0,.62), 0 6px 18px rgba(0,0,0,.35);
 }
 
@@ -1714,9 +1679,9 @@ input[type="range"]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px 
 /* ---- Scrollbars: slimmer, quieter ---------------------------------------- */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; }
-/* Reading panel scrolls without a visible scrollbar so nothing hints at the hidden control below. */
-#theme-panel { scrollbar-width: none; -ms-overflow-style: none; }
-#theme-panel::-webkit-scrollbar { display: none; width: 0; height: 0; }
+/* The settings panels scroll without a visible scrollbar, so nothing hints at a hidden control below. */
+#theme-panel, #session-settings-panel, #bookmarks-panel { scrollbar-width: none; -ms-overflow-style: none; }
+#theme-panel::-webkit-scrollbar, #session-settings-panel::-webkit-scrollbar, #bookmarks-panel::-webkit-scrollbar { display: none; width: 0; height: 0; }
 
 /* ---- Sidebar -------------------------------------------------------------- */
 #sidebar-header { padding: 18px 18px 16px; padding-top: calc(18px + var(--status-bar-height)); }
@@ -1799,9 +1764,6 @@ input[type="range"]:active::-webkit-slider-thumb {
 }
 input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--raised); }
 /* Vertical EQ sliders keep their own geometry. */
-.eq-band-slider::-webkit-slider-runnable-track { width: var(--track); height: auto; }
-.eq-band-slider::-webkit-slider-thumb { margin-top: 0; margin-left: calc((var(--track) - var(--thumb)) / 2); }
-.eq-band-label { font-size: 11px; }
 
 /* ---- Toggle switches: 48x28, thumb squishes under the finger ---------------- */
 .switch { width: 50px; height: 30px; background: var(--panel-2); border: 1px solid var(--control-edge); }
@@ -1882,7 +1844,6 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
   background-image: linear-gradient(180deg, rgba(255,255,255,.018), transparent 160px);
   will-change: transform;
 }
-#audio-panel-title { font-size: 20px; gap: 10px; }
 #audio-scan-btn { min-height: 36px; padding: 7px 14px 7px 12px; }
 #audio-scan-btn:active { transform: scale(.95); }
 #audio-now-playing {
@@ -1921,7 +1882,6 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
 #audio-song-list-heading { margin-top: 4px; letter-spacing: .08em; font-size: 12px; color: var(--faint); }
 .audio-track-duration { font-size: 12.5px; }
 #audio-status-note { padding-top: 12px; }
-#audio-eq-panel { padding: 16px 14px; }
 
 /* ---- Bookmarks --------------------------------------------------------------------------------- */
 #bookmarks-panel-header { gap: 14px; }
@@ -2354,7 +2314,6 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
      We deliberately do NOT redefine those names here, so the panel always
      inherits the live value. */
   --sp-bg: var(--bg);
-  --sp-fg: var(--text);
   --sp-sub: var(--muted);
   --sp-accent: var(--accent);
   --sp-accent-hi: var(--accent-strong);
@@ -2883,71 +2842,23 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
 #pz-grid button { font: inherit; color: var(--text); touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 #pz-grid button:active:not(:disabled) { transform: scale(.96); }
 #pz-grid button:disabled { cursor: default; }
-.pz-row { display: flex; align-items: center; justify-content: center; gap: 8px; text-align: left; }
-.pz-rule { flex: 1; font-size: 13px; line-height: 1.35; color: var(--text); }
-.pz-note { min-height: 18px; font-size: 13px; color: var(--muted); }
-.pz-btn, .pz-slot, .pz-cell, .pz-peg {
+.pz-board { display: grid; gap: 6px; }
+.pz-slide { grid-template-columns: repeat(3, 1fr); }
+.pz-cell {
+  aspect-ratio: 1; display: flex; align-items: center; justify-content: center; padding: 8px;
   border-radius: 12px; border: 1px solid var(--line, rgba(128,128,128,.35)); background: var(--panel-2, rgba(128,128,128,.12));
 }
-.pz-btn { padding: 9px 14px; font-size: 15px; }
-.pz-go { border-color: var(--accent, currentColor); }
-.pz-btn:disabled, .pz-cell:disabled:not(.pz-given):not(.pz-wall):not(.pz-target) { opacity: .45; }
-.pz-lamp { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--line, rgba(128,128,128,.5)); opacity: .5; }
-.pz-lamp.lit { background: var(--accent, #f2d27a); border-color: var(--accent, #f2d27a); box-shadow: 0 0 10px var(--accent-line, #f2d27a); opacity: 1; }
-.pz-step { display: flex; align-items: center; justify-content: center; gap: 8px; }
-.pz-tick { min-width: 64px; font-size: 15px; }
-.pz-board { display: grid; gap: 6px; }
-.pz-grid4 { grid-template-columns: repeat(4, 1fr); }
-.pz-light { grid-template-columns: 18px repeat(5, 1fr); align-items: center; }
-.pz-nums { grid-template-columns: repeat(4, 1fr); }
-.pz-src { text-align: center; color: var(--accent, var(--text)); font-size: 14px; }
-.pz-cell { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 22px; padding: 0; }
-.pz-given { background: transparent; border-style: dashed; }
-.pz-bad { border-color: #e0605a; color: #e0605a; }
-.pz-grid4 .g1 { color: #8ec5ff; } .pz-grid4 .g2 { color: #f3b82e; } .pz-grid4 .g3 { color: #6fd39a; } .pz-grid4 .g4 { color: #c79bff; }
-.pz-grid4 .pz-bad { color: #e0605a; }
-.pz-lit { background: var(--accent-line, rgba(242,210,122,.22)); border-color: var(--accent, #f2d27a); }
-.pz-wall { background: transparent; opacity: .5; }
-.pz-target { border-color: var(--accent, currentColor); font-size: 26px; }
-.pz-num, .pz-op { font-size: 18px; }
-.pz-on { border-color: var(--accent, currentColor); background: var(--accent-line, rgba(242,210,122,.22)); }
-.pz-chain { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; }
-.pz-slot { min-width: 46px; padding: 9px 4px; font-size: 17px; }
-.pz-val { min-width: 28px; font-size: 16px; }
-.pz-dim { opacity: .35; }
-.pz-palette { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
-.pz-palette .pz-cell { aspect-ratio: auto; padding: 11px 0; }
-.pz-history { display: flex; flex-direction: column; gap: 6px; }
-.pz-peg { width: 40px; height: 40px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 50%; font-size: 15px; color: #10131a; }
-.pz-peg.pz-pick:not([class*=" p"]) { color: var(--muted); background: transparent; border-style: dashed; }
-.p1 { background: #e4572e; } .p2 { background: #f3b82e; } .p3 { background: #4fb477; } .p4 { background: #4aa3df; } .p5 { background: #a77bd9; }
-.pz-fb { min-width: 64px; font-size: 14px; color: var(--muted); }
-/* extra puzzles: Lights Out, Tower Shift, Slide Tiles, Pour Puzzle, Picross, Truth & Lies */
-.pz-bulb { color: var(--accent, #f2d27a); }
-.pz-glow { box-shadow: 0 0 12px var(--accent-line, rgba(242,210,122,.5)); }
-.pz-pegs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.pz-peg-col { height: 150px; padding: 6px 4px; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 3px; border-radius: 12px; border: 1px solid var(--line, rgba(128,128,128,.35)); background: var(--panel-2, rgba(128,128,128,.12)); }
-.pz-peg-col.pz-target { border-color: var(--accent, currentColor); }
-.pz-peg-base { min-height: 16px; font-size: 13px; color: var(--accent, var(--text)); }
-.pz-disc { height: 16px; border-radius: 8px; background: #8ec5ff; }
-.pz-disc.d2 { background: #f3b82e; } .pz-disc.d3 { background: #6fd39a; } .pz-disc.d4 { background: #c79bff; }
-.pz-slide { grid-template-columns: repeat(3, 1fr); }
-.pz-tile { font-size: 24px; }
+.pz-cell:disabled:not(.pz-blank) { opacity: .45; }
 .pz-blank { opacity: .15; }
-.pz-jugs { display: flex; align-items: flex-end; justify-content: center; gap: 10px; }
-.pz-jug { position: relative; flex: 1; max-width: 80px; overflow: hidden; padding: 0; border-radius: 6px 6px 14px 14px; border: 1px solid var(--line, rgba(128,128,128,.5)); background: var(--panel-2, rgba(128,128,128,.12)); }
-.pz-jug.pz-on { border-color: var(--accent, currentColor); }
-.pz-fill { position: absolute; left: 0; right: 0; bottom: 0; background: var(--accent-line, rgba(79,163,223,.55)); transition: height .2s; }
-.pz-jug-n { position: relative; font-size: 14px; }
-.pz-pic { grid-template-columns: 34px repeat(5, 1fr); gap: 4px; align-items: stretch; }
-.pz-clue { display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1.15; color: var(--muted); white-space: pre; }
-.pz-clue-col { align-items: flex-end; }
-.pz-clue-row { justify-content: flex-end; padding-right: 3px; }
-.pz-pixel { font-size: 0; }
-.pz-fillcell { background: var(--accent, #f2d27a); }
-.pz-say { gap: 8px; }
-.pz-who { flex: none; width: 22px; font-size: 15px; color: var(--accent, var(--text)); }
-.pz-kind { min-width: 64px; }
+.pz-moon { display: block; width: 100%; height: 100%; }
+.pz-moon-dark { fill: currentColor; opacity: .18; }
+.pz-moon-lit { fill: var(--accent, #f2d27a); }
+.pz-goal { display: flex; justify-content: center; gap: 4px; margin-bottom: 4px; }
+.pz-goal .pz-moon { flex: none; width: 20px; height: 20px; opacity: .75; }
+.pz-stack { display: flex; flex-direction: column; gap: 6px; }
+.pz-pan { height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; background: transparent; }
+.pz-pan:disabled { opacity: 1; }
+.pz-bar { display: block; height: 26px; border-radius: 999px; background: var(--accent, #f2d27a); }
 #pz-grid.pz-done { box-shadow: 0 0 14px var(--accent-line, transparent); border-radius: 14px; }
 #pz-foot { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 14px; font-size: 13px; color: var(--muted); }
 #pz-foot button { padding: 8px 14px; border-radius: 999px; font: inherit; font-size: 13px; color: var(--text); background: transparent; border: 1px solid var(--line, rgba(128,128,128,.35)); }
@@ -2966,7 +2877,6 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
   <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3.5" y="14.5" width="4" height="6" rx="1.6"/><rect x="16.5" y="14.5" width="4" height="6" rx="1.6"/></symbol>
   <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6.5 4.5h11a1 1 0 0 1 1 1v14.2a.5.5 0 0 1-.8.4L12 15.5l-5.7 4.6a.5.5 0 0 1-.8-.4V5.5a1 1 0 0 1 1-1Z"/></symbol>
   <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M6.5 3.5h11M6.5 20.5h11"/><path d="M8 3.5c0 4 2.2 5.4 4 8.5-1.8 3.1-4 4.5-4 8.5M16 3.5c0 4-2.2 5.4-4 8.5 1.8 3.1 4 4.5 4 8.5"/></symbol>
-  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
   <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4.5 7h15M4.5 12h15M4.5 17h9"/></symbol>
   <symbol id="i-chev-left" viewBox="0 0 24 24"><path d="m14.5 6-6 6 6 6"/></symbol>
   <symbol id="i-chev-right" viewBox="0 0 24 24"><path d="m9.5 6 6 6-6 6"/></symbol>
@@ -2976,14 +2886,9 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol>
   <symbol id="i-close" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="m5.5 12.5 4.5 4.5 8.5-9.5"/></symbol>
-  <symbol id="i-play" viewBox="0 0 24 24"><path class="solid" d="M8 5.6v12.8a.6.6 0 0 0 .9.5l10.3-6.4a.6.6 0 0 0 0-1L8.9 5.1a.6.6 0 0 0-.9.5Z"/></symbol>
-  <symbol id="i-pause" viewBox="0 0 24 24"><rect class="solid" x="6.5" y="5" width="3.8" height="14" rx="1.2"/><rect class="solid" x="13.7" y="5" width="3.8" height="14" rx="1.2"/></symbol>
-  <symbol id="i-prev" viewBox="0 0 24 24"><path class="solid" d="M17.5 6.1v11.8a.5.5 0 0 1-.8.4L9 12.4a.5.5 0 0 1 0-.8l7.7-5.9a.5.5 0 0 1 .8.4Z"/><path d="M6.5 6v12"/></symbol>
-  <symbol id="i-next" viewBox="0 0 24 24"><path class="solid" d="M6.5 6.1v11.8a.5.5 0 0 0 .8.4l7.7-5.9a.5.5 0 0 0 0-.8L7.3 5.7a.5.5 0 0 0-.8.4Z"/><path d="M17.5 6v12"/></symbol>
   <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M3 7h3c1.2 0 2.3.6 3 1.6l6 6.8c.7 1 1.8 1.6 3 1.6h2.5"/><path d="M3 17h3c1.2 0 2.3-.6 3-1.6l1-1.1"/><path d="M14 9.7l1-1.1c.7-1 1.8-1.6 3-1.6h2.5"/><path d="M17.5 4.5L20.5 7l-3 2.5"/><path d="M17.5 19.5L20.5 17l-3-2.5"/></symbol>
   <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M4.5 11V9.5A2.5 2.5 0 0 1 7 7h11.5"/><path d="m16 4.5 2.5 2.5-2.5 2.5"/><path d="M19.5 13v1.5A2.5 2.5 0 0 1 17 17H5.5"/><path d="m8 19.5-2.5-2.5L8 14.5"/></symbol>
   <symbol id="i-repeat-one" viewBox="0 0 24 24"><path d="M4.5 11V9.5A2.5 2.5 0 0 1 7 7h11.5"/><path d="m16 4.5 2.5 2.5-2.5 2.5"/><path d="M19.5 13v1.5A2.5 2.5 0 0 1 17 17H5.5"/><path d="m8 19.5-2.5-2.5L8 14.5"/><path d="M11.2 10.6 12.6 10v5"/></symbol>
-  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/></symbol>
   <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 0 1-13.1 5"/><path d="M4.5 12a7.5 7.5 0 0 1 13.1-5"/><path d="M17.8 3.5v3.7h-3.7M6.2 20.5v-3.7h3.7"/></symbol>
   <symbol id="i-reset" viewBox="0 0 24 24"><path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5"/><path d="M4.5 4.5v4h4"/></symbol>
   <symbol id="i-paragraph" viewBox="0 0 24 24"><path d="M13 4.5v15M17 4.5v15"/><path d="M17 4.5H9.5a3.5 3.5 0 0 0 0 7H13"/></symbol>
@@ -2991,7 +2896,6 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
   <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 0 1 2-2h3.8l2 2.2h7.2a2 2 0 0 1 2 2v7.3a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2V7.5Z"/></symbol>
   <symbol id="i-lock-open" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 6.6-1.6"/></symbol>
   <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.2"/><circle cx="12" cy="7.9" r=".6"/></symbol>
-  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M5 7h7M16 7h3M5 17h3M12 17h7"/><circle cx="14" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
   <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 19.6s-7.2-4.4-7.2-9.7A4.1 4.1 0 0 1 12 7.6a4.1 4.1 0 0 1 7.2 2.3c0 5.3-7.2 9.7-7.2 9.7z"/></symbol>
   <symbol id="i-playlist-add" viewBox="0 0 24 24"><path d="M4.5 7h10M4.5 12h6.5M4.5 17h6.5"/><path d="M17.5 12.5v6M14.5 15.5h6"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M9.5 7V5h5v2M7 7l.8 12.2h8.4L17 7"/></symbol>
@@ -3165,6 +3069,10 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
       <div class="theme-panel-row">
         <label for="volume-scroll-toggle">Volume button scroll</label>
         <button type="button" id="volume-scroll-toggle" class="switch on" role="switch" aria-checked="true" aria-label="Volume button scroll"></button>
+      </div>
+      <div class="theme-panel-row">
+        <label for="adaptive-brightness-toggle">Adaptive brightness</label>
+        <button type="button" id="adaptive-brightness-toggle" class="switch" role="switch" aria-checked="false" aria-label="Adaptive brightness: brighter in strong light, dimmer in a dark room"></button>
       </div>
       <div class="theme-panel-row" id="tap-scroll-row">
         <label for="tap-scroll-lines-input">Tap scroll</label>
@@ -3389,11 +3297,8 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
               <span class="audio-row-value" id="audio-xf-value">Off</span>
             </div>
 
-            <!-- Sleep timer and equalizer: hidden, not removed, per spec —
-                 state/engine code (state.sleepTimerMinutes, setPreamp, etc.)
-                 is untouched so this can be un-hidden later without rebuilding
-                 the underlying feature. The sleep timer is also reachable from
-                 the "..." sheet. -->
+            <!-- Sleep timer: this row is hidden; the timer is driven from the
+                 "..." sheet (spotify-ui.js), which sets this select. -->
             <div class="audio-row hidden-feature">
               <label for="audio-sleep">Sleep</label>
               <select id="audio-sleep">
@@ -3403,16 +3308,6 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
                 <option value="60">After 60 min</option>
                 <option value="-1">End of track</option>
               </select>
-            </div>
-
-            <button id="audio-eq-toggle" type="button" aria-expanded="false" class="hidden-feature"><span>Equalizer</span><svg class="ico"><use href="#i-chev-down"/></svg></button>
-            <div id="audio-eq-panel" class="hidden">
-              <div id="audio-eq-bands"></div>
-              <div class="audio-row">
-                <label for="audio-eq-preamp">Preamp</label>
-                <input type="range" id="audio-eq-preamp" min="-12" max="12" step="1" value="0">
-              </div>
-              <button id="audio-eq-reset" type="button" class="ghost-btn"><svg class="ico"><use href="#i-reset"/></svg>Reset equalizer</button>
             </div>
           </div>
         </section>

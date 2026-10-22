@@ -4,5 +4,4 @@
          WebView and the HTML splash are one continuous surface with no
          white/black flash between them. -->
     <color name="ink">#0b0d12</color>
-    <color name="lamp">#e8a83e</color>
 </resources>

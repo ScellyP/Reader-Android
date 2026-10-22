@@ -39,7 +39,7 @@ import kotlin.math.sin
  *      keeps it as the next spare.
  *
  * Both players use the same audio session id (see PlaybackService), so the
- * equalizer and loudness boost attached to that session cover both of them.
+ * loudness boost attached to that session covers both of them.
  * Only the active player handles audio focus; focus is passed over with the
  * session, otherwise the second player would take focus from the first and
  * pause it.
