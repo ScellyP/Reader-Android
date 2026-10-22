@@ -21,6 +21,8 @@ Key files:
 - `AdaptiveBrightness.kt` — the "Adaptive brightness" setting: light sensor → this window's brightness (log curve, smoothed). The Kotlin was written without being compiled or run; test it on a device.
 - `NativeCrossfade.kt` — native crossfade: two ExoPlayers, equal-power ramp, session hand-over.
 - `ReplayGainReader.kt` — reads ReplayGain tags from the file bytes (pure `java.io`, testable on a plain JVM).
+- `tests/audio-gestures.test.js` — shuffle-starts-playing and `likeCurrent()` (8 checks; run with `node tests/audio-gestures.test.js`)
+- `tests/audio-harness.js` — shared by the audio tests: boots `audio-player.js` with stubbed globals and a fake Android bridge
 - `tests/audio-startup.test.js` — last-song restore and Bluetooth start-up (11 checks, with a fake Android bridge; run with `node tests/audio-startup.test.js`)
 - `tests/audio-player.smoke.test.js` — `audio-player.js` loads under Node with stubbed globals; no playback-speed code remains (run with `node tests/audio-player.smoke.test.js`)
 
@@ -152,7 +154,8 @@ top-of-file comment for the architecture, and `PlaybackService.kt` /
 | Playlists via folders (a subfolder in Audio/ = a playlist) | **Working** |
 | Curated playlists (hand-picked, not tied to a folder) | **Working** — "New playlist" in the Library, plus add-to-playlist |
 | Visible "up next" queue | **Working** |
-| Shuffle (real Fisher-Yates) + repeat (off / all / one) | **Working** |
+| Shuffle (real Fisher-Yates) + repeat (off / all / one) | **Working** — tapping shuffle (either shuffle button) while nothing plays turns it on *and* starts a random song (`setShuffle(true, false)` so a paused/remembered song is not pinned first); while playing it only reshuffles; turning it off never starts anything |
+| Double-tap to like | **Working** — `reader.js` (touchend handler): two taps within 280 ms and 48 px in the middle 40% × 40% of the reading pane call `NovelAudio.likeCurrent()` (add-only) and show the `#like-pop` heart. The first tap there is held back 280 ms so the double tap doesn't also scroll the page; this delay applies only while a song is current (`hasCurrentTrack()`). **The gesture wiring in `reader.js` is not covered by a test** (only the player half is); try it on a device |
 | Now-playing bar with artwork, seek scrubber | **Working** |
 | Crossfade between tracks | **Working**⁵ — 🎧 panel → Crossfade slider, 1–12 s (native engine: built, see footnote) |
 | Recently played / liked tracks | **Working** — heart button on the now-playing card; "Recently played" and "Liked" in the Library |

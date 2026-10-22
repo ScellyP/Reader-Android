@@ -2569,6 +2569,14 @@
   const TAP_ZONE_X_SPLIT = 0.5;
   const TAP_ZONE_Y_SPLIT = 0.5;
 
+  // Double tap in the middle of the reading pane: add the current song to Liked.
+  const LIKE_ZONE = { left: 0.3, right: 0.7, top: 0.3, bottom: 0.7 };   // share of the pane
+  const DOUBLE_TAP_MS = 280;          // longest gap between the two taps
+  const DOUBLE_TAP_MAX_MOVE = 48;     // furthest the second tap may land from the first, in px
+  // The first tap of a possible double tap, held back (not yet scrolling) until it is clear
+  // whether a second tap follows: { x, y, timer }.
+  let pendingCentreTap = null;
+
   // Converts the user's "how many lines" setting into an actual pixel
   // distance, using the reading text's own current computed line height
   // — so the amount scrolled tracks whatever font size/line-height/font
@@ -2841,17 +2849,51 @@
     // Ignore taps on real interactive elements (links) inside the text.
     if (touchStartTarget && touchStartTarget.closest && touchStartTarget.closest('a')) return;
 
+    // The middle of the pane: a double tap likes the current song, so a tap here waits a moment
+    // before it scrolls, to see whether a second one follows. Only while there is a song to
+    // like; otherwise every tap scrolls at once, as everywhere else.
+    if (inLikeZone(touch.clientX, touch.clientY) && window.NovelAudio && window.NovelAudio.hasCurrentTrack()) {
+      const first = pendingCentreTap;
+      if (first && Math.hypot(touch.clientX - first.x, touch.clientY - first.y) <= DOUBLE_TAP_MAX_MOVE) {
+        clearTimeout(first.timer);
+        pendingCentreTap = null;
+        likeFromDoubleTap();
+        return;
+      }
+      const x = touch.clientX, y = touch.clientY;
+      pendingCentreTap = { x, y, timer: setTimeout(() => { pendingCentreTap = null; pageForTap(x, y); }, DOUBLE_TAP_MS) };
+      return;
+    }
+
+    pageForTap(touch.clientX, touch.clientY);
+  }, { passive: true });
+
+  function inLikeZone(x, y) {
+    const pane = readerScrollEl.getBoundingClientRect();
+    const fx = (x - pane.left) / pane.width, fy = (y - pane.top) / pane.height;
+    return fx >= LIKE_ZONE.left && fx <= LIKE_ZONE.right && fy >= LIKE_ZONE.top && fy <= LIKE_ZONE.bottom;
+  }
+
+  // A single tap on the text: scroll a page.
+  function pageForTap(x, y) {
     // Left half is reserved for reading/selecting — no pagination there.
-    if (touch.clientX < window.innerWidth * TAP_ZONE_X_SPLIT) return;
+    if (x < window.innerWidth * TAP_ZONE_X_SPLIT) return;
 
     // Within the right half, the split is vertical: above the midpoint
     // of the reading pane scrolls up, below it scrolls down.
     const paneRect = readerScrollEl.getBoundingClientRect();
     const midY = paneRect.top + paneRect.height * TAP_ZONE_Y_SPLIT;
-    const scrollingDown = touch.clientY >= midY;
+    scrollReaderPage(y >= midY);
+  }
 
-    scrollReaderPage(scrollingDown);
-  }, { passive: true });
+  function likeFromDoubleTap() {
+    if (!window.NovelAudio.likeCurrent()) return;
+    const pop = document.getElementById('like-pop');
+    pop.classList.remove('show');
+    void pop.offsetWidth;            // restart the animation if it is still showing
+    pop.classList.add('show');
+    if (navigator.vibrate) navigator.vibrate(8);
+  }
 
   // Shared by the tap gesture above and window.scrollReaderByVolumeKey()
   // below (see that function for why it exists) — smart scroll aligns to

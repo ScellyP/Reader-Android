@@ -123,6 +123,11 @@ shows until your chapters are ready.
 | **Swipe left → right** (starting in the left half) | Open the chapter menu |
 | **Swipe right → left** | Close the menu if open, otherwise next chapter |
 | **Long-press** a paragraph | Bookmark that exact spot |
+| **Double-tap** the middle of the page | Add the current song to **Liked** (a heart pops up). It only adds, never removes, so a stray double tap can't undo a like; the heart button in the player still toggles. Works for a paused song too, and does nothing when no song is loaded |
+
+When a song is loaded, a tap in the middle of the page waits about a quarter of a
+second before it scrolls, so that a double tap doesn't scroll as well. Taps
+elsewhere scroll straight away.
 
 While any menu is open (the chapter drawer or any popup panel), page
 gestures are suspended. A tap outside an open menu only closes it — it
@@ -281,7 +286,7 @@ capitals) naming which playlist it came from.
 | Library scan (native folder scan + tags) | ✅ Working |
 | Playlists via folders (a subfolder in `Audio/` = a playlist) | ✅ Working |
 | Visible "up next" queue | ✅ Working |
-| Shuffle (real Fisher-Yates) + repeat (off / all / one) | ✅ Working |
+| Shuffle (real Fisher-Yates) + repeat (off / all / one). Tapping shuffle while nothing is playing also starts the music: a random song, then the rest in shuffled order. While a song plays it only reshuffles what comes next, and switching shuffle off never starts anything | ✅ Working |
 | Now-playing bar with artwork, seek scrubber | ✅ Working |
 | Broad format support (mp3, m4a/aac, flac, ogg, opus, wav) | ✅ Working |
 | Near-gapless playback (next track pre-buffered) | ✅ Working |

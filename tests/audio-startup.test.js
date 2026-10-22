@@ -3,49 +3,8 @@
 // happens at launch: the last song is brought back (not started, from the beginning), and music
 // starts by itself only when a Bluetooth audio device is connected.
 const assert = require('assert');
-const fs = require('fs');
-const path = require('path');
 
-const SRC = fs.readFileSync(path.join(__dirname, '../app/src/main/assets/audio-player.js'), 'utf8');
-const noop = () => {};
-const el = () => new Proxy(function () {}, {
-  get: (t, k) => (k === 'style' || k === 'classList' || k === 'dataset') ? el() :
-    (k === 'querySelector' || k === 'getElementById') ? () => null :
-    (k === 'querySelectorAll') ? () => [] : (k === Symbol.toPrimitive ? () => '' : noop),
-  set: () => true,
-});
-
-const TRACKS = ['/Novel/Audio/a.mp3', '/Novel/Audio/b.mp3', '/Novel/Audio/c.mp3']
-  .map((p, i) => ({ id: p, path: p, title: 'Song ' + i, durationSec: 100 + i, playlist: null }));
-
-// Starts the player as a fresh app launch. `saved` is the audio prefs blob left by the last run.
-function launch({ saved, bluetooth }) {
-  const store = saved ? { novelReader_audioPrefs: JSON.stringify(saved) } : {};
-  const calls = [];
-  const bridge = new Proxy({
-    scanAudioStartup: noop, scanAudio: noop,
-    isBluetoothAudioConnected: () => bluetooth,
-    nativeAudioLoad: p => calls.push('load ' + p),
-    nativeAudioPlay: () => calls.push('play'),
-  }, { get: (t, k) => (k in t ? t[k] : noop) });
-  global.window = global;
-  global.localStorage = { getItem: k => (k in store ? store[k] : null), setItem: (k, v) => { store[k] = String(v); }, removeItem: k => { delete store[k]; } };
-  global.document = { getElementById: () => el(), querySelector: () => null, querySelectorAll: () => [],
-    createElement: el, createElementNS: el, addEventListener: noop, body: el(), readyState: 'complete' };
-  global.Audio = function () { return el(); };
-  global.navigator = {};
-  global.requestAnimationFrame = noop;
-  global.AndroidBridge = bridge;
-  new Function(SRC).call(global);
-  const app = window.NovelAudio;
-  app.init();
-  return { app, state: app._state, calls, store,
-    scanFinished: tracks => app.onAudioListed(tracks || TRACKS),
-    nativeReady: () => app._switchToNative() };
-}
-
-let n = 0;
-function check(name, fn) { fn(); n++; console.log('ok -', name); }
+const { launch, check, finish, noop, TRACKS } = require('./audio-harness');
 
 check('the last song comes back as the current song, not started, from the start', () => {
   const t = launch({ saved: { lastTrackId: TRACKS[1].id }, bluetooth: false });
@@ -145,5 +104,4 @@ check('a bridge without the Bluetooth call (older app build) just does not autop
   assert.strictEqual(t.state.currentTrackId, TRACKS[1].id);   // the song still comes back
 });
 
-console.log(n + ' checks passed');
-process.exit(0);
+finish();

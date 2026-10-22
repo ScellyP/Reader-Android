@@ -2684,6 +2684,22 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
   #sp-sheet-scrim, #sp-sheet-list > * { animation: none !important; }
   #audio-play-btn, #sp-mini-play { transition: none; }
 }
+
+/* Double tap in the middle of the screen likes the current song: a heart pops and fades. */
+#like-pop {
+  position: fixed; left: 50%; top: 50%; width: 96px; height: 96px; margin: -48px 0 0 -48px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--danger, #e77a6a); opacity: 0; pointer-events: none; z-index: 9000;
+}
+#like-pop .ico { width: 100%; height: 100%; }
+#like-pop.show { animation: likeBurst .8s ease-out; }
+@keyframes likeBurst {
+  0%   { opacity: 0;  transform: scale(.4); }
+  25%  { opacity: .95; transform: scale(1.15); }
+  60%  { opacity: .95; transform: scale(1); }
+  100% { opacity: 0;  transform: scale(1.05); }
+}
+@media (prefers-reduced-motion: reduce) { #like-pop.show { animation-duration: .01s; } }
 </style>
 
 <style id="moon-theme">
@@ -3450,5 +3466,7 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
 <script src="reader.js"></script>
 <script src="color-wheel.js"></script>
 <script src="peek-mode.js"></script>
+<!-- Shown for a moment when a double tap in the middle of the screen likes the current song. -->
+<div id="like-pop" aria-hidden="true"><svg class="ico fill"><use href="#i-heart"/></svg></div>
 </body>
 </html>

@@ -334,9 +334,11 @@ window.NovelAudio = (function () {
      * to sort first alphabetically on every fresh scan or playlist
      * switch — shuffle looked like it "always played the first song"
      * because, from a fresh queue, it effectively always did. */
-    setShuffle(enabled) {
+    // keepCurrent: the current song stays first in the shuffled queue (so turning shuffle on
+    // mid-song doesn't move it). Pass false to start from a fresh random song instead.
+    setShuffle(enabled, keepCurrent = true) {
       state.shuffle = enabled;
-      const currentId = state.currentTrackId || null;
+      const currentId = keepCurrent ? (state.currentTrackId || null) : null;
 
       if (enabled) {
         const rest = this._originalOrder.filter(id => id !== currentId);
@@ -1675,9 +1677,15 @@ window.NovelAudio = (function () {
         else AudioUI.render();
       });
 
+      // Switching shuffle on while nothing is playing also starts the music: a random song first,
+      // then the rest in shuffled order. While a song is playing it only reshuffles what comes
+      // next, and switching shuffle off never starts anything.
       els.shuffleBtn.addEventListener('click', () => {
-        PlaybackQueue.setShuffle(!state.shuffle);
+        const startShuffled = !state.shuffle && !state.playing;
+        PlaybackQueue.setShuffle(!state.shuffle, !startShuffled);
         Prefs.save();
+        const first = startShuffled ? PlaybackQueue.current() : null;
+        if (first) AudioEngine.play(first);
       });
 
       els.repeatBtn.addEventListener('click', () => {
@@ -2357,6 +2365,20 @@ window.NovelAudio = (function () {
     // itself while music is playing on either engine (native or WebView).
     isPlaying() {
       return !!state.playing;
+    },
+
+    // For reader.js's double-tap: is there a current song to like?
+    hasCurrentTrack() {
+      return !!state.currentTrackId;
+    },
+
+    // Adds the current song to Liked. Unlike the heart button it never removes it, so a stray
+    // double tap can't undo a like. Returns false when there is no current song.
+    likeCurrent() {
+      if (!state.currentTrackId) return false;
+      if (!AudioFeatures.likes.isLiked()) AudioFeatures.likes.toggle();
+      AudioUI.render();
+      return true;
     },
 
     // Called by MainActivity after a hardware volume key changes the media
