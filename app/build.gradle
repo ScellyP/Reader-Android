@@ -1,0 +1,107 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    namespace 'com.scell.novelreader.redesign'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.scell.novelreader.redesign"
+        minSdk 24
+        targetSdk 34
+        // Every GitHub Actions run has a higher number than the last, so each
+        // new APK is a valid *update* over the installed one (Android refuses
+        // to install an APK whose versionCode is lower than the installed one).
+        def runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInteger()
+        versionCode runNumber
+        versionName "1.0.${runNumber}"
+    }
+
+    // The signing key is NOT stored in the repo. Android only lets a new APK
+    // update an installed app when both are signed with the SAME key, so CI
+    // supplies it through four environment variables (filled from the GitHub
+    // secrets by .github/workflows/build-apk.yml):
+    //   ANDROID_KEYSTORE_PATH      path of the decoded keystore file
+    //   ANDROID_KEYSTORE_PASSWORD  keystore password
+    //   ANDROID_KEY_ALIAS          key alias
+    //   ANDROID_KEY_PASSWORD       key password
+    // If any of them is missing (e.g. a build from Android Studio), the build
+    // falls back to Android's default debug key: that APK installs, but it
+    // cannot update an app that was installed from a build signed with the
+    // real key (see "Signing and updates" in README.md).
+    def signingPath = System.getenv("ANDROID_KEYSTORE_PATH")
+    def signingStorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
+    def signingAlias = System.getenv("ANDROID_KEY_ALIAS")
+    def signingKeyPassword = System.getenv("ANDROID_KEY_PASSWORD")
+    def hasSharedKey = signingPath && signingStorePassword && signingAlias && signingKeyPassword &&
+            file(signingPath).isFile()
+
+    signingConfigs {
+        if (hasSharedKey) {
+            shared {
+                storeFile file(signingPath)
+                storePassword signingStorePassword
+                keyAlias signingAlias
+                keyPassword signingKeyPassword
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig hasSharedKey ? signingConfigs.shared : signingConfigs.debug
+        }
+        release {
+            signingConfig hasSharedKey ? signingConfigs.shared : signingConfigs.debug
+            // R8 removes unused code and optimises the rest. It does NOT rename
+            // anything (-dontobfuscate in proguard-rules.pro), so stack traces in
+            // crash_log.txt stay readable. Resource shrinking is not enabled.
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    implementation 'androidx.activity:activity-ktx:1.9.2'
+    implementation 'androidx.documentfile:documentfile:1.0.1'
+    implementation 'androidx.core:core-ktx:1.13.1'
+
+    // Serves the app's own page from an https origin
+    // (https://appassets.androidplatform.net/) instead of file:// — see
+    // MainActivity.kt's WebViewAssetLoader setup. 1.11.0 builds against
+    // compileSdk 34, matching this project.
+    implementation 'androidx.webkit:webkit:1.11.0'
+
+    // Real background audio playback (PlaybackService.kt): ExoPlayer for
+    // decoding/playback, media3-session for the MediaSession that gives
+    // us the system media notification, lock-screen transport controls,
+    // and audio-focus/headset handling for free.
+    //
+    // PINNED TO 1.4.1 DELIBERATELY — newer media3 releases raise the
+    // *minimum compileSdk* their AAR metadata demands (1.10.1 requires
+    // compileSdk 36; this project builds against compileSdk 34, and AGP
+    // 8.5.2 doesn't support going past 34 anyway), which fails the build
+    // at the `checkDebugAarMetadata` task before a single line of Kotlin
+    // even compiles. 1.4.1 is confirmed to require only compileSdk 34 —
+    // an exact match. All the APIs this project actually uses
+    // (MediaSessionService, MediaSession, MediaController, ForwardingPlayer,
+    // the COMMAND_SEEK_TO_*_MEDIA_ITEM commands) have been stable since
+    // early 1.x, so nothing here needed to change to support the
+    // downgrade. If you bump this later, bump compileSdk/targetSdk (and
+    // check AGP's supported range) in the same change, or you'll hit
+    // this exact failure again.
+    implementation 'androidx.media3:media3-exoplayer:1.4.1'
+    implementation 'androidx.media3:media3-session:1.4.1'
+}

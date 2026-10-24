@@ -1,0 +1,8 @@
+# Never commit signing keys
+*.keystore
+*.jks
+local.properties
+/build
+/app/build
+.gradle/
+/KEYS DO NOT PUSH OR SHARE/
