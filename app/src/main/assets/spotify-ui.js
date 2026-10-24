@@ -18,6 +18,41 @@
 (function () {
   'use strict';
 
+  /* =======================================================================
+     Home screen model: pure functions, tested in tests/spotify-home.test.js
+     ======================================================================= */
+
+  const QUICK_TILE_COUNT = 6;
+  // The player's built-in lists get their own shelf; everything else (folders, your own playlists) is "Constellations".
+  const MADE_FOR_YOU = ['all', '@recent', '@liked'];
+  const MADE_FOR_YOU_NOTES = { all: 'Your whole sky', '@recent': 'What you played lately', '@liked': 'Songs you hearted' };
+
+  function greetingForHour(hour) {
+    if (hour >= 5 && hour < 12) return 'Good morning';
+    if (hour >= 12 && hour < 18) return 'Good afternoon';
+    if (hour >= 18 && hour < 22) return 'Good evening';
+    return 'Good night';
+  }
+
+  // rows: [{ name, title, count }] in the order the player lists them.
+  function planHome(rows) {
+    return {
+      tiles: rows.slice(0, QUICK_TILE_COUNT),
+      made: MADE_FOR_YOU.map((name) => rows.find((row) => row.name === name)).filter(Boolean),
+      lists: rows.filter((row) => MADE_FOR_YOU.indexOf(row.name) === -1),
+    };
+  }
+
+  // The small line under a card's name.
+  function captionFor(row) {
+    if (MADE_FOR_YOU_NOTES[row.name]) return MADE_FOR_YOU_NOTES[row.name];
+    const songs = parseInt(row.count, 10);
+    if (!songs) return 'No songs yet';
+    return songs + (songs === 1 ? ' song' : ' songs');
+  }
+
+  if (typeof module !== 'undefined' && module.exports) module.exports = { greetingForHour, planHome, captionFor };
+
   const $ = (id) => document.getElementById(id);
 
   const panel = $('audio-panel');
@@ -615,6 +650,7 @@
   /* ---------- applying covers to rows ---------- */
 
   function setRowCover(row, url) {
+    updateHomeCover(row.getAttribute('data-playlist-name'), url);
     if (url) {
       row.style.setProperty('--sp-cover', 'url("' + url + '")');
       row.setAttribute('data-sp-cover', '1');
@@ -694,7 +730,25 @@
     return signature;
   }
 
+  /**
+   * A rescan makes audio-player.js rebuild every playlist row from scratch, and the new rows
+   * have no cover. The library usually hasn't changed, so the check below would see nothing to
+   * do and the covers would stay gone: put back the last cover made for each playlist right away.
+   */
+  function restoreRowCovers() {
+    if (!el.playlistList) return;
+    el.playlistList.querySelectorAll('li[data-playlist-name]').forEach((row) => {
+      const url = coverUrlByName[row.getAttribute('data-playlist-name')];
+      if (url && !row.hasAttribute('data-sp-cover')) {
+        row.style.setProperty('--sp-cover', 'url("' + url + '")');
+        row.setAttribute('data-sp-cover', '1');
+      }
+    });
+  }
+
   function scheduleMosaics() {
+    restoreRowCovers();
+
     // Only redo the work when the library or the rows' contents changed.
     const signature = getLibrarySignature();
     if (signature === lastLibrarySignature && !mosaicPassRequested) return;
@@ -703,6 +757,201 @@
     clearTimeout(mosaicTimer);
     mosaicTimer = setTimeout(runMosaicPass, COVER_DEBOUNCE_MS);
   }
+
+
+  /* =======================================================================
+     Home: quick-access tiles and shelves
+     -----------------------------------------------------------------------
+     Built from the player's own playlist rows. Those rows stay in the page
+     (hidden) because audio-player.js drives the selection through them, so a
+     tap on a tile or card is simply forwarded to its row.
+     ======================================================================= */
+
+  const home = {
+    root: $('sp-view-library'),
+    greeting: $('sp-greeting'),
+    grid: $('sp-home-grid'),
+    made: $('sp-shelf-made'),
+    madeRow: $('sp-shelf-made-row'),
+    lists: $('sp-shelf-lists'),
+    listsRow: $('sp-shelf-lists-row'),
+  };
+
+  let homeSignature = '';
+  const coverUrlByName = {};   // playlist name -> mosaic data: URL, kept across row rebuilds
+
+  function readPlaylistRows() {
+    if (!el.playlistList) return [];
+    return Array.from(el.playlistList.querySelectorAll('li[data-playlist-name]')).map((row, index) => {
+      const name = row.getAttribute('data-playlist-name');
+      return {
+        name,
+        title: textOf(row.querySelector('.pl-name')),
+        count: textOf(row.querySelector('.pl-count')),
+        custom: name.indexOf('@list:') === 0,
+        tone: index % 4,
+      };
+    });
+  }
+
+  function findRow(name) {
+    if (!el.playlistList) return null;
+    return Array.from(el.playlistList.querySelectorAll('li[data-playlist-name]'))
+      .find((row) => row.getAttribute('data-playlist-name') === name) || null;
+  }
+
+  function setCoverUrl(node, url) {
+    if (url) {
+      node.style.setProperty('--sp-cover', 'url("' + url + '")');
+      node.setAttribute('data-sp-cover', '1');
+    } else {
+      node.style.removeProperty('--sp-cover');
+      node.removeAttribute('data-sp-cover');
+    }
+  }
+
+  /** The mosaic pass finished a row: show its new cover wherever that playlist appears. */
+  function updateHomeCover(name, url) {
+    coverUrlByName[name] = url || '';
+    if (!home.root) return;
+    home.root.querySelectorAll('[data-sp-playlist]').forEach((node) => {
+      if (node.getAttribute('data-sp-playlist') !== name) return;
+      const cover = node.querySelector('.sp-cover');
+      if (cover) setCoverUrl(cover, url);
+    });
+  }
+
+  function makeElement(tag, className, text) {
+    const node = document.createElement(tag);
+    node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function makeIcon(iconId) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'ico');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', '#' + iconId);
+    svg.appendChild(use);
+    return svg;
+  }
+
+  function makeCover(tone, iconId, url) {
+    const cover = makeElement('span', 'sp-cover');
+    cover.setAttribute('data-tone', String(tone));
+    cover.appendChild(makeIcon(iconId));
+    setCoverUrl(cover, url);
+    return cover;
+  }
+
+  function makeButton(className, label) {
+    const button = makeElement('button', className);
+    button.type = 'button';
+    if (label) button.setAttribute('aria-label', label);
+    return button;
+  }
+
+  function makeTile(item) {
+    const tile = makeButton('sp-tile', item.title);
+    tile.setAttribute('data-sp-playlist', item.name);
+    tile.appendChild(makeCover(item.tone, 'i-moon-music', coverUrlByName[item.name]));
+    tile.appendChild(makeElement('span', 'sp-tile-name', item.title));
+    return tile;
+  }
+
+  function makeCard(item) {
+    const card = makeElement('div', 'sp-card');
+    card.setAttribute('data-sp-playlist', item.name);
+    const main = makeButton('sp-card-main', item.title);
+    main.appendChild(makeCover(item.tone, 'i-moon-music', coverUrlByName[item.name]));
+    main.appendChild(makeElement('span', 'sp-card-name', item.title));
+    main.appendChild(makeElement('span', 'sp-card-sub', captionFor(item)));
+    card.appendChild(main);
+    if (item.custom) {
+      const remove = makeButton('sp-card-del', 'Delete playlist');
+      remove.appendChild(makeIcon('i-trash'));
+      card.appendChild(remove);
+    }
+    return card;
+  }
+
+  function makeNewPlaylistCard() {
+    const card = makeElement('div', 'sp-card sp-card-new');
+    card.setAttribute('data-sp-new', '1');
+    const main = makeButton('sp-card-main', 'New playlist');
+    main.appendChild(makeCover(0, 'i-plus'));
+    main.appendChild(makeElement('span', 'sp-card-name', 'New playlist'));
+    card.appendChild(main);
+    return card;
+  }
+
+  function fill(container, children) {
+    container.textContent = '';
+    children.forEach((child) => container.appendChild(child));
+  }
+
+  function rebuildHome(items) {
+    const plan = planHome(items);
+    fill(home.grid, plan.tiles.map(makeTile));
+    fill(home.madeRow, plan.made.map(makeCard));
+    home.made.hidden = plan.made.length === 0;
+    fill(home.listsRow, plan.lists.map(makeCard).concat(makeNewPlaylistCard()));
+    home.lists.hidden = false;
+  }
+
+  function syncHome() {
+    if (!home.grid || !home.madeRow || !home.listsRow) return;
+
+    const greeting = greetingForHour(new Date().getHours());
+    if (home.greeting && home.greeting.textContent !== greeting) home.greeting.textContent = greeting;
+
+    const items = readPlaylistRows();
+    const signature = items.map((item) => item.name + '\u0001' + item.title + '\u0001' + item.count).join('\u0002');
+    if (signature !== homeSignature) {
+      homeSignature = signature;
+      rebuildHome(items);
+    }
+
+    // Which playlist is selected: follows the player's row, so it stays right when the selection changes elsewhere.
+    const selected = el.playlistList && el.playlistList.querySelector('li.active');
+    const selectedName = selected ? selected.getAttribute('data-playlist-name') : '';
+    home.root.querySelectorAll('[data-sp-playlist]').forEach((node) => {
+      node.classList.toggle('active', node.getAttribute('data-sp-playlist') === selectedName);
+    });
+  }
+
+  if (home.root) home.root.addEventListener('click', (event) => {
+    const target = event.target.closest ? event.target : null;
+    if (!target) return;
+
+    // "New playlist": the name box lives in the Now playing view, so go there to type it.
+    if (target.closest('[data-sp-new]')) {
+      const newRow = el.playlistList && el.playlistList.querySelector('li.pl-new');
+      if (newRow) { newRow.click(); setView('track'); }
+      return;
+    }
+
+    const holder = target.closest('[data-sp-playlist]');
+    const row = holder ? findRow(holder.getAttribute('data-sp-playlist')) : null;
+    if (!row) return;
+
+    // Delete: the player's own two-tap confirm (first tap arms it, the second deletes).
+    const remove = target.closest('.sp-card-del');
+    if (remove) {
+      const rowDelete = row.querySelector('.pl-del');
+      if (rowDelete) {
+        rowDelete.click();
+        remove.classList.toggle('confirm', rowDelete.classList.contains('confirm'));
+        setTimeout(() => remove.classList.remove('confirm'), 2500);
+      }
+      return;
+    }
+
+    // Choosing a playlist: the row applies the selection, and the document-level handler
+    // below then opens its song list.
+    row.click();
+  });
 
   /* =======================================================================
      Mirroring the player's state into the kit's UI
@@ -833,6 +1082,7 @@
     updateTint();
     scheduleMosaics();
     syncLibraryStats();
+    syncHome();
     syncSheet(state);
   }
 
@@ -868,5 +1118,6 @@
 
   setInterval(updateMiniProgress, PROGRESS_INTERVAL_MS);
 
-  setView('album');
+  setView('library');
+  scheduleSync();
 })();

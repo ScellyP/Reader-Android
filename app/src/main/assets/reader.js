@@ -1344,16 +1344,47 @@
      this file). reader.js owns only the open/close behaviour, so the
      player stays a self-contained module you can keep building on
      without touching the reader. */
-  [audioToggleBtn, audioToggleTopBtn].forEach(btn => {
-    if (!btn) return;
-    btn.addEventListener('click', () => {
-      togglePanel(audioPanel, () => {
-        if (window.NovelAudio && window.NovelAudio.onPanelOpened) {
-          window.NovelAudio.onPanelOpened();
-        }
-      });
+  function toggleAudioPanel() {
+    togglePanel(audioPanel, () => {
+      if (window.NovelAudio && window.NovelAudio.onPanelOpened) {
+        window.NovelAudio.onPanelOpened();
+      }
     });
+  }
+
+  [audioToggleBtn, audioToggleTopBtn].forEach(btn => {
+    if (btn) btn.addEventListener('click', toggleAudioPanel);
   });
+
+  // Swipe up on the chapter switcher (the Previous / Next bar under the chapter text) to open
+  // the music player. Only a mostly-vertical upward drag counts, so tapping Previous or Next
+  // and ordinary scrolling are unaffected.
+  (function () {
+    const bar = document.getElementById('bottom-nav');
+    if (!bar) return;
+    const SWIPE_UP_MIN_PX = 40;
+    const SWIPE_UP_MIN_ANGLE_DEG = 55;       // from horizontal: steeper than this is "up"
+    let startX = 0, startY = 0, tracking = false;
+
+    bar.addEventListener('touchstart', (e) => {
+      tracking = e.touches.length === 1;
+      if (!tracking) return;
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+    }, { passive: true });
+
+    bar.addEventListener('touchend', (e) => {
+      if (!tracking) return;
+      tracking = false;
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - startX, dy = touch.clientY - startY;
+      const angle = Math.atan2(Math.abs(dy), Math.abs(dx)) * 180 / Math.PI;
+      if (dy <= -SWIPE_UP_MIN_PX && angle >= SWIPE_UP_MIN_ANGLE_DEG && audioPanel.classList.contains('hidden')) {
+        toggleAudioPanel();
+      }
+    }, { passive: true });
+    bar.addEventListener('touchcancel', () => { tracking = false; }, { passive: true });
+  })();
 
   closeOnOutsideClick(audioPanel, ['#audio-toggle', '#audio-toggle-top']);
 

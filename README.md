@@ -219,8 +219,9 @@ library heading and the status strip. Stars and ornaments follow your reading
 colours and switch off when Android's "reduce motion" is on.
 
 The music player is themed too: songs without cover art get a moonlit-sky
-cover, the Library shows today's real moon with its phase underneath,
-playlists are "Constellations" and the rescan button is "Scan the sky". The
+cover, today's real moon and its phase sit at the top of the music player's
+Home screen, playlists are "Constellations" and the rescan button is "Scan the
+sky". The
 current chapter is marked with a crescent, slider thumbs glow like a little
 moon, and the app icon and the music notification icon are a crescent moon.
 
@@ -323,6 +324,25 @@ capitals) naming which playlist it came from.
 | --- | --- | --- |
 | Audio delay/sync adjustment | 🟡 Currently Testing | It only stores an offset and nothing uses it. |
 | Search box for the music library | ⚪ Not added | Only the chapter list has a search box today. |
+
+### The music player's Home screen
+
+The 🎧 panel opens on **Home**, laid out like a streaming app's home tab:
+
+- A greeting that follows the time of day (Good morning / afternoon / evening / night),
+  with today's moon, the Constellations and Stars counts, and **Scan the sky** in a slim
+  strip under it.
+- **Quick-access tiles**: the first six playlists as small cover-and-name tiles, two
+  per row.
+- **Made for you**: a shelf of big covers for All songs, Recently played and Liked.
+- **Constellations**: a shelf for your folders and your own playlists, ending in a
+  **New playlist** card. Your own playlists have a small bin button (tap twice to delete).
+
+Shelves scroll sideways. Tapping any tile or card opens that playlist's song list. The
+bottom bar is **Home / Songs / Now playing**.
+
+**Swipe up on Previous / Next** (the chapter switcher under the chapter text) to open the
+music player.
 
 ## Library (novel selector)
 

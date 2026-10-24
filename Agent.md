@@ -10,7 +10,7 @@ Key files:
 - `app/src/main/assets/index.html` — main app UI.
 - `app/src/main/assets/reader.js` — reading UI, gestures.
 - `app/src/main/assets/audio-player.js` — audio UI, queue, engines, audio feature framework.
-- `app/src/main/assets/spotify-ui.js` — Spotify-kit music panel glue: switches the library / songs / now-playing views, mirrors player state into the mini player and "..." sheet. Styles are the `spotify-kit` block in `index.html`; `audio-player.js` is untouched apart from two-line queue rows.
+- `app/src/main/assets/spotify-ui.js` — Spotify-kit music panel glue: switches the library (shown as **Home**) / songs / now-playing views, mirrors player state into the mini player and "..." sheet, and builds the Home screen (greeting, quick tiles, shelves) from the player's own playlist rows, which stay in the page, hidden — every tap on a tile/card is forwarded to its row (`row.click()`), so `audio-player.js` still owns all selection logic. The panel opens on Home. The pure helpers (`greetingForHour`, `planHome`, `captionFor`) are exported for the tests. Playlist covers are remembered per playlist name (`coverUrlByName`) and put straight back on rebuilt rows (`restoreRowCovers`): a rescan rebuilds every row without a cover, and the cover pass used to skip the work when the library looked unchanged, so the thumbnails vanished. Styles are the `spotify-kit` block in `index.html`; `audio-player.js` is untouched apart from two-line queue rows.
 - `app/src/main/assets/settings-file.js` — mirrors settings to `/storage/emulated/0/Novel/settings.txt`.
 - `app/src/main/assets/version.js` — `APP_VERSION`.
 - `app/src/main/assets/color-wheel.js` — Page/Text colour wheel.
@@ -21,6 +21,7 @@ Key files:
 - `AdaptiveBrightness.kt` — the "Adaptive brightness" setting: light sensor → this window's brightness (log curve, smoothed). The Kotlin was written without being compiled or run; test it on a device.
 - `NativeCrossfade.kt` — native crossfade: two ExoPlayers, equal-power ramp, session hand-over.
 - `ReplayGainReader.kt` — reads ReplayGain tags from the file bytes (pure `java.io`, testable on a plain JVM).
+- `tests/spotify-home.test.js` — the Home screen (greeting, tile/shelf plan, tap forwarding, delete confirm, covers; 11 checks) and `tests/spotify-covers.test.js` (covers survive a rescan; 3 checks), both on `tests/spotify-harness.js`, a small fake page for `spotify-ui.js`
 - `tests/audio-gestures.test.js` — shuffle-starts-playing and `likeCurrent()` (8 checks; run with `node tests/audio-gestures.test.js`)
 - `tests/audio-harness.js` — shared by the audio tests: boots `audio-player.js` with stubbed globals and a fake Android bridge
 - `tests/audio-startup.test.js` — last-song restore and Bluetooth start-up (11 checks, with a fake Android bridge; run with `node tests/audio-startup.test.js`)
@@ -156,6 +157,7 @@ top-of-file comment for the architecture, and `PlaybackService.kt` /
 | Visible "up next" queue | **Working** |
 | Shuffle (real Fisher-Yates) + repeat (off / all / one) | **Working** — tapping shuffle (either shuffle button) while nothing plays turns it on *and* starts a random song (`setShuffle(true, false)` so a paused/remembered song is not pinned first); while playing it only reshuffles; turning it off never starts anything |
 | Double-tap to like | **Working** — `reader.js` (touchend handler): two taps within 280 ms and 48 px in the middle 40% × 40% of the reading pane call `NovelAudio.likeCurrent()` (add-only) and show the `#like-pop` heart. The first tap there is held back 280 ms so the double tap doesn't also scroll the page; this delay applies only while a song is current (`hasCurrentTrack()`). **The gesture wiring in `reader.js` is not covered by a test** (only the player half is); try it on a device |
+| Swipe up on the chapter switcher | **Working** — `reader.js`: an upward drag of at least 40 px, steeper than 55° from horizontal, that starts on `#bottom-nav` (the Previous / Next bar under the text) opens the music panel (`toggleAudioPanel()`, only when it is closed). Taps on Previous / Next are unaffected. **Not covered by a test** — try it on a device |
 | Now-playing bar with artwork, seek scrubber | **Working** |
 | Crossfade between tracks | **Working**⁵ — 🎧 panel → Crossfade slider, 1–12 s (native engine: built, see footnote) |
 | Recently played / liked tracks | **Working** — heart button on the now-playing card; "Recently played" and "Liked" in the Library |

@@ -2884,6 +2884,73 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
   .sky .shoot { display: none; }
 }
 </style>
+<style id="sp-home">
+/* =========================================================================
+   Music panel, main screen ("Home"): a greeting, quick-access tiles, and
+   shelves of big covers that scroll sideways. Built by spotify-ui.js from the
+   player's own playlist rows (#audio-playlist-list), which stay in the page
+   but hidden: every tap here is forwarded to the matching row.
+   ========================================================================= */
+#sp-greeting { margin: 0; padding-left: 8px; font: 700 24px/1.2 var(--font-ui); letter-spacing: .2px; color: var(--text); }
+
+/* Today's moon, now a slim strip under the greeting */
+#sp-lib-hero { display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: auto auto; column-gap: 12px; row-gap: 2px;
+  align-items: center; justify-items: start; padding: 4px 20px 16px; }
+#sp-lib-avatar { grid-column: 1; grid-row: 1 / span 2; width: 48px; height: 48px; }
+#sp-lib-avatar .moon-badge.big { width: 30px; height: 30px; }
+#sp-lib-phase { grid-column: 2; grid-row: 1; margin: 0; text-align: left; align-self: end; }
+#sp-lib-stats { grid-column: 2; grid-row: 2; margin: 0; gap: 14px; justify-content: flex-start; align-self: start; }
+#sp-lib-stats div { flex-direction: row; align-items: baseline; gap: 5px; }
+#audio-scan-btn { grid-column: 3; grid-row: 1 / span 2; justify-self: end; }
+
+/* The player's own list stays in the page (it holds the selection logic) but is not shown here. */
+#sp-view-library #audio-playlist-list, #sp-view-library #audio-playlist-list.hidden { display: none !important; }
+
+/* Quick access: two columns of small cover + name tiles */
+#sp-home-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 14px 6px; }
+.sp-tile { display: flex; align-items: center; min-width: 0; height: 56px; padding: 0; overflow: hidden; border: 0; border-radius: 6px;
+  background: color-mix(in srgb, var(--text) 9%, transparent); color: var(--text); text-align: left; cursor: pointer;
+  transition: transform .15s var(--ease), background .15s ease; }
+.sp-tile:active { transform: scale(.97); background: color-mix(in srgb, var(--text) 14%, transparent); }
+.sp-tile .sp-cover { width: 56px; height: 56px; }
+.sp-tile-name { flex: 1; min-width: 0; padding: 0 10px; font: 700 13px/1.25 var(--font-ui);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.sp-tile.active .sp-tile-name, .sp-card.active .sp-card-name { color: var(--sp-accent); }
+
+/* Covers: the playlist's real art when there is some, otherwise a theme-coloured mosaic */
+.sp-cover { --c1: color-mix(in srgb, var(--accent) 55%, var(--bg)); --c2: color-mix(in srgb, var(--accent) 22%, var(--bg));
+  --c3: color-mix(in srgb, var(--accent) 38%, var(--bg)); --c4: color-mix(in srgb, var(--accent) 12%, var(--bg));
+  display: flex; flex: none; align-items: center; justify-content: center; color: color-mix(in srgb, var(--text) 75%, transparent);
+  background: linear-gradient(var(--sp-bg), var(--sp-bg)) center / 1px 100% no-repeat, linear-gradient(var(--sp-bg), var(--sp-bg)) center / 100% 1px no-repeat,
+    conic-gradient(var(--c1) 0 25%, var(--c2) 0 50%, var(--c3) 0 75%, var(--c4) 0); }
+.sp-cover[data-tone="1"] { --c1: color-mix(in srgb, var(--accent) 40%, var(--bg)); --c2: color-mix(in srgb, var(--accent) 60%, var(--bg)); --c3: color-mix(in srgb, var(--accent) 16%, var(--bg)); --c4: color-mix(in srgb, var(--accent) 30%, var(--bg)); }
+.sp-cover[data-tone="2"] { --c1: color-mix(in srgb, var(--accent) 24%, var(--bg)); --c2: color-mix(in srgb, var(--accent) 48%, var(--bg)); --c3: color-mix(in srgb, var(--accent) 64%, var(--bg)); --c4: color-mix(in srgb, var(--accent) 10%, var(--bg)); }
+.sp-cover[data-tone="3"] { --c1: color-mix(in srgb, var(--accent) 50%, var(--bg)); --c2: color-mix(in srgb, var(--accent) 18%, var(--bg)); --c3: color-mix(in srgb, var(--accent) 34%, var(--bg)); --c4: color-mix(in srgb, var(--accent) 62%, var(--bg)); }
+.sp-cover[data-sp-cover] { background: var(--sp-cover) center / cover no-repeat; }
+.sp-cover[data-sp-cover] > .ico { display: none; }
+.sp-cover .ico { width: 40%; height: 40%; }
+
+/* Shelves: a heading, then covers that scroll sideways */
+.sp-shelf { padding: 16px 0 4px; }
+.sp-shelf[hidden] { display: none; }
+.sp-shelf > h2 { margin: 0; padding: 0 20px 10px; font: 700 20px/1.2 var(--font-ui); letter-spacing: .2px; color: var(--text); }
+.sp-shelf-row { display: flex; gap: 12px; padding: 0 20px 8px; overflow-x: auto; overscroll-behavior-x: contain; scrollbar-width: none; scroll-snap-type: x proximity; }
+.sp-shelf-row::-webkit-scrollbar { display: none; }
+.sp-card { position: relative; flex: 0 0 138px; scroll-snap-align: start; }
+.sp-card-main { display: flex; flex-direction: column; align-items: stretch; gap: 8px; width: 100%; padding: 0; border: 0; background: none;
+  color: var(--text); text-align: left; cursor: pointer; transition: transform .15s var(--ease); }
+.sp-card-main:active { transform: scale(.97); }
+.sp-card .sp-cover { width: 138px; height: 138px; border-radius: 4px; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+.sp-card .sp-cover .ico { width: 34%; height: 34%; }
+.sp-card-name { font: 700 14px/1.25 var(--font-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-card-sub { margin-top: -4px; font: 400 12px/1.35 var(--font-ui); color: var(--sp-sub); }
+.sp-card-del { position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+  padding: 0; border: 0; border-radius: 50%; background: rgba(0,0,0,.55); color: #fff; cursor: pointer; }
+.sp-card-del .ico { width: 16px; height: 16px; }
+.sp-card-del.confirm { background: var(--danger, #e77a6a); }
+.sp-card-new .sp-cover { background: none; border: 1.5px dashed color-mix(in srgb, var(--text) 35%, transparent); box-shadow: none; }
+.sp-card-new .sp-cover .ico { width: 30%; height: 30%; }
+</style>
 </head>
 <body>
 <!-- Icon sprite: 24x24 grid, 1.75px stroke, round caps/joins (set in .ico). -->
@@ -2916,7 +2983,7 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
   <symbol id="i-playlist-add" viewBox="0 0 24 24"><path d="M4.5 7h10M4.5 12h6.5M4.5 17h6.5"/><path d="M17.5 12.5v6M14.5 15.5h6"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M5 7h14M9.5 7V5h5v2M7 7l.8 12.2h8.4L17 7"/></symbol>
   <symbol id="sp-more" viewBox="0 0 24 24"><path d="M5.5 12h.01M12 12h.01M18.5 12h.01" stroke-width="3"/></symbol>
-  <symbol id="sp-library" viewBox="0 0 24 24"><path d="M5 4.5v15M10 4.5v15M14.5 6.5l4.6 12.5"/></symbol>
+  <symbol id="sp-home" viewBox="0 0 24 24"><path d="M4.5 11.2 12 4.5l7.5 6.7v8.3h-5v-5.3h-5v5.3h-5z"/></symbol>
   <symbol id="sp-moon" viewBox="0 0 24 24"><path d="M20 14.6A8 8 0 0 1 9.4 4a8 8 0 1 0 10.6 10.6Z"/></symbol>
   <symbol id="sp-play-solid" viewBox="0 0 24 24"><path d="M8 5.3v13.4a.6.6 0 0 0 .9.5l10.9-6.7a.6.6 0 0 0 0-1L8.9 4.8a.6.6 0 0 0-.9.5Z"/></symbol>
   <symbol id="sp-pause-solid" viewBox="0 0 24 24"><rect x="6.5" y="5" width="4" height="14" rx="1"/><rect x="13.5" y="5" width="4" height="14" rx="1"/></symbol>
@@ -3183,7 +3250,7 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
         <!-- ============ LIBRARY (kit: "User Library") ============ -->
         <section id="sp-view-library" class="sp-view" aria-label="Library">
           <div class="sp-topbar">
-            <span></span>
+            <h1 id="sp-greeting"></h1>
             <button type="button" class="sp-icon-btn" data-close-panel title="Close" aria-label="Close music"><svg class="ico"><use href="#i-close"/></svg></button>
           </div>
           <div id="sp-lib-hero">
@@ -3195,7 +3262,15 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
               <div><b id="sp-stat-songs">0</b><span>STARS</span></div>
             </div>
           </div>
-          <div id="audio-playlists-heading">Constellations</div>
+          <div id="sp-home-grid" aria-label="Quick access"></div>
+          <section id="sp-shelf-made" class="sp-shelf" hidden>
+            <h2>Made for you</h2>
+            <div id="sp-shelf-made-row" class="sp-shelf-row"></div>
+          </section>
+          <section id="sp-shelf-lists" class="sp-shelf" hidden>
+            <h2 id="audio-playlists-heading">Constellations</h2>
+            <div id="sp-shelf-lists-row" class="sp-shelf-row"></div>
+          </section>
           <!-- Playlist selector. The old dropdown button stays in the DOM
                because audio-player.js drives it (label/count/swipe); the kit
                hides it and shows the list as rows. Selecting an item never
@@ -3345,7 +3420,7 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
 
       <!-- ============ Bottom navigation ============ -->
       <nav id="sp-nav" aria-label="Music navigation">
-        <button type="button" data-sp-view="library"><svg class="ico"><use href="#sp-library"/></svg><span>Library</span></button>
+        <button type="button" data-sp-view="library"><svg class="ico"><use href="#sp-home"/></svg><span>Home</span></button>
         <button type="button" data-sp-view="album"><svg class="ico"><use href="#i-moon-music"/></svg><span>Songs</span></button>
         <button type="button" data-sp-view="track"><svg class="ico"><use href="#i-headphones"/></svg><span>Now playing</span></button>
       </nav>
