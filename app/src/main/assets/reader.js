@@ -1276,7 +1276,9 @@
     if (e.target.closest('[data-close-panel]')) closeAllPanels();
   });
 
-  /* Swipe the music panel left-to-right to close it, like its ✕ button.
+  /* Swipe the music panel sideways to switch tabs (Home / Songs / Now playing / Download):
+     right-to-left goes to the tab on the right, left-to-right to the one on the left, and
+     nothing happens past either end. (Closing the panel is the ✕ button, Back, or a tap outside.)
      It only counts as a swipe when the finger moves mostly sideways, far and
      quickly enough, so scrolling the lists, dragging the seek/volume sliders
      and tapping are all unaffected. */
@@ -1288,8 +1290,9 @@
     // True when the touch started somewhere that needs sideways drags itself.
     function ownsHorizontalDrag(target) {
       for (let el = target; el && el !== audioPanel; el = el.parentElement) {
-        if (el.matches && el.matches('input, textarea, select, #sp-sheet')) return true;
-        if (el.scrollWidth > el.clientWidth + 1 && el.scrollLeft > 0) {
+        if (el.matches && el.matches('input, textarea, select, #sp-sheet, #audio-playlist-btn')) return true;
+        // A row that scrolls sideways (the shelves on Home) keeps the drag, wherever it is scrolled to.
+        if (el.scrollWidth > el.clientWidth + 1) {
           const ox = getComputedStyle(el).overflowX;
           if (ox === 'auto' || ox === 'scroll') return true;
         }
@@ -1312,8 +1315,8 @@
       tracking = false;
       const t = e.changedTouches[0];
       const dx = t.clientX - sx, dy = t.clientY - sy;
-      if (dx >= MIN_DX && Math.abs(dy) <= dx * 0.6 && Date.now() - st <= MAX_MS) {
-        closeAllPanels();
+      if (Math.abs(dx) >= MIN_DX && Math.abs(dy) <= Math.abs(dx) * 0.6 && Date.now() - st <= MAX_MS) {
+        if (window.SpotifyUI && window.SpotifyUI.stepView) window.SpotifyUI.stepView(dx < 0 ? 1 : -1);
       }
     }, { passive: true });
     audioPanel.addEventListener('touchcancel', () => { tracking = false; }, { passive: true });

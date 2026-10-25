@@ -90,7 +90,7 @@ function makeRow(name, title, count, { active = false } = {}) {
 const makeNewPlaylistRow = () => { const row = new FakeNode('li'); row.className = 'pl-new'; return row; };
 
 // Loads spotify-ui.js. `rows` are the player's playlist rows; `tracks` its library.
-function boot({ tracks = [], withArt = true } = {}) {
+function boot({ tracks = [], withArt = true, getArtwork = null } = {}) {
   const list = new FakeNode('ul');
   const named = {};
   ['audio-panel', 'sp-view-library', 'sp-greeting', 'sp-home-grid', 'sp-shelf-made', 'sp-shelf-made-row',
@@ -120,7 +120,7 @@ function boot({ tracks = [], withArt = true } = {}) {
   global.MutationObserver = function (cb) { observers.push(cb); this.observe = noop; };
   global.requestAnimationFrame = fn => setTimeout(fn, 0);
   global.setInterval = noop;
-  global.AndroidBridge = { getArtwork: p => (withArt ? 'data:image/png;art-' + p : '') };
+  global.AndroidBridge = { getArtwork: getArtwork || (p => (withArt ? 'data:image/png;art-' + p : '')) };
   global.NovelAudio = { _state: { tracks }, features: { selectionFor: () => null } };
   new Function(SRC).call(global);
 

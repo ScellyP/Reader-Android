@@ -247,9 +247,15 @@ system volume panel or the slider) the music pauses, and it carries on when
 you turn the volume back up. Only a pause caused by muting is undone: if you
 paused it yourself, raising the volume won't start it again.
 
-**Swipe to close.** Swipe the music panel from left to right to close it, the
-same as its ✕ button. Dragging the sliders, scrolling the lists and the track
-options sheet are not affected.
+**Swipe between tabs.** Swipe the music panel sideways to move between its tabs
+(Home, Songs, Now playing, Download): swipe right-to-left for the tab on the right,
+left-to-right for the one on the left. Nothing happens past the first or last tab.
+Dragging the sliders, scrolling the lists, the shelves on Home (they scroll sideways
+themselves), the playlist button (its own swipe changes playlist) and the track options
+sheet are not affected. The panel closes with its ✕ button, Back, or a tap outside it.
+
+**No text selection.** Text in the music player can't be selected or copied (a long
+press does nothing); only the boxes you type in, such as the song links, can.
 
 > **Note:** the **Sleep timer** row is hidden in the music panel itself; the
 > timer is set from the "..." sheet instead.
@@ -301,7 +307,7 @@ capitals) naming which playlist it came from.
 | Audio-focus handling (ducks/pauses for calls, other apps) | ✅ Working |
 | Pauses automatically when headphones/Bluetooth disconnect | ✅ Working |
 | Pauses when the volume is muted and resumes when it is raised | ✅ Implemented |
-| Swipe the music panel left-to-right to close it | ✅ Implemented |
+| Swipe the music panel sideways to switch tabs (it no longer closes it) | ✅ Implemented |
 | Graceful handling of unplayable files (skip, don't stall) | ✅ Working |
 | A-B repeat (A / B buttons under the seek bar) | ✅ Implemented |
 | Likes (heart button on the now-playing card, plus a "Liked" playlist) | ✅ Implemented |
@@ -340,7 +346,8 @@ The 🎧 panel opens on **Home**, laid out like a streaming app's home tab:
   **New playlist** card. Your own playlists have a small bin button (tap twice to delete).
 
 Shelves scroll sideways. Tapping any tile or card opens that playlist's song list. The
-bottom bar is **Home / Songs / Download / Now playing**.
+bottom bar is **Home / Songs / Now playing / Download**, on every screen of the panel,
+including Now playing.
 
 **Play inside a playlist:** the big Play button of a playlist starts that playlist from its
 top song when the song that is loaded belongs to a different playlist (it used to carry on
@@ -353,8 +360,8 @@ above or below it) to open the music player.
 
 ## Download songs
 
-The music player has a **Download** tab in the bottom bar (Home / Songs / Download / Now
-playing); the **Download songs** button on Home opens it too. Paste one or more links (one
+The music player has a **Download** tab, the last one in the bottom bar (Home / Songs / Now
+playing / Download), also reached by swiping. Paste one or more links (one
 per line, up to 50), choose where they go (no playlist, an existing playlist, or **+ New
 playlist**) and press **Download**. Songs are saved one after another as mp3 files with their
 tags and cover art into `Novel/Audio` (or the playlist's folder inside it), and the library

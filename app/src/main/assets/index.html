@@ -2606,13 +2606,13 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
 }
 #sp-nav button .ico { width: 24px; height: 24px; }
 #sp-nav button.active { color: var(--text); }
-#audio-panel[data-view="track"] #sp-mini, #audio-panel[data-view="track"] #sp-nav { display: none; }
+#audio-panel[data-view="track"] #sp-mini { display: none; }   /* the bottom bar stays: Home / Songs / Now playing / Download */
+
+/* Text in the music player can't be selected or copied (long-press does nothing); only the fields you type in can. */
+#audio-panel { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+#audio-panel input, #audio-panel textarea { user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; }
 
 /* ---- Download songs tab (song-download.js) ---------------------------------------------------- */
-/* The button on Home: its own full-width row under the stats, so it can never overlap them. */
-#dl-open-btn { grid-column: 1 / -1; grid-row: 3; justify-self: stretch; justify-content: center; }
-#dl-open-btn .ico { width: 14px; height: 14px; }
-#dl-open-btn:active { transform: scale(.95); }
 #sp-view-download [hidden] { display: none !important; }
 #sp-view-download h1 { margin: 0; font: 700 24px/1.2 var(--font-ui); color: var(--text); }
 #dl-body { padding: 0 20px 24px; text-align: left; }
@@ -3345,7 +3345,6 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
             <div id="sp-lib-avatar"><span class="moon-badge big" data-moon></span></div>
             <div id="sp-lib-phase" data-moon-label></div>
             <button id="audio-scan-btn" type="button" class="sp-pill"><svg class="ico"><use href="#i-refresh"/></svg>Scan the sky</button>
-            <button id="dl-open-btn" type="button" class="sp-pill"><svg class="ico"><use href="#i-download"/></svg>Download songs</button>
             <div id="sp-lib-stats">
               <div><b id="sp-stat-playlists">0</b><span>CONSTELLATIONS</span></div>
               <div><b id="sp-stat-songs">0</b><span>STARS</span></div>
@@ -3543,8 +3542,8 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
       <nav id="sp-nav" aria-label="Music navigation">
         <button type="button" data-sp-view="library"><svg class="ico"><use href="#sp-home"/></svg><span>Home</span></button>
         <button type="button" data-sp-view="album"><svg class="ico"><use href="#i-moon-music"/></svg><span>Songs</span></button>
-        <button type="button" data-sp-view="download"><svg class="ico"><use href="#i-download"/></svg><span>Download</span></button>
         <button type="button" data-sp-view="track"><svg class="ico"><use href="#i-headphones"/></svg><span>Now playing</span></button>
+        <button type="button" data-sp-view="download"><svg class="ico"><use href="#i-download"/></svg><span>Download</span></button>
       </nav>
 
       <!-- ============ "..." sheet (kit: "Track" / "Album Control") ============ -->

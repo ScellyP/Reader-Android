@@ -244,7 +244,6 @@
   const panel = $('audio-panel');
 
   const el = {
-    open: $('dl-open-btn'),
     links: $('dl-links'), note: $('dl-links-note'), clear: $('dl-clear'), paste: $('dl-paste'),
     folders: $('dl-folders'), newName: $('dl-new-name'), folderNote: $('dl-folder-note'),
     review: $('dl-review'), go: $('dl-go'), start: $('dl-start'),
@@ -482,7 +481,6 @@
   }
   refresh();
 
-  if (el.open) el.open.addEventListener('click', openTab);
   el.links.addEventListener('input', updateLinks);
   el.newName.addEventListener('input', () => { updateFolderNote(); updateGo(); });
   el.clear.addEventListener('click', () => { el.links.value = ''; updateLinks(); });

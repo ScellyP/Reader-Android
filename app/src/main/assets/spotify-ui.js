@@ -62,7 +62,7 @@
      Constants & element references
      ======================================================================= */
 
-  const VIEWS = ['library', 'album', 'download', 'track'];
+  const VIEWS = ['library', 'album', 'track', 'download'];   // the order of the bottom bar, and of swiping
   const ENTER_ANIMATION_MS = 900;
   const PROGRESS_INTERVAL_MS = 400;
 
@@ -177,7 +177,16 @@
     sync();
   }
 
-  window.SpotifyUI = { setView };
+  /** Swipe between tabs: +1 = the next tab to the right in the bottom bar, -1 = the one to the left.
+   *  Does nothing past either end. Returns true when the tab changed. */
+  function stepView(delta) {
+    const next = VIEWS.indexOf(panel.getAttribute('data-view')) + (delta < 0 ? -1 : 1);
+    if (next < 0 || next >= VIEWS.length) return false;
+    setView(VIEWS[next]);
+    return true;
+  }
+
+  window.SpotifyUI = { setView, stepView };
 
   /* =======================================================================
      "..." sheet
@@ -534,7 +543,8 @@
          index.html
 
      Mosaics are drawn once on a small canvas and cached by the list of
-     songs they were made from. Nothing is added to the list's DOM (only a
+     songs they were made from (successes only: a look-up that failed is
+     tried again after a rescan, and by itself a few seconds later). Nothing is added to the list's DOM (only a
      CSS variable + attribute on each row), so the list observer below is
      not re-triggered.
      ======================================================================= */
@@ -545,13 +555,21 @@
   const COVER_ROW_DELAY_MS = 16;     // one playlist per tick keeps the UI smooth
   const COVER_DEBOUNCE_MS = 150;
 
-  const mosaicCache = {};  // "id|id|id|id" -> data: URL ('' = could not be made)
-  const artworkCache = {}; // track path    -> art data: URL ('' = none)
+  // Only successes are remembered. A failed look-up ("no art", or a mosaic that could not be drawn)
+  // may be a passing problem (storage not ready yet, a file still being written, a busy moment during
+  // the first scan), and remembering it made the covers stay missing until the app was restarted.
+  const mosaicCache = {};  // "id|id|id|id" -> data: URL
+  const artworkCache = {}; // track path    -> art data: URL (only songs that have art)
 
   let mosaicPassRunning = false;
   let mosaicPassRequested = false;
   let mosaicTimer = 0;
   let lastLibrarySignature = null;
+  let passMisses = null;     // paths asked about during the running pass that had no art (asked once per pass)
+  let passSuspicious = 0;    // rows of the running pass that ended without a cover though they have songs
+  let retriesUsed = 0;       // retries made since the library last changed
+  let retryTimer = 0;
+  const COVER_RETRY_MS = [4000, 15000];   // when a pass left rows without a cover, look again, twice at most
 
   /* ---------- finding the songs of a playlist ---------- */
 
@@ -578,12 +596,14 @@
   function getArtworkFor(track) {
     const bridge = window.AndroidBridge;
 
-    if (artworkCache[track.path] === undefined) {
-      let uri = '';
-      try { uri = bridge.getArtwork(track.path) || ''; } catch (error) { uri = ''; }
-      artworkCache[track.path] = uri;
-    }
-    return artworkCache[track.path];
+    if (artworkCache[track.path]) return artworkCache[track.path];
+    if (passMisses && passMisses[track.path]) return '';     // a song in several playlists: ask once per pass
+
+    let uri = '';
+    try { uri = bridge.getArtwork(track.path) || ''; } catch (error) { uri = ''; }
+    if (uri) artworkCache[track.path] = uri;
+    else if (passMisses) passMisses[track.path] = true;
+    return uri;
   }
 
   /** The first (up to) four songs, alphabetically, that have cover art. */
@@ -680,44 +700,55 @@
 
     mosaicPassRunning = true;
     mosaicPassRequested = false;
+    passMisses = {};
+    passSuspicious = 0;
 
     const rows = Array.from(el.playlistList.querySelectorAll('li[data-playlist-name]'));
     let index = 0;
 
     function finish() {
       mosaicPassRunning = false;
+      passMisses = null;
       if (mosaicPassRequested) scheduleMosaics();
+      else planRetry();
     }
 
     function processNextRow() {
       if (index >= rows.length) return finish();
 
       const row = rows[index++];
-      if (!row.isConnected) return setTimeout(processNextRow, 0);
+      if (!row.isConnected) {
+        // The player rebuilt its rows while this pass was running: the new rows have not been seen yet.
+        mosaicPassRequested = true;
+        return setTimeout(processNextRow, 0);
+      }
 
-      const items = getFirstFourWithArt(row.getAttribute('data-playlist-name'));
+      const name = row.getAttribute('data-playlist-name');
+      const items = getFirstFourWithArt(name);
       const cacheKey = items.map((item) => item.id).join('|');
+      row.setAttribute('data-sp-pass', '1');      // seen by a pass (an attribute: the list observer ignores it)
 
       // No art at all: keep the theme-coloured mosaic from index.html.
       if (!cacheKey) {
+        if (getPlaylistTracks(name).length) passSuspicious++;   // songs but no art: maybe only for now
         setRowCover(row, '');
         return setTimeout(processNextRow, 0);
       }
 
       // Already drawn for exactly these songs.
-      if (mosaicCache[cacheKey] !== undefined) {
+      if (mosaicCache[cacheKey]) {
         setRowCover(row, mosaicCache[cacheKey]);
         return setTimeout(processNextRow, 0);
       }
 
       makeMosaic(items).then(
         (url) => {
-          mosaicCache[cacheKey] = url;
+          if (url) mosaicCache[cacheKey] = url; else passSuspicious++;
           if (row.isConnected) setRowCover(row, url);
           setTimeout(processNextRow, COVER_ROW_DELAY_MS);
         },
         () => {
-          mosaicCache[cacheKey] = '';
+          passSuspicious++;
           setTimeout(processNextRow, COVER_ROW_DELAY_MS);
         }
       );
@@ -756,13 +787,33 @@
     });
   }
 
+  /** Rows no pass has looked at yet and that still have no cover: a rescan just rebuilt them. */
+  function hasUnseenRows() {
+    if (!el.playlistList) return false;
+    return Array.from(el.playlistList.querySelectorAll('li[data-playlist-name]'))
+      .some((row) => !row.hasAttribute('data-sp-cover') && !row.hasAttribute('data-sp-pass'));
+  }
+
+  /** A pass left rows without a cover although they have songs: look again shortly, a couple of times. */
+  function planRetry() {
+    clearTimeout(retryTimer);
+    if (!passSuspicious || retriesUsed >= COVER_RETRY_MS.length) return;
+    retryTimer = setTimeout(() => {
+      retryTimer = 0;
+      mosaicPassRequested = true;
+      scheduleMosaics();
+    }, COVER_RETRY_MS[retriesUsed++]);
+  }
+
   function scheduleMosaics() {
     restoreRowCovers();
 
-    // Only redo the work when the library or the rows' contents changed.
+    // Only redo the work when the library or the rows' contents changed, or when there are fresh
+    // rows (a rescan) that have not been looked at, or a retry was asked for.
     const signature = getLibrarySignature();
-    if (signature === lastLibrarySignature && !mosaicPassRequested) return;
+    if (signature === lastLibrarySignature && !mosaicPassRequested && !hasUnseenRows()) return;
 
+    if (signature !== lastLibrarySignature) retriesUsed = 0;
     lastLibrarySignature = signature;
     clearTimeout(mosaicTimer);
     mosaicTimer = setTimeout(runMosaicPass, COVER_DEBOUNCE_MS);

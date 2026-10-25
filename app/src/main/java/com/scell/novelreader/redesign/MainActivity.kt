@@ -1706,11 +1706,13 @@ class MainActivity : ComponentActivity() {
             if (none.exists()) return null
 
             var raw: ByteArray? = null
+            var tagsUnreadable = false   // reading the tags failed: could be passing (file busy), so don't remember "no art"
             val retriever = MediaMetadataRetriever()
             try {
                 retriever.setDataSource(file.absolutePath)
                 raw = retriever.embeddedPicture
             } catch (e: Exception) {
+                tagsUnreadable = true
                 // fall through to folder images
             } finally {
                 try { retriever.release() } catch (e: Exception) { }
@@ -1726,7 +1728,8 @@ class MainActivity : ComponentActivity() {
                 raw = match?.readBytes()
             }
             if (raw == null) {
-                none.createNewFile()
+                // Only a song that was read fine and has no picture is remembered as having none.
+                if (!tagsUnreadable) none.createNewFile()
                 return null
             }
             val scaled = scaleToJpeg(raw, 512)
