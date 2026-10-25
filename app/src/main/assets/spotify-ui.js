@@ -62,7 +62,7 @@
      Constants & element references
      ======================================================================= */
 
-  const VIEWS = ['library', 'album', 'track'];
+  const VIEWS = ['library', 'album', 'download', 'track'];
   const ENTER_ANIMATION_MS = 900;
   const PROGRESS_INTERVAL_MS = 400;
 
@@ -142,6 +142,14 @@
 
   function clickIfPresent(button) {
     if (button) button.click();
+  }
+
+  /** The big Play button of a playlist. If the song that is loaded belongs to another playlist,
+   *  start this playlist from its top song; otherwise it is the normal play / pause. */
+  function playPlaylist() {
+    const audio = window.NovelAudio;
+    if (audio && typeof audio.playSelectionFromTop === 'function' && audio.playSelectionFromTop()) return;
+    clickIfPresent(el.play);
   }
 
   /* =======================================================================
@@ -244,7 +252,7 @@
     if (target.closest('#audio-playlist-list li')) return setView('album');
 
     // Forwarded playback buttons
-    if (target.closest('#sp-album-play')) return clickIfPresent(el.play);
+    if (target.closest('#sp-album-play')) return playPlaylist();
     if (target.closest('#sp-album-shuffle')) return clickIfPresent(el.shuffle);
 
     // The mini player's play button must be checked BEFORE the mini player
@@ -1022,7 +1030,14 @@
     }
     if (el.trackContext) el.trackContext.textContent = playlist;
 
-    if (el.albumPlay) el.albumPlay.disabled = !!(el.play && el.play.disabled);
+    if (el.albumPlay) {
+      el.albumPlay.disabled = !!(el.play && el.play.disabled);
+      // A song from another playlist is playing: this button would start THIS playlist, so it
+      // shows Play, not Pause.
+      const audio = window.NovelAudio;
+      const outside = !!(audio && typeof audio.currentSongInSelection === 'function' && !audio.currentSongInSelection());
+      el.albumPlay.classList.toggle('sp-outside', outside);
+    }
     if (el.albumShuffle && el.shuffle) {
       el.albumShuffle.classList.toggle('active', el.shuffle.classList.contains('active'));
     }

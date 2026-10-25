@@ -1048,13 +1048,22 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // "Download songs" sheet (song-download.js): one job at a time. Returns false only when
-        // a job is still running; any other problem comes back through
+        // "Download songs" tab (song-download.js): one job at a time. Both methods return false
+        // only when a job is still running; any other problem comes back through
         // window.onSongDownloadStatus(jobId, "failed", message). The result of a job comes the
         // same way, exactly once. See SongDownloader.kt.
+        //
+        // lookupSongTitle: finds the song's name (the message of the "done" answer) so the page
+        // can show it and let the user change it. Nothing is saved.
         @JavascriptInterface
-        fun downloadSong(jobId: String, url: String, folder: String): Boolean =
-            songDownloader.start(jobId, url, folder)
+        fun lookupSongTitle(jobId: String, url: String): Boolean =
+            songDownloader.start(jobId, url, "", "", titleOnly = true)
+
+        // downloadSong: saves the song. [name] "" = keep the song's own name; otherwise it becomes
+        // the file name and the title tag.
+        @JavascriptInterface
+        fun downloadSong(jobId: String, url: String, folder: String, name: String): Boolean =
+            songDownloader.start(jobId, url, folder, name)
 
         // Stop button: the running song asks to stop and then reports "Stopped".
         @JavascriptInterface

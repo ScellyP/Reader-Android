@@ -17,11 +17,14 @@ import org.json.JSONObject
 /**
  * The native half of the "Download songs" sheet (song-download.js).
  *
- * The page hands over one job at a time: a link and an optional playlist (folder) name. Each
- * job is run in Termux with song_dl.py (yt-dlp), through Termux's RUN_COMMAND service:
+ * The page hands over one job at a time. A job is either
+ *   - a name look-up: the link only; the answer is the song's name (message of a "done"), or
+ *   - a download: a link, an optional playlist (folder) and an optional song name to save it under.
+ * Each is run in Termux with song_dl.py (yt-dlp), through Termux's RUN_COMMAND service:
  *
- *   page   -> AndroidBridge.downloadSong(jobId, url, folder)  -> [start]
- *             AndroidBridge.cancelSongDownload()               -> [cancel]
+ *   page   -> AndroidBridge.lookupSongTitle(jobId, url)               -> [start], titleOnly
+ *             AndroidBridge.downloadSong(jobId, url, folder, name)    -> [start]
+ *             AndroidBridge.cancelSongDownload()                       -> [cancel]
  *   native -> window.onSongDownloadStatus(jobId, "done"|"failed", message)   (via [onStatus])
  *
  * Exactly one done/failed is reported per accepted job.
@@ -78,6 +81,23 @@ class SongDownloader(
                 .take(60)
 
         fun isWebLink(url: String?): Boolean = url != null && webLink.matches(url)
+
+        private val controlChars = Regex("[\\u0000-\\u001f\\u007f]")
+        private val badNameChars = Regex("[\\\\/:*?\"<>|]")
+
+        /** Same rule as cleanSongName in song-download.js and clean_song_name in song_dl.py. */
+        fun cleanSongName(name: String?): String {
+            val tidy = (name ?: "")
+                .replace(controlChars, " ")
+                .replace(badNameChars, "")
+                .replace(spaces, " ")
+                .trim()
+                .trim('.')
+                .trim()
+            // At most 120 characters, counted as whole characters (never cutting an emoji in half).
+            val cut = if (tidy.codePointCount(0, tidy.length) > 120) tidy.offsetByCodePoints(0, 120) else tidy.length
+            return tidy.substring(0, cut)
+        }
 
         /**
          * song_dl.py prints `RESULT {"status": ..., "message": ...}` as its last line.
@@ -149,18 +169,19 @@ class SongDownloader(
      * problem is reported to the page as a "failed" result with a message the user can act on.
      * May be called from the WebView's bridge thread.
      */
-    fun start(jobId: String, url: String, folder: String): Boolean {
+    fun start(jobId: String, url: String, folder: String, name: String = "", titleOnly: Boolean = false): Boolean {
         synchronized(lock) {
             if (current != null) return false
             current = jobId
         }
         val cleanedFolder = cleanFolder(folder)
+        val cleanedName = cleanSongName(name)
         main.post {
             when {
                 !isWebLink(url) -> finish(jobId, "failed", "That doesn't look like a web link.")
                 folder.isNotBlank() && cleanedFolder.isEmpty() ->
                     finish(jobId, "failed", "That playlist name has no usable letters or numbers.")
-                else -> launch(jobId, url.trim(), cleanedFolder)
+                else -> launch(jobId, url.trim(), cleanedFolder, cleanedName, titleOnly)
             }
         }
         return true
@@ -173,7 +194,7 @@ class SongDownloader(
 
     // ---- main thread from here on ----------------------------------------------------
 
-    private fun launch(jobId: String, url: String, folder: String) {
+    private fun launch(jobId: String, url: String, folder: String, name: String, titleOnly: Boolean) {
         if (activity.packageManager.getLaunchIntentForPackage(TERMUX_PACKAGE) == null) {
             finish(jobId, "failed", "Termux isn't installed on this device.")
             return
@@ -192,12 +213,19 @@ class SongDownloader(
             return
         }
 
-        // python -c SCRIPT URL [FOLDER]: the script sees sys.argv = ["-c", URL, FOLDER].
+        // python -c SCRIPT [--title | --name NAME] URL [FOLDER]: the script sees
+        // sys.argv = ["-c", ...options, URL, FOLDER]. Options always come before the link.
         val args = ArrayList<String>()
         args.add("-c")
         args.add(script)
+        if (titleOnly) {
+            args.add("--title")
+        } else if (name.isNotEmpty()) {
+            args.add("--name")
+            args.add(name)
+        }
         args.add(url)
-        if (folder.isNotEmpty()) args.add(folder)
+        if (!titleOnly && folder.isNotEmpty()) args.add(folder)
 
         val reply = Intent(ACTION_RESULT).setPackage(activity.packageName).putExtra(EXTRA_JOB, jobId)
         // Termux adds its result to this intent, so the PendingIntent has to be mutable.

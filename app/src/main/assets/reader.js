@@ -775,8 +775,6 @@
   window.handleBack = function () {
     if (nightLocked) return false; // locked: back just leaves the app
     if (dialogOpen) { closeDialog(); return true; }
-    // The download sheet sits inside the music panel: back closes it before anything else.
-    if (window.SongDownload && SongDownload.isOpen && SongDownload.isOpen()) { SongDownload.close(); return true; }
     if (!novelPickerEl.classList.contains('hidden')) {
       // The music player can be open on top of the library: back closes it first.
       if (!audioPanel.classList.contains('hidden')) { closeAllPanels(); return true; }
@@ -1290,7 +1288,7 @@
     // True when the touch started somewhere that needs sideways drags itself.
     function ownsHorizontalDrag(target) {
       for (let el = target; el && el !== audioPanel; el = el.parentElement) {
-        if (el.matches && el.matches('input, textarea, select, #sp-sheet, #dl-sheet')) return true;
+        if (el.matches && el.matches('input, textarea, select, #sp-sheet')) return true;
         if (el.scrollWidth > el.clientWidth + 1 && el.scrollLeft > 0) {
           const ox = getComputedStyle(el).overflowX;
           if (ox === 'auto' || ox === 'scroll') return true;
@@ -1355,7 +1353,6 @@
       if (window.NovelAudio && window.NovelAudio.onPanelOpened) {
         window.NovelAudio.onPanelOpened();
       }
-      if (window.SongDownload && SongDownload.close) SongDownload.close();
     });
   }
 

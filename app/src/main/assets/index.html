@@ -2366,7 +2366,7 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
   background: linear-gradient(180deg, var(--sp-cur) 0%, transparent 100%);
   pointer-events: none; z-index: 0; transition: background .4s ease;
 }
-#audio-panel[data-view="library"] { --sp-cur: color-mix(in srgb, var(--accent) 38%, var(--bg)); }
+#audio-panel[data-view="library"], #audio-panel[data-view="download"] { --sp-cur: color-mix(in srgb, var(--accent) 38%, var(--bg)); }
 
 #sp-views {
   position: relative; z-index: 1; flex: 1 1 auto; overflow-y: auto; overflow-x: hidden;
@@ -2377,6 +2377,7 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
 .sp-view { display: none; flex-direction: column; padding-bottom: 16px; }
 #audio-panel[data-view="library"] #sp-view-library,
 #audio-panel[data-view="album"] #sp-view-album,
+#audio-panel[data-view="download"] #sp-view-download,
 #audio-panel[data-view="track"] #sp-view-track { display: flex; animation: spIn .22s var(--ease) both; }
 @keyframes spIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
@@ -2484,6 +2485,9 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
 .sp-i-pause { display: none; }
 #audio-panel.sp-playing .sp-i-play { display: none; }
 #audio-panel.sp-playing .sp-i-pause { display: block; }
+/* A song from another playlist is playing: the playlist's big button starts this playlist, so it shows Play. */
+#audio-panel.sp-playing #sp-album-play.sp-outside .sp-i-play { display: block; }
+#audio-panel.sp-playing #sp-album-play.sp-outside .sp-i-pause { display: none; }
 #sp-album-shuffle.active { color: var(--sp-accent); }
 
 #audio-queue {
@@ -2604,33 +2608,22 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
 #sp-nav button.active { color: var(--text); }
 #audio-panel[data-view="track"] #sp-mini, #audio-panel[data-view="track"] #sp-nav { display: none; }
 
-/* ---- Download songs sheet (song-download.js) -------------------------------------------------- */
-#dl-open-btn { grid-column: 3; grid-row: 2; justify-self: end; }
+/* ---- Download songs tab (song-download.js) ---------------------------------------------------- */
+/* The button on Home: its own full-width row under the stats, so it can never overlap them. */
+#dl-open-btn { grid-column: 1 / -1; grid-row: 3; justify-self: stretch; justify-content: center; }
 #dl-open-btn .ico { width: 14px; height: 14px; }
 #dl-open-btn:active { transform: scale(.95); }
-#dl-sheet { position: absolute; inset: 0; z-index: 25; display: flex; flex-direction: column; justify-content: flex-end; }
-#dl-sheet.hidden { display: none; }
-#dl-sheet [hidden] { display: none !important; }
-#dl-scrim { position: absolute; inset: 0; background: color-mix(in srgb, var(--bg) 55%, transparent); }
-#dl-body {
-  position: relative; max-height: 94%; overflow-y: auto; scrollbar-width: none;
-  padding: 14px 20px calc(18px + env(safe-area-inset-bottom, 0px));
-  background: linear-gradient(180deg, var(--sp-tint) 0%, var(--sp-bg) 300px);
-  border-radius: 14px 14px 0 0; text-align: left;
-}
-#dl-sheet:not(.hidden) #dl-body { animation: dlUp .28s var(--ease) both; }
-#dl-sheet:not(.hidden) #dl-scrim { animation: fadeIn .22s ease both; }
-@keyframes dlUp { from { transform: translateY(100%); } to { transform: none; } }
-#dl-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-#dl-head h2 { margin: 0; font: 700 20px/1.2 var(--font-ui); color: var(--text); }
+#sp-view-download [hidden] { display: none !important; }
+#sp-view-download h1 { margin: 0; font: 700 24px/1.2 var(--font-ui); color: var(--text); }
+#dl-body { padding: 0 20px 24px; text-align: left; }
 .dl-label { display: block; margin: 16px 0 8px; font: 700 13px/1.2 var(--font-ui); letter-spacing: .3px; color: var(--text); }
 .dl-label small { font-weight: 400; color: var(--sp-sub); margin-left: 6px; }
-#dl-links, #dl-new-name {
+#dl-links, #dl-new-name, .dl-name {
   width: 100%; box-sizing: border-box; padding: 12px 14px; border: 0; border-radius: 8px; resize: none;
   background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); font: 400 14px/1.4 var(--font-ui);
 }
 #dl-links::placeholder, #dl-new-name::placeholder { color: var(--sp-sub); }
-#dl-links:focus, #dl-new-name:focus { outline: 2px solid var(--sp-accent); outline-offset: 0; }
+#dl-links:focus, #dl-new-name:focus, .dl-name:focus { outline: 2px solid var(--sp-accent); outline-offset: 0; }
 #dl-new-name { margin-top: 10px; }
 #dl-new-name.hidden { display: none; }
 #dl-links-row { display: flex; align-items: center; gap: 14px; min-height: 28px; margin-top: 6px; }
@@ -2645,12 +2638,14 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
 #dl-folders button:active { transform: scale(.96); }
 #dl-folders button.on { background: var(--sp-accent); color: var(--sp-ink); font-weight: 700; }
 #dl-folder-note { min-height: 16px; margin-top: 6px; font-size: 12px; color: var(--sp-sub); }
-#dl-go {
+#dl-review-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; font: 400 13px var(--font-ui); color: var(--text); cursor: pointer; }
+#dl-review { width: 18px; height: 18px; margin: 0; accent-color: var(--sp-accent); }
+#dl-go, #dl-start {
   display: block; width: 100%; height: 48px; margin-top: 14px; border: 0; border-radius: 999px;
   background: var(--sp-accent); color: var(--sp-ink); font: 700 15px var(--font-ui); cursor: pointer;
   transition: transform .15s var(--ease), opacity .15s ease;
 }
-#dl-go:active:not(:disabled) { transform: scale(.98); }
+#dl-go:active:not(:disabled), #dl-start:active { transform: scale(.98); }
 #dl-go:disabled { opacity: .35; cursor: default; }
 #dl-status-row { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
 #dl-summary { font: 700 13px var(--font-ui); color: var(--text); }
@@ -2658,6 +2653,7 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
 .dl-job { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 0; }
 .dl-mark { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 50%; box-sizing: border-box; border: 2px solid color-mix(in srgb, var(--text) 25%, transparent); }
 .dl-mark .ico { width: 14px; height: 14px; }
+.dl-named .dl-mark { border-color: var(--sp-accent); }
 .dl-done .dl-mark { border: 0; background: var(--sp-accent); color: var(--sp-ink); }
 .dl-failed .dl-mark, .dl-stopped .dl-mark { border: 0; background: color-mix(in srgb, var(--danger, #e77a6a) 80%, transparent); color: var(--bg); }
 .dl-spin { border-color: color-mix(in srgb, var(--text) 20%, transparent); border-top-color: var(--sp-accent); animation: dlSpin .8s linear infinite; }
@@ -2665,11 +2661,9 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
 .dl-job-text { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
 .dl-job-text b { font: 600 14px/1.25 var(--font-ui); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dl-job-text small { font-size: 12px; color: var(--sp-sub); overflow-wrap: anywhere; }
+.dl-name { padding: 9px 12px; font-weight: 600; }
 .dl-retry { padding: 6px 12px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); font: 700 12px var(--font-ui); cursor: pointer; }
-@media (prefers-reduced-motion: reduce) {
-  #dl-sheet #dl-body, #dl-sheet #dl-scrim { animation: none !important; }
-  .dl-spin { animation-duration: 2.4s; }
-}
+@media (prefers-reduced-motion: reduce) { .dl-spin { animation-duration: 2.4s; } }
 
 /* ---- "..." sheet --------------------------------------------------------- */
 #sp-sheet { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; justify-content: flex-end; }
@@ -3405,6 +3399,38 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
           <div id="audio-status-note"></div>
         </section>
 
+        <!-- ============ DOWNLOAD (song-download.js) ============ -->
+        <section id="sp-view-download" class="sp-view" aria-label="Download songs">
+          <div class="sp-topbar">
+            <h1>Download songs</h1>
+            <button type="button" class="sp-icon-btn" data-close-panel title="Close" aria-label="Close music"><svg class="ico"><use href="#i-close"/></svg></button>
+          </div>
+          <div id="dl-body">
+            <label class="dl-label" for="dl-links">Song links <small>one per line</small></label>
+            <textarea id="dl-links" rows="4" placeholder="Paste links here" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"></textarea>
+            <div id="dl-links-row">
+              <span id="dl-links-note"></span>
+              <button type="button" id="dl-clear" class="dl-text-btn" hidden>Clear</button>
+              <button type="button" id="dl-paste" class="dl-text-btn">Paste</button>
+            </div>
+
+            <div class="dl-label" id="dl-folders-label">Save to</div>
+            <div id="dl-folders" role="radiogroup" aria-labelledby="dl-folders-label"></div>
+            <input id="dl-new-name" class="hidden" type="text" maxlength="60" placeholder="New playlist name" spellcheck="false" autocomplete="off">
+            <div id="dl-folder-note"></div>
+
+            <label id="dl-review-row"><input type="checkbox" id="dl-review" checked><span>Check song names before saving</span></label>
+            <button type="button" id="dl-go" disabled>Download</button>
+
+            <div id="dl-status-row">
+              <span id="dl-summary" hidden></span>
+              <button type="button" id="dl-stop" class="dl-text-btn" hidden>Stop</button>
+            </div>
+            <ul id="dl-jobs"></ul>
+            <button type="button" id="dl-start" hidden>Save songs</button>
+          </div>
+        </section>
+
         <!-- ============ NOW PLAYING (kit: "Track View") ============ -->
         <section id="sp-view-track" class="sp-view" aria-label="Now playing">
           <div class="sp-topbar">
@@ -3517,40 +3543,9 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
       <nav id="sp-nav" aria-label="Music navigation">
         <button type="button" data-sp-view="library"><svg class="ico"><use href="#sp-home"/></svg><span>Home</span></button>
         <button type="button" data-sp-view="album"><svg class="ico"><use href="#i-moon-music"/></svg><span>Songs</span></button>
+        <button type="button" data-sp-view="download"><svg class="ico"><use href="#i-download"/></svg><span>Download</span></button>
         <button type="button" data-sp-view="track"><svg class="ico"><use href="#i-headphones"/></svg><span>Now playing</span></button>
       </nav>
-
-      <!-- ============ Download songs sheet (song-download.js) ============ -->
-      <div id="dl-sheet" class="hidden" role="dialog" aria-label="Download songs">
-        <div id="dl-scrim"></div>
-        <div id="dl-body">
-          <div id="dl-head">
-            <h2>Download songs</h2>
-            <button type="button" class="sp-icon-btn" id="dl-close" title="Close" aria-label="Close"><svg class="ico"><use href="#i-close"/></svg></button>
-          </div>
-
-          <label class="dl-label" for="dl-links">Song links <small>one per line</small></label>
-          <textarea id="dl-links" rows="4" placeholder="Paste links here" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"></textarea>
-          <div id="dl-links-row">
-            <span id="dl-links-note"></span>
-            <button type="button" id="dl-clear" class="dl-text-btn" hidden>Clear</button>
-            <button type="button" id="dl-paste" class="dl-text-btn">Paste</button>
-          </div>
-
-          <div class="dl-label" id="dl-folders-label">Save to</div>
-          <div id="dl-folders" role="radiogroup" aria-labelledby="dl-folders-label"></div>
-          <input id="dl-new-name" class="hidden" type="text" maxlength="60" placeholder="New playlist name" spellcheck="false" autocomplete="off">
-          <div id="dl-folder-note"></div>
-
-          <button type="button" id="dl-go" disabled>Download</button>
-
-          <div id="dl-status-row">
-            <span id="dl-summary" hidden></span>
-            <button type="button" id="dl-stop" class="dl-text-btn" hidden>Stop</button>
-          </div>
-          <ul id="dl-jobs"></ul>
-        </div>
-      </div>
 
       <!-- ============ "..." sheet (kit: "Track" / "Album Control") ============ -->
       <div id="sp-sheet" class="hidden" role="dialog" aria-label="Track options">

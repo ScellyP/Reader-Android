@@ -340,30 +340,46 @@ The 🎧 panel opens on **Home**, laid out like a streaming app's home tab:
   **New playlist** card. Your own playlists have a small bin button (tap twice to delete).
 
 Shelves scroll sideways. Tapping any tile or card opens that playlist's song list. The
-bottom bar is **Home / Songs / Now playing**.
+bottom bar is **Home / Songs / Download / Now playing**.
+
+**Play inside a playlist:** the big Play button of a playlist starts that playlist from its
+top song when the song that is loaded belongs to a different playlist (it used to carry on
+with the other song). If the loaded song is in the playlist, Play and Pause work as before.
+In that situation the button shows Play even while the other song is playing. With shuffle
+on, the "top" song is the first of the shuffled order.
 
 **Swipe up on Previous / Next** (the chapter switcher under the chapter text, or just
 above or below it) to open the music player.
 
 ## Download songs
 
-The music player's Home screen has a **Download songs** button. Paste one or more
-links (one per line, up to 50), choose where they go (no playlist, an existing
-playlist, or **+ New playlist**), and press **Download**. Songs are downloaded one
-after another as mp3 files with their tags and cover art, saved into
-`Novel/Audio` (or the playlist's folder inside it), and the library refreshes by
-itself when the batch ends. Each link shows *Waiting*, *Downloading*, *Done* or
+The music player has a **Download** tab in the bottom bar (Home / Songs / Download / Now
+playing); the **Download songs** button on Home opens it too. Paste one or more links (one
+per line, up to 50), choose where they go (no playlist, an existing playlist, or **+ New
+playlist**) and press **Download**. Songs are saved one after another as mp3 files with their
+tags and cover art into `Novel/Audio` (or the playlist's folder inside it), and the library
+refreshes by itself when the batch ends. Each link shows *Waiting*, *Downloading*, *Done* or
 *Failed* (with the reason and a **Retry** button); **Stop** cancels the rest.
 
-The download itself is done by [Termux](https://termux.dev) with yt-dlp, so this
-needs a one-time setup. Use Termux from **F-Droid** or its **GitHub releases**
-(the Play Store version is too old to take commands from other apps):
+**Song names.** With **Check song names before saving** on (the default), each link is first
+looked up for its name. The names then appear as editable fields: change any of them, or leave
+it as it is, and press **Save N songs**. The name you see is the file name *and* the song's
+title tag (the library lists songs by that tag). Characters a file name cannot hold
+(`/ \ : * ? " < > |`) are dropped and any language is fine; the line under the field shows
+what will really be used, and an emptied field keeps the song's own name. **Discard** throws
+the looked-up names away. Switch the box off to download straight away under the songs' own
+names.
+
+The download itself is done by [Termux](https://termux.dev) with yt-dlp, so this needs a
+one-time setup. Use Termux from **F-Droid** or its **GitHub releases** (the Play Store version
+is too old to take commands from other apps):
 
 1. In Termux run:
 
    ```text
    termux-setup-storage
    pkg update
+   pkg upgrade -y
    pkg install -y python ffmpeg
    pip install -U yt-dlp
    mkdir -p ~/.termux
@@ -381,10 +397,13 @@ Notes:
 - Keep Novel Reader open while it downloads. Android doesn't let an app in the
   background start Termux, so a long list only keeps going while the app is on screen.
 - If links that used to work start failing, update yt-dlp: `pip install -U yt-dlp`.
+- If `ffmpeg` fails with a "CANNOT LINK EXECUTABLE" error, run `pkg upgrade` (and
+  `termux-change-repo` if it persists): Termux packages must all be from the same mirror state.
 - Playlist names may use letters, numbers, spaces and `_ - ( ) . & ' ,`; anything else
-  is removed, and the sheet shows the name it will really use.
+  is removed, and the tab shows the name it will really use.
 - The script is built into the app, so there is nothing to copy. The same script
-  also runs by hand: `python song_dl.py URL "Playlist name"`.
+  also runs by hand: `python song_dl.py URL "Playlist name"`, `python song_dl.py --name "My title" URL`,
+  or `python song_dl.py --title URL` (only prints the song's name).
 
 ## Library (novel selector)
 

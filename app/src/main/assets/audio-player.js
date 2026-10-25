@@ -2376,6 +2376,29 @@ window.NovelAudio = (function () {
       MediaLibrary.scan();
     },
 
+    // For the big Play button inside a playlist (spotify-ui.js). Is the song that is loaded part
+    // of the playlist being shown? True too when nothing is loaded yet.
+    currentSongInSelection() {
+      const id = state.currentTrackId;
+      return !id || MediaLibrary.currentSelectionIds().includes(id);
+    },
+
+    // The Play button inside a playlist: when the loaded song is NOT in that playlist, drop it and
+    // start the playlist from its top song instead of carrying on with the other song. Returns
+    // true when it did that; false means "nothing special to do" (the song is in the playlist, or
+    // nothing is loaded, or the playlist is empty) and the caller uses the normal play/pause.
+    // With shuffle on, the "top" song is the first of the shuffled queue.
+    playSelectionFromTop() {
+      const id = state.currentTrackId;
+      const ids = MediaLibrary.currentSelectionIds();
+      if (!id || !ids.length || ids.includes(id) || !MediaLibrary.getTrack(ids[0])) return false;
+      // Forget the old song first: the shuffle would otherwise pin it to the front of the new queue.
+      state.currentTrackId = null;
+      PlaybackQueue.buildFrom(ids);
+      AudioEngine.play(PlaybackQueue.current());
+      return true;
+    },
+
     // For reader.js's double-tap: is there a current song to like?
     hasCurrentTrack() {
       return !!state.currentTrackId;
