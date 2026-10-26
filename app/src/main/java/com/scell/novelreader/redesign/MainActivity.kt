@@ -271,7 +271,7 @@ class MainActivity : ComponentActivity() {
 
     // "Fetch new chapters" and "Delete chapters": the Python scripts in assets/scripts, run in
     // Termux in the background (see ChapterTools.kt and the page's reader.js).
-    private val chapterTools = ChapterTools(
+    private val chapterTools: ChapterTools = ChapterTools(
         activity = this,
         novelRoot = novelRoot,
         reservedFolder = audioRoot.name,
@@ -280,7 +280,7 @@ class MainActivity : ComponentActivity() {
     )
 
     // Termux's own "run commands in Termux" permission; asked the first time a script is run.
-    private val termuxPermissionLauncher = registerForActivityResult(
+    private val termuxPermissionLauncher: androidx.activity.result.ActivityResultLauncher<String> = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> chapterTools.onPermissionResult(granted) }
     private val audioExtensions = setOf("mp3", "m4a", "aac", "flac", "ogg", "opus", "wav")
