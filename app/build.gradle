@@ -124,6 +124,6 @@ dependencies {
     // app, run by SongDownloader.kt. Both modules must have the same version. 0.17.4 is pinned like
     // media3 above: its AARs need only compileSdk 34 and minSdk 24, which is what this project has.
     // yt-dlp itself is updated from inside the app when a download fails (see SongDownloader.kt).
-    implementation 'io.github.junkfood02.youtubedl-android:library:0.17.4'
-    implementation 'io.github.junkfood02.youtubedl-android:ffmpeg:0.17.4'
+    implementation 'io.github.junkfood02.youtubedl-android:library:0.18.1'
+    implementation 'io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1'
 }
