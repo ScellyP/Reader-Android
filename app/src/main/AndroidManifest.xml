@@ -25,9 +25,15 @@
          songs from the internet. Nothing else in the app uses the network. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
-    <!-- Required on Android 11+ to be able to see/launch Termux by package
-         name (package visibility restrictions) for the "Open Termux" button
-         (the chapter downloader; the song downloader no longer needs Termux). -->
+    <!-- "Fetch new chapters" and "Delete chapters" run the Python scripts in
+         assets/scripts inside Termux (ChapterTools.kt). Termux's RUN_COMMAND
+         permission is a runtime permission: the app asks for it the first time. -->
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+
+    <!-- Required on Android 11+ to be able to see Termux by package name
+         (package visibility restrictions) so ChapterTools can check that it is
+         installed and send it the RUN_COMMAND intent (the song downloader no
+         longer needs Termux). -->
     <queries>
         <package android:name="com.termux" />
     </queries>

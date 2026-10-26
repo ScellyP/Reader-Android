@@ -105,7 +105,7 @@ class MainActivity : ComponentActivity() {
             val nativeActive = c != null && (c.isPlaying ||
                 (c.playWhenReady && (c.playbackState == Player.STATE_BUFFERING ||
                     c.playbackState == Player.STATE_READY)))
-            if (nativeActive || songDownloader.isBusy()) {
+            if (nativeActive || songDownloader.isBusy() || chapterTools.isBusy()) {
                 closeRecheckPending = false
                 screenHandler.postDelayed(this, inactivityCloseMs)
                 return
@@ -268,6 +268,21 @@ class MainActivity : ComponentActivity() {
     // Where audio-player.js's MediaLibrary.scan() expects to find music —
     // documented in the README's "Audio player" section.
     private val audioRoot = File("/storage/emulated/0/Novel/Audio")
+
+    // "Fetch new chapters" and "Delete chapters": the Python scripts in assets/scripts, run in
+    // Termux in the background (see ChapterTools.kt and the page's reader.js).
+    private val chapterTools = ChapterTools(
+        activity = this,
+        novelRoot = novelRoot,
+        reservedFolder = audioRoot.name,
+        requestRunCommandPermission = { termuxPermissionLauncher.launch(ChapterTools.RUN_COMMAND_PERMISSION) },
+        onState = { json -> callPage("onChapterJob", JSONObject.quote(json)) },
+    )
+
+    // Termux's own "run commands in Termux" permission; asked the first time a script is run.
+    private val termuxPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> chapterTools.onPermissionResult(granted) }
     private val audioExtensions = setOf("mp3", "m4a", "aac", "flac", "ogg", "opus", "wav")
 
     /**
@@ -949,6 +964,7 @@ class MainActivity : ComponentActivity() {
         super.onDestroy()
         try { unregisterReceiver(volumeReceiver) } catch (e: Exception) { /* not registered */ }
         songDownloader.release()
+        chapterTools.release()
         screenHandler.removeCallbacks(releaseScreenRunnable)
         screenHandler.removeCallbacks(closeRunnable)
         nightLockHandler.removeCallbacks(nightLockCheck)
@@ -1026,21 +1042,24 @@ class MainActivity : ComponentActivity() {
             runOnUiThread { loadNovelChapters(novelFolderName) }
         }
 
-        // Opens the Termux app (if installed) — shown once the user
-        // reaches the end of a novel, as a quick way to run the chapter
-        // downloader for more chapters.
+        // "Fetch new chapters" (shown under the last chapter): runs chapter_downloader.py --resume in
+        // Termux, in the background. It opens the page the newest saved chapter came from, finds the
+        // link to the chapter after it and downloads everything up to the latest. Returns false when
+        // nothing was started (unknown novel, or a job is already running); otherwise the page hears
+        // about it through window.onChapterJob(json). See ChapterTools.kt.
         @JavascriptInterface
-        fun openTermux() {
-            runOnUiThread {
-                val launchIntent = packageManager.getLaunchIntentForPackage("com.termux")
-                if (launchIntent != null) {
-                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    startActivity(launchIntent)
-                } else {
-                    notifyError("Termux isn't installed on this device.")
-                }
-            }
-        }
+        fun fetchNewChapters(novel: String): Boolean = chapterTools.fetchNewChapters(novel)
+
+        // "Delete chapters" (side menu): runs delete_chapters.py in Termux and removes the chapter
+        // files 1 to [upToChapter] of the novel. Same answers as fetchNewChapters.
+        @JavascriptInterface
+        fun deleteChapters(novel: String, upToChapter: Int): Boolean =
+            chapterTools.deleteChapters(novel, upToChapter)
+
+        // The latest window.onChapterJob state as JSON ("" if no job ran yet): lets the page catch up
+        // after the app was in the background while the answer arrived.
+        @JavascriptInterface
+        fun chapterJobState(): String = chapterTools.stateJson()
 
         // "Download songs" wizard (song-download.js). A job is answered through
         // window.onSongDownloadStatus(jobId, "done"|"failed", message), exactly once; both methods
@@ -1464,12 +1483,17 @@ class MainActivity : ComponentActivity() {
                 // the same folder.
                 val novelNames = novelRoot.listFiles { f -> f.isDirectory }
                     ?.filter { !it.name.equals(audioRoot.name, ignoreCase = true) }
+                    // Folders starting with a dot are never novels.
+                    ?.filter { !it.name.startsWith(".") }
                     ?.map { it.name }
                     ?.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it })
                     ?: emptyList()
 
                 val namesArray = JSONArray()
                 novelNames.forEach { namesArray.put(it) }
+
+                // Put the chapter scripts in the Novel folder, where Termux can run them.
+                try { chapterTools.deployScripts() } catch (e: Exception) { /* tried again on every run */ }
 
                 // Permission is confirmed here: make sure the music scan is under way too.
                 runAudioScan()
@@ -1508,8 +1532,9 @@ class MainActivity : ComponentActivity() {
                     return@Thread
                 }
 
+                // next_chapter.txt is only the downloader's bookmark, not a chapter.
                 val txtFiles = novelDir.listFiles { f ->
-                    f.isFile && f.name.lowercase().endsWith(".txt")
+                    f.isFile && ChapterTools.isChapterFile(f.name)
                 } ?: emptyArray()
 
                 val filesArray = JSONArray()

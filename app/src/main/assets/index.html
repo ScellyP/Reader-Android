@@ -1237,7 +1237,9 @@ input[type="range"]:disabled::-webkit-slider-thumb { background: var(--faint); }
 #bottom-nav button:disabled { opacity: .3; cursor: not-allowed; }
 #bottom-next:not(:disabled) { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-strong); }
 
-#open-termux-btn {
+/* "Fetch new chapters": shown under the last chapter. Runs the chapter downloader in Termux
+   (ChapterTools.kt) and shows its progress on the button itself. */
+#fetch-chapters-btn {
   display: flex; align-items: center; justify-content: center; gap: 10px;
   width: 100%; margin-top: 14px; padding: 15px;
   background: transparent; color: var(--muted);
@@ -1245,8 +1247,17 @@ input[type="range"]:disabled::-webkit-slider-thumb { background: var(--faint); }
   font-size: 14px; font-weight: 600; cursor: pointer;
   transition: color .12s ease, border-color .12s ease, background .12s ease;
 }
-#open-termux-btn:hover { color: var(--text); border-color: var(--muted); background: var(--panel); }
-#open-termux-btn.hidden { display: none; }
+#fetch-chapters-btn:hover:not(:disabled) { color: var(--text); border-color: var(--muted); background: var(--panel); }
+#fetch-chapters-btn.hidden { display: none; }
+#fetch-chapters-btn:disabled { cursor: default; }
+#fetch-chapters-btn.busy { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); }
+#fetch-chapters-btn.busy .ico { animation: chapterJobSpin 1.1s linear infinite; }
+@keyframes chapterJobSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { #fetch-chapters-btn.busy .ico { animation: none; } }
+
+/* "Delete chapters": a small icon button in the side menu's icon row; red only on hover. */
+#delete-chapters-btn:hover:not(:disabled) { color: var(--danger); }
+#delete-chapters-btn:disabled { opacity: .4; cursor: default; }
 
 #toggle-sidebar { flex-shrink: 0; }
 
@@ -1289,6 +1300,47 @@ input[type="range"]:disabled::-webkit-slider-thumb { background: var(--faint); }
   font-size: 14px; font-weight: 700; cursor: pointer;
 }
 #dialog-ok:hover { background: var(--accent-strong); }
+
+/* "Delete chapters" popup: asks for a chapter number (reader.js). Same look as the message dialog. */
+#delete-layer {
+  position: fixed; inset: 0; z-index: 300;
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  background: rgba(5,6,9,.72);
+  animation: fadeIn .18s ease both;
+}
+#delete-layer.hidden { display: none; }
+#delete-box {
+  width: 100%; max-width: 340px;
+  background: var(--panel); border: 1px solid var(--border-strong);
+  border-radius: var(--r-lg, 16px); padding: 24px 22px 18px;
+  box-shadow: 0 30px 80px rgba(0,0,0,.65);
+  animation: panelIn .22s var(--ease) both;
+}
+#delete-icon { display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: rgba(231,122,106,.14); color: var(--danger); margin-bottom: 14px; }
+#delete-icon .ico { width: 20px; height: 20px; }
+#delete-title { margin: 0 0 6px; font-size: 17px; font-weight: 700; color: var(--text); }
+#delete-text { margin: 0 0 14px; font-size: 14px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+#delete-label { display: block; margin-bottom: 6px; font-size: 12px; font-weight: 600; letter-spacing: .3px; color: var(--muted); }
+#delete-input {
+  width: 100%; box-sizing: border-box; min-height: 48px; padding: 10px 14px;
+  background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: 12px;
+  font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums;
+  user-select: text; -webkit-user-select: text;
+}
+#delete-input:focus { outline: none; border-color: var(--danger); }
+#delete-preview { min-height: 20px; margin: 10px 0 18px; font-size: 13px; line-height: 1.45; color: var(--muted); }
+#delete-preview.warn { color: var(--danger); }
+#delete-actions { display: flex; justify-content: flex-end; gap: 10px; }
+#delete-cancel, #delete-confirm {
+  min-height: 46px; padding: 12px 20px; border-radius: 12px;
+  font-size: 14px; font-weight: 700; cursor: pointer;
+  transition: background-color .2s ease, transform .2s var(--ease), opacity .2s ease;
+}
+#delete-cancel { background: transparent; color: var(--text); border: 1px solid var(--border-strong); }
+#delete-confirm { background: var(--danger); color: #1a0c09; border: none; }
+#delete-confirm:disabled { opacity: .35; cursor: default; }
+#delete-cancel:active, #delete-confirm:active:not(:disabled) { transform: scale(.96); }
 
 /* ---------------------------------------------------------------------
    Session-limit overlay
@@ -1917,7 +1969,7 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
 #bottom-nav button { border-radius: 12px; min-height: 52px; }
 #bottom-nav button:active:not(:disabled) { transform: scale(.975); background: var(--raised); }
 #bottom-next:not(:disabled):active { background: rgba(232,168,62,.22); }
-#open-termux-btn { border-radius: 12px; }
+#fetch-chapters-btn { border-radius: 12px; }
 #welcome .steps { border-radius: var(--r-lg); }
 /* The loading ring animates transform/opacity instead of box-shadow. */
 #welcome .wl-mark { position: relative; }
@@ -3152,6 +3204,7 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
           <button id="audio-toggle" class="sidebar-icon-btn" title="Music" aria-label="Music"><svg class="ico"><use href="#i-headphones"/></svg></button>
           <button id="bookmark-toggle" class="sidebar-icon-btn" title="Bookmarks" aria-label="Bookmarks"><svg class="ico"><use href="#i-bookmark"/></svg></button>
           <button id="session-timer-btn-sidebar" class="sidebar-icon-btn" title="Reading timer" aria-label="Reading timer"><svg class="ico"><use href="#i-hourglass"/></svg></button>
+          <button id="delete-chapters-btn" type="button" class="sidebar-icon-btn" style="display:none" title="Delete chapters" aria-label="Delete chapters"><svg class="ico"><use href="#i-trash"/></svg></button>
           <!-- Mobile-only: a normal child of the drawer itself, not a
                floating overlay, so it needs no position/z-index tricks
                to stay clickable — see the CSS comment on #sidebar-close
@@ -3586,7 +3639,7 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
           <button id="bottom-prev" disabled><svg class="ico"><use href="#i-chev-left"/></svg>Previous</button>
           <button id="bottom-next" disabled>Next<svg class="ico"><use href="#i-chev-right"/></svg></button>
         </div>
-        <button id="open-termux-btn" class="hidden"><svg class="ico"><use href="#i-terminal"/></svg>Open Termux to fetch new chapters</button>
+        <button id="fetch-chapters-btn" type="button" class="hidden"><svg class="ico"><use href="#i-download"/></svg><span id="fetch-chapters-label">Fetch new chapters</span></button>
       </div>
     </div>
   </div>
@@ -3649,6 +3702,23 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
     <div id="dialog-icon"><svg class="ico"><use href="#i-info"/></svg></div>
     <p id="dialog-message"></p>
     <div id="dialog-actions"><button id="dialog-ok" type="button">Got it</button></div>
+  </div>
+</div>
+
+<!-- "Delete chapters" popup (opened from the side menu, see reader.js): takes the last chapter number
+     to delete; chapters 1 up to it are removed from the open novel's folder by delete_chapters.py. -->
+<div id="delete-layer" class="hidden" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+  <div id="delete-box">
+    <div id="delete-icon"><svg class="ico"><use href="#i-trash"/></svg></div>
+    <h3 id="delete-title">Delete chapters</h3>
+    <p id="delete-text"></p>
+    <label id="delete-label" for="delete-input">Delete chapters 1 up to chapter number</label>
+    <input id="delete-input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="e.g. 120">
+    <p id="delete-preview" aria-live="polite"></p>
+    <div id="delete-actions">
+      <button id="delete-cancel" type="button">Cancel</button>
+      <button id="delete-confirm" type="button" disabled>Delete</button>
+    </div>
   </div>
 </div>
 

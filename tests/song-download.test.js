@@ -322,9 +322,10 @@ check('the page, the native bridge and the script agree on names', () => {
   assert.ok(js.includes('playAfterRescan') && fs.readFileSync(path.join(assets, 'audio-player.js'), 'utf8').includes('playAfterRescan('));
   assert.ok(js.includes('SpotifyUI.getCover') && fs.readFileSync(path.join(assets, 'spotify-ui.js'), 'utf8').includes('getCover'));
   const manifest = fs.readFileSync(path.join(__dirname, '../app/src/main/AndroidManifest.xml'), 'utf8');
-  // yt-dlp runs inside the app now: it needs the internet, not Termux's RUN_COMMAND permission
+  // yt-dlp runs inside the app now: it needs the internet, and the song code never touches Termux
+  // (the manifest's RUN_COMMAND permission is for the chapter scripts, see ChapterTools.kt)
   assert.ok(manifest.includes('android.permission.INTERNET'));
-  assert.ok(!manifest.includes('com.termux.permission.RUN_COMMAND'));
+  assert.ok(!/termux/i.test(dl) && !/termux/i.test(js), 'the song downloader should not use Termux');
   const gradle = fs.readFileSync(path.join(__dirname, '../app/build.gradle'), 'utf8');
   const versionOf = (name) => (gradle.match(new RegExp('youtubedl-android:' + name + ':([\\d.]+)')) || [])[1];
   assert.ok(versionOf('library'), 'the youtubedl-android library is not a dependency');

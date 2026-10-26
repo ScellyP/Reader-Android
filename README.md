@@ -183,12 +183,45 @@ header, then tap **Bookmark this chapter** to save the chapter you're on, or
 **press and hold any paragraph** while reading to save that exact spot. Saved
 bookmarks are listed in the panel.
 
-### End of a novel
+### Fetch new chapters
 
-When you reach the last chapter, an **Open Termux to fetch new chapters**
-button appears under the chapter. It opens the Termux app if it is installed
-(for running a chapter downloader); otherwise the app tells you Termux isn't
-installed.
+When you reach the last chapter, a **Fetch new chapters** button appears under it.
+Tap it and the app runs the chapter downloader in **Termux**, in the background (no
+Termux window opens). It takes the link the newest chapter was downloaded from (the
+`Source:` line inside that chapter's file), opens that page only to find the link to
+the next chapter, and downloads everything after it, up to the latest. That first page
+is not saved again. The button shows how many chapters have arrived; when it is done
+the novel is read again and a message tells you how many new chapters there are (or
+that you are up to date). While it runs, the app does not close itself.
+
+The same thing from Termux: `python chapter_downloader.py --resume -o /storage/emulated/0/Novel/<novel>`
+(the app puts `chapter_downloader.py` and `delete_chapters.py` straight into your `Novel`
+folder when it starts, and refreshes them before each run, so edit the copies in the repo
+under `app/src/main/assets/scripts/`, not the ones in `Novel`).
+
+**One-time setup in Termux** (install Termux from F-Droid or GitHub):
+
+```text
+pkg install python
+pip install requests beautifulsoup4
+termux-setup-storage
+mkdir -p ~/.termux && echo "allow-external-apps = true" >> ~/.termux/termux.properties
+```
+
+Then close Termux completely and open it once more. The first time you tap the button,
+Android asks to let Novel Reader **run commands in Termux**; allow it.
+
+If a chapter has no `Source:` line (a hand-made file), the newest chapter can't be
+continued from: download that one with its link once, and it works from then on.
+
+### Delete chapters
+
+The side menu has a small **Delete chapters** (trash) button in the icon row, next to the colours, music, bookmarks and timer buttons. It opens a small popup that asks for a
+chapter number; the chapter files **1 up to that number** are removed from the novel
+that is open (it runs `delete_chapters.py`, also through Termux, same setup as above).
+The popup shows how many chapters of the list that reaches, and warns when it would be
+all of them: with none left, **Fetch new chapters** has nothing to continue from. It
+cannot be undone. Only `.txt` files whose name has "chapter" and a number are touched.
 
 ### Reading session limit
 
@@ -405,8 +438,8 @@ Notes:
   `app/build.gradle`.
 - Playlist names may use letters, numbers, spaces and `_ - ( ) . & ' ,`; anything else
   is removed, and the tab shows the name it will really use.
-- Termux is still used by the **Open Termux to fetch new chapters** button (chapter
-  downloader), but not for songs.
+- Termux is still used by **Fetch new chapters** and **Delete chapters** (the chapter
+  scripts), but not for songs.
 
 ## Library (novel selector)
 

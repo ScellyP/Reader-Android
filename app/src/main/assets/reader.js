@@ -649,6 +649,7 @@
     // The cover library replaces the dropdown as the way to pick a novel.
     novelSelect.classList.add('hidden');
     libraryBtn.style.display = '';
+    deleteBtn.style.display = '';
     libraryNames = names;
 
     // Already reading something this session (e.g. the list was refreshed
@@ -775,6 +776,7 @@
   window.handleBack = function () {
     if (nightLocked) return false; // locked: back just leaves the app
     if (dialogOpen) { closeDialog(); return true; }
+    if (deleteOpen) { closeDeleteDialog(); return true; }
     if (!novelPickerEl.classList.contains('hidden')) {
       // The music player can be open on top of the library: back closes it first.
       if (!audioPanel.classList.contains('hidden')) { closeAllPanels(); return true; }
@@ -941,16 +943,199 @@
     [prevBtn, bottomPrev].forEach(b => b.disabled = !hasPrev);
     [nextBtn, bottomNext].forEach(b => b.disabled = !hasNext);
 
-    const openTermuxBtn = document.getElementById('open-termux-btn');
-    openTermuxBtn.classList.toggle('hidden', hasNext || currentIndex === -1);
+    fetchBtn.classList.toggle('hidden', hasNext || currentIndex === -1);
   }
 
-  document.getElementById('open-termux-btn').addEventListener('click', () => {
-    if (window.AndroidBridge && window.AndroidBridge.openTermux) {
-      window.AndroidBridge.openTermux();
-    } else {
-      alert('Termux launch is only available in the installed app.');
+  /* ---------------------------------------------------------------------
+     Fetch new chapters / Delete chapters
+
+     Both run a Python script in Termux, in the background (the app side is
+     ChapterTools.kt):
+       - the fetch button under the last chapter runs chapter_downloader.py
+         --resume: it opens the page the newest saved chapter came from, finds
+         the link to the chapter after it and downloads everything up to the
+         latest;
+       - "Delete chapters" in the side menu asks for a chapter number in a
+         popup and runs delete_chapters.py: chapters 1 up to that number are
+         removed from the open novel's folder.
+     The app answers through window.onChapterJob(json); the shape is
+     {id, kind: 'fetch'|'delete', status: 'waiting'|'running'|'done'|'failed',
+      novel, count, message}. One job at a time. When a job has changed any
+     chapter files, the novel is read again so the list is right.
+  --------------------------------------------------------------------- */
+  const fetchBtn = document.getElementById('fetch-chapters-btn');
+  const fetchLabel = document.getElementById('fetch-chapters-label');
+  const fetchIconUse = fetchBtn.querySelector('use');
+  const deleteBtn = document.getElementById('delete-chapters-btn');
+  const deleteLayer = document.getElementById('delete-layer');
+  const deleteText = document.getElementById('delete-text');
+  const deleteInput = document.getElementById('delete-input');
+  const deletePreview = document.getElementById('delete-preview');
+  const deleteConfirm = document.getElementById('delete-confirm');
+  const deleteCancel = document.getElementById('delete-cancel');
+
+  let chapterJob = null;   // the latest state of the job in progress (or just finished)
+  let handledJobId = null; // a finished job is acted on once, even if its state arrives twice
+  let deleteOpen = false;
+
+  function jobRunning() {
+    return !!chapterJob && (chapterJob.status === 'starting' ||
+      chapterJob.status === 'waiting' || chapterJob.status === 'running');
+  }
+
+  function currentNovelName() {
+    return chosenNovel || novelSelect.value || '';
+  }
+
+  function chaptersWord(n) {
+    return n === 1 ? '1 chapter' : n + ' chapters';
+  }
+
+  function renderJobButtons() {
+    const running = jobRunning();
+    const fetching = running && chapterJob.kind === 'fetch';
+    fetchBtn.disabled = running;
+    fetchBtn.classList.toggle('busy', fetching);
+    fetchIconUse.setAttribute('href', fetching ? '#i-refresh' : '#i-download');
+    let label = 'Fetch new chapters';
+    if (fetching) {
+      if (chapterJob.status === 'waiting') label = 'Waiting for permission\u2026';
+      else if (chapterJob.count > 0) label = 'Fetching\u2026 ' + chaptersWord(chapterJob.count) + ' so far';
+      else label = 'Fetching new chapters\u2026';
     }
+    fetchLabel.textContent = label;
+    deleteBtn.disabled = running;
+  }
+
+  window.onChapterJob = function (json) {
+    let s;
+    try { s = JSON.parse(json); } catch (e) { return; }
+    if (!s || !s.id) return;
+    chapterJob = s;
+    renderJobButtons();
+    if (s.status !== 'done' && s.status !== 'failed') return;
+    if (handledJobId === s.id) return;
+    handledJobId = s.id;
+    // Chapter files appeared or went away: read the novel again (the chapter being read stays open).
+    if (s.count > 0 && s.novel && s.novel === currentNovelName()) requestNovelLoad(s.novel);
+    if (s.message) showMessage(s.message);
+  };
+
+  // The page can miss an answer while the app is in the background (or after the page reloaded);
+  // ask the app where the job stands. Only a job that is still going is picked up this way,
+  // so an old finished one is never announced twice.
+  function syncChapterJob() {
+    const bridge = window.AndroidBridge;
+    if (!bridge || !bridge.chapterJobState) return;
+    let raw = '';
+    try { raw = bridge.chapterJobState() || ''; } catch (e) { return; }
+    if (!raw) return;
+    let s;
+    try { s = JSON.parse(raw); } catch (e) { return; }
+    const going = s.status === 'waiting' || s.status === 'running';
+    if (going || jobRunning()) window.onChapterJob(raw);
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') syncChapterJob();
+  });
+  syncChapterJob();
+
+  // Starts a job through the app. Shows it as running at once (the first answer from the app takes
+  // a moment) and takes that back if the app says no.
+  function startChapterJob(kind, call) {
+    const bridge = window.AndroidBridge;
+    const previous = chapterJob;
+    chapterJob = { id: 'pending', kind: kind, status: 'starting', count: 0, novel: currentNovelName(), message: '' };
+    renderJobButtons();
+    let started = false;
+    try { started = !!call(bridge); } catch (e) { started = false; }
+    if (!started) {
+      chapterJob = previous;
+      renderJobButtons();
+      showMessage("Couldn't start. Another chapter job may still be running, or this novel's folder is gone.");
+    }
+  }
+
+  fetchBtn.addEventListener('click', () => {
+    if (jobRunning()) return;
+    const bridge = window.AndroidBridge;
+    if (!bridge || !bridge.fetchNewChapters) {
+      showMessage('Fetching new chapters only works in the installed app.');
+      return;
+    }
+    const novel = currentNovelName();
+    if (!novel) { showMessage('Open a novel first.'); return; }
+    startChapterJob('fetch', (b) => b.fetchNewChapters(novel));
+  });
+
+  /* ---- Delete chapters popup ---- */
+  function parseChapterNumberInput(text) {
+    const t = String(text || '').trim();
+    if (!/^\d{1,6}$/.test(t)) return null;
+    const n = parseInt(t, 10);
+    return n >= 1 ? n : null;
+  }
+
+  function updateDeletePreview() {
+    const n = parseChapterNumberInput(deleteInput.value);
+    deleteConfirm.disabled = n === null;
+    deleteConfirm.textContent = n === null ? 'Delete' : 'Delete 1\u2013' + n;
+    deletePreview.classList.remove('warn');
+    if (n === null) {
+      deletePreview.textContent = deleteInput.value.trim() ? 'Enter a whole number, 1 or higher.' : '';
+      return;
+    }
+    // How much of the list this reaches, going by the chapter numbers in the titles.
+    const hit = chapters.filter((c) => {
+      const k = extractChapterNumber(c.title);
+      return k !== null && k <= n;
+    }).length;
+    if (chapters.length > 0 && hit >= chapters.length) {
+      deletePreview.textContent = 'This is every chapter in the list. With none left, "Fetch new chapters" has nothing to continue from.';
+      deletePreview.classList.add('warn');
+    } else {
+      deletePreview.textContent = hit > 0
+        ? 'Removes ' + chaptersWord(hit) + ' of the ' + chapters.length + ' in the list.'
+        : 'No chapter in the list has a number that low.';
+    }
+  }
+
+  function closeDeleteDialog() {
+    deleteLayer.classList.add('hidden');
+    deleteOpen = false;
+  }
+
+  function openDeleteDialog() {
+    const bridge = window.AndroidBridge;
+    if (!bridge || !bridge.deleteChapters) {
+      showMessage('Deleting chapters only works in the installed app.');
+      return;
+    }
+    const novel = currentNovelName();
+    if (!novel) { showMessage('Open a novel first.'); return; }
+    if (jobRunning()) { showMessage('Another chapter job is still running. Try again when it has finished.'); return; }
+    deleteText.textContent = 'Removes the chapter files of \u201c' + novel + '\u201d from chapter 1 up to the number you enter. This can\u2019t be undone.';
+    deleteInput.value = '';
+    updateDeletePreview();
+    deleteLayer.classList.remove('hidden');
+    deleteOpen = true;
+    setTimeout(() => { deleteInput.focus({ preventScroll: true }); }, 60);
+  }
+
+  deleteBtn.addEventListener('click', openDeleteDialog);
+  deleteInput.addEventListener('input', updateDeletePreview);
+  deleteCancel.addEventListener('click', closeDeleteDialog);
+  deleteLayer.addEventListener('click', (e) => { if (e.target === deleteLayer) closeDeleteDialog(); });
+  deleteInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); deleteConfirm.click(); }
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && deleteOpen) closeDeleteDialog(); });
+  deleteConfirm.addEventListener('click', () => {
+    const n = parseChapterNumberInput(deleteInput.value);
+    if (n === null) return;
+    const novel = currentNovelName();
+    closeDeleteDialog();
+    startChapterJob('delete', (b) => b.deleteChapters(novel, n));
   });
 
   prevBtn.addEventListener('click', () => openChapter(currentIndex - 1));
