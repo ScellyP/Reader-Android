@@ -386,43 +386,27 @@ When the last song is placed it says **All done** (**Paste more** starts over). 
 before a song is placed (the ✕, another tab, a swipe, closing the player) stops the running
 downloads and **deletes every song that was downloaded but not placed yet**.
 
-The download itself is done by [Termux](https://termux.dev) with yt-dlp, so this needs a
-one-time setup. Use Termux from **F-Droid** or its **GitHub releases** (the Play Store version
-is too old to take commands from other apps):
-
-1. In Termux run:
-
-   ```text
-   termux-setup-storage
-   pkg update
-   pkg upgrade -y
-   pkg install -y python ffmpeg
-   pip install -U yt-dlp
-   mkdir -p ~/.termux
-   echo "allow-external-apps=true" >> ~/.termux/termux.properties
-   termux-reload-settings
-   ```
-
-2. Open Novel Reader, paste a link on the Download tab. It asks for **Run commands in
-   Termux environment**; allow it (the first download fails with a hint, tap **Retry**).
-   If Android doesn't show the question, switch it on in the phone's
-   Settings → Apps → Novel Reader → Permissions.
+The download itself is done **inside the app**: yt-dlp, Python and ffmpeg are bundled with it (the
+[youtubedl-android](https://github.com/yausername/youtubedl-android) library), so there is nothing
+to install or allow anywhere else. The app only needs internet access.
 
 Notes:
 
-- Keep Novel Reader open while it downloads. Android doesn't let an app in the
-  background start Termux, so the next steps only work while the app is on screen. The downloads
-  show a spinner and a moving bar, not a percentage: Termux only reports when a song is finished.
-- If links that used to work start failing, update yt-dlp: `pip install -U yt-dlp`.
-- If `ffmpeg` fails with a "CANNOT LINK EXECUTABLE" error, run `pkg upgrade` (and
-  `termux-change-repo` if it persists): Termux packages must all be from the same mirror state.
+- The first download after installing or updating the app takes a few seconds longer: the
+  bundled tools are unpacked once.
+- Keep Novel Reader open while it downloads. The downloads show a spinner and a moving bar, not
+  a percentage.
+- yt-dlp breaks now and then when a site changes. The first time a download fails in a session,
+  the app updates its own yt-dlp (one request to GitHub) and tries that song once more, so a
+  broken link is usually fixed without you doing anything. If a link still fails, the message
+  says why.
+- The APK is larger than it was (tens of MB: it carries Python and ffmpeg). Only the 64-bit and
+  32-bit ARM versions are included; to run on an x86 emulator add `x86_64` to `abiFilters` in
+  `app/build.gradle`.
 - Playlist names may use letters, numbers, spaces and `_ - ( ) . & ' ,`; anything else
   is removed, and the tab shows the name it will really use.
-- The script is built into the app, so there is nothing to copy. The same script
-  also runs by hand in Termux: `python song_dl.py URL "Playlist name"` (straight into a
-  playlist), `python song_dl.py --name "My title" URL`, `python song_dl.py --title URL` (only
-  prints the song's name), and the two steps the wizard uses: `--stage URL` and
-  `--place FILE [--name NAME] [Playlist]`.
+- Termux is still used by the **Open Termux to fetch new chapters** button (chapter
+  downloader), but not for songs.
 
 ## Library (novel selector)
 

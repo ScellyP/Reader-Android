@@ -13,3 +13,12 @@
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
+
+# youtubedl-android (the bundled yt-dlp used by "Download songs"). Its own rules file is not
+# applied to apps that use it, so the ones it asks for are repeated here.
+-keep class com.yausername.** { *; }
+-keep class org.apache.commons.compress.archivers.zip.** { *; }
+# Jackson (used by the library for video info) mentions classes Android does not have.
+-dontwarn java.beans.**
+-dontwarn org.w3c.dom.bind.v1.**
+-dontwarn org.codehaus.**

@@ -22,7 +22,7 @@
    placed cancels the running downloads and deletes every staged song.
 
    The work itself runs natively: MainActivity's AndroidBridge hands each job to
-   Termux, which runs song_dl.py (yt-dlp, ffmpeg). The contract:
+   SongDownloader.kt, which runs the yt-dlp that is bundled in the app. The contract:
 
      page   -> AndroidBridge.stageSong(jobId, url)
                AndroidBridge.placeSong(jobId, path, name, folder)  folder "" = none, name "" = keep
@@ -36,10 +36,9 @@
      player -> NovelAudio.playAfterRescan(path, playlist), NovelAudio.getPlaylists(),
                SpotifyUI.getCover(playlistName)
 
-   Without the native hook a job fails at once with "Not connected to Termux yet".
-   Playlist and song names are cleaned here (cleanFolderName, cleanSongName), again
-   natively and again in the script, and are always separate arguments, never part
-   of a shell string.
+   Without the native hook a job fails at once with "Not connected to the app yet".
+   Playlist and song names are cleaned here (cleanFolderName, cleanSongName) and again
+   natively (SongNames.kt, which must give the same answers).
 
    The pure parts (parseLinks, cleanFolderName, cleanSongName, shortLink, stemOf,
    createWizard) are exported for tests/song-download.test.js.
@@ -53,7 +52,7 @@
      Pure helpers (tested)
      ======================================================================= */
 
-  // Letters, digits, space and _ - ( ) . & ' , only. Same rule as song_dl.py clean_folder().
+  // Letters, digits, space and _ - ( ) . & ' , only. Same rule as SongNames.cleanFolder in SongNames.kt.
   // Leading/trailing dots go so ".." can never climb out of the Audio folder.
   function cleanFolderName(name) {
     return String(name == null ? '' : name)
@@ -67,7 +66,7 @@
 
   // A song's file name: any language is fine, but not the characters a file name cannot hold
   // (/ \ : * ? " < > |); tabs, line breaks and other control characters become spaces. At most
-  // 120 characters. Same rule as clean_song_name in song_dl.py.
+  // 120 characters. Same rule as SongNames.cleanSongName in SongNames.kt.
   function cleanSongName(name) {
     const tidy = String(name == null ? '' : name)
       .replace(/[\u0000-\u001f\u007f]/g, ' ')
@@ -365,7 +364,7 @@
 
   function needBridge(method) {
     const b = bridge();
-    if (!b || typeof b[method] !== 'function') throw new Error('Not connected to Termux yet');
+    if (!b || typeof b[method] !== 'function') throw new Error('Not connected to the app yet');
     return b;
   }
 

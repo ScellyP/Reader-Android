@@ -21,13 +21,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- "Download songs": lets this app run song_dl.py in Termux (Termux's RUN_COMMAND
-         service). Termux defines this permission; it is asked for the first time a
-         download starts, and Termux needs allow-external-apps=true. See SongDownloader.kt. -->
-    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+    <!-- "Download songs": the yt-dlp that is bundled in this app (SongDownloader.kt) fetches
+         songs from the internet. Nothing else in the app uses the network. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Required on Android 11+ to be able to see/launch Termux by package
-         name (package visibility restrictions) for the "Open Termux" button. -->
+         name (package visibility restrictions) for the "Open Termux" button
+         (the chapter downloader; the song downloader no longer needs Termux). -->
     <queries>
         <package android:name="com.termux" />
     </queries>

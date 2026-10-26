@@ -1,21 +1,22 @@
 package com.scell.novelreader.redesign
 
-import android.app.PendingIntent
-import android.content.BroadcastReceiver
-import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
-import android.content.pm.PackageManager
-import android.os.Build
-import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import androidx.activity.ComponentActivity
-import androidx.core.content.ContextCompat
-import org.json.JSONObject
+import com.yausername.ffmpeg.FFmpeg
+import com.yausername.youtubedl_android.YoutubeDL
+import com.yausername.youtubedl_android.YoutubeDLRequest
+import java.io.File
+import java.util.Collections
+import java.util.UUID
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * The native half of the "Download songs" wizard (song-download.js).
+ * The native half of the "Download songs" wizard (song-download.js). yt-dlp and ffmpeg run inside
+ * this app (the youtubedl-android library bundles Python, yt-dlp and ffmpeg), so nothing has to be
+ * installed or allowed anywhere else.
  *
  * The page runs two kinds of job, and may have one of each at the same time (the next song
  * downloads while the current one is being named and placed):
@@ -24,7 +25,6 @@ import org.json.JSONObject
  *            message is the downloaded file's full path.
  *   - place: give a staged song its final name (file name and title tag) and move it into its
  *            playlist folder, or Audio/ itself. The answer's message is the song's new full path.
- * Both are run in Termux with song_dl.py (yt-dlp, ffmpeg), through Termux's RUN_COMMAND service:
  *
  *   page   -> AndroidBridge.stageSong(jobId, url)                       -> [stage]
  *             AndroidBridge.placeSong(jobId, path, name, folder)         -> [place]
@@ -33,149 +33,61 @@ import org.json.JSONObject
  *
  * Exactly one done/failed is reported per accepted job.
  *
- * How the script gets to Termux: song_dl.py ships in this app's assets and is handed to
- * `python -c` as an argument, so there is no copy in shared storage that another app could
- * swap out, and nothing to install by hand. Link, path, name and playlist go in as separate
- * arguments (never a shell string; RUN_COMMAND starts the program directly).
+ * Downloads: yt-dlp is started by the library as a child process (best audio -> mp3, tags and cover
+ * art embedded). Stop = the library's destroyProcessById. Placing needs no ffmpeg: the title tag is
+ * rewritten by [Id3Title]. yt-dlp breaks now and then when a site changes; the first failure of
+ * a session therefore updates yt-dlp from within the app (the library's updater, one request to
+ * GitHub) and retries once.
  *
- * Needs, on the phone: Termux from F-Droid or GitHub (the Play Store build is too old),
- * `pkg install python ffmpeg`, `pip install yt-dlp`, `termux-setup-storage`,
- * `allow-external-apps=true` in ~/.termux/termux.properties, and the "Run commands in
- * Termux environment" permission for this app (asked for the first time a job starts).
+ * Needs the INTERNET permission, and `useLegacyPackaging` for the native libraries (app/build.gradle).
  *
- * Written without being compiled or run: test it on a device.
+ * Written without being run on a device: test it there.
  */
 class SongDownloader(
     private val activity: ComponentActivity,
     /** Reports a result to the page. Always called on the main thread. */
     private val onStatus: (jobId: String, status: String, message: String) -> Unit,
-    /** Shows the system dialog for [PERMISSION]. */
-    private val askPermission: () -> Unit,
 ) {
 
     companion object {
-        const val PERMISSION = "com.termux.permission.RUN_COMMAND"
-        const val SCRIPT_ASSET = "song_dl.py"
-
-        /** Where downloads wait until they are named and placed. Must match STAGING_ROOT in song_dl.py. */
+        /** Where downloads wait until they are named and placed. */
         const val STAGING_DIR = "/storage/emulated/0/Novel/Audio/.staging"
 
-        private const val TERMUX_PACKAGE = "com.termux"
-        private const val TERMUX_SERVICE = "com.termux.app.RunCommandService"
-        private const val TERMUX_HOME = "/data/data/com.termux/files/home"
-        private const val TERMUX_BIN = "/data/data/com.termux/files/usr/bin"
-        private const val TERMUX_TMP = "/data/data/com.termux/files/usr/tmp"
-
-        private const val ACTION_RUN = "com.termux.RUN_COMMAND"
-        private const val ACTION_RESULT = "com.scell.novelreader.redesign.SONG_DL_RESULT"
-        private const val EXTRA_JOB = "songJobId"
-
-        /** A song is a few seconds to a few minutes; this only catches "Termux never answered". */
-        private const val ANSWER_TIMEOUT_MS = 15 * 60 * 1000L
-
-        private val badFolderChars = Regex("[^A-Za-z0-9 _\\-().&',]")
-        private val spaces = Regex("\\s+")
-        private val webLink = Regex("^https?://\\S+$", RegexOption.IGNORE_CASE)
-
-        /** Same rule as cleanFolderName in song-download.js and clean_folder in song_dl.py. */
-        fun cleanFolder(name: String?): String =
-            (name ?: "")
-                .replace(badFolderChars, "")
-                .replace(spaces, " ")
-                .trim()
-                .trim('.')
-                .trim()
-                .take(60)
-
-        fun isWebLink(url: String?): Boolean = url != null && webLink.matches(url)
+        /** The music library; playlists are its sub-folders. */
+        const val AUDIO_DIR = "/storage/emulated/0/Novel/Audio"
 
         /** Is [path] a file inside the staging folder? (Nothing else may be moved or renamed.) */
         fun isStagedPath(path: String?): Boolean {
             if (path.isNullOrBlank()) return false
             return try {
-                val file = java.io.File(path).canonicalFile
-                val root = java.io.File(STAGING_DIR).canonicalFile
-                file.path.startsWith(root.path + java.io.File.separator) && file.isFile
+                val file = File(path).canonicalFile
+                val root = File(STAGING_DIR).canonicalFile
+                file.path.startsWith(root.path + File.separator) && file.isFile
             } catch (e: Exception) {
                 false
-            }
-        }
-
-        private val controlChars = Regex("[\\u0000-\\u001f\\u007f]")
-        private val badNameChars = Regex("[\\\\/:*?\"<>|]")
-
-        /** Same rule as cleanSongName in song-download.js and clean_song_name in song_dl.py. */
-        fun cleanSongName(name: String?): String {
-            val tidy = (name ?: "")
-                .replace(controlChars, " ")
-                .replace(badNameChars, "")
-                .replace(spaces, " ")
-                .trim()
-                .trim('.')
-                .trim()
-            // At most 120 characters, counted as whole characters (never cutting an emoji in half).
-            val cut = if (tidy.codePointCount(0, tidy.length) > 120) tidy.offsetByCodePoints(0, 120) else tidy.length
-            return tidy.substring(0, cut)
-        }
-
-        /**
-         * song_dl.py prints `RESULT {"status": ..., "message": ...}` as its last line.
-         * Returns (status, message) with status "done" or "failed", or null if there is no such line.
-         */
-        fun parseResult(stdout: String?): Pair<String, String>? {
-            val line = (stdout ?: "").lines().map { it.trim() }.lastOrNull { it.startsWith("RESULT ") }
-                ?: return null
-            return try {
-                val json = JSONObject(line.removePrefix("RESULT "))
-                val status = if (json.optString("status") == "done") "done" else "failed"
-                status to json.optString("message")
-            } catch (e: Exception) {
-                null
             }
         }
     }
 
     private val main = Handler(Looper.getMainLooper())
+    private val pool: ExecutorService = Executors.newCachedThreadPool()
     private val lock = Any()
-    private val running = HashSet<String>()                 // jobs Termux is working on
-    private val timeouts = HashMap<String, Runnable>()      // one watchdog per job (main thread only)
-    private var requestSeq = 0
+    private val running = HashSet<String>()                         // every accepted, unanswered job
+    private val downloading = HashSet<String>()                     // the stage jobs among them
+    private val cancelled = Collections.synchronizedSet(HashSet<String>())
+    private var engineReady = false
+    private val updateTried = AtomicBoolean(false)
 
-    private val receiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            val id = intent?.getStringExtra(EXTRA_JOB) ?: return
-            val bundle: Bundle? = intent.getBundleExtra("result")
-            val parsed = parseResult(bundle?.getString("stdout"))
-            val errMsg = bundle?.getString("errmsg").orEmpty().trim()
-            val lastError = bundle?.getString("stderr").orEmpty().lines()
-                .map { it.trim() }.lastOrNull { it.isNotEmpty() }.orEmpty()
-            when {
-                parsed != null -> finish(id, parsed.first, parsed.second)
-                errMsg.isNotEmpty() -> finish(id, "failed", errMsg)
-                else -> {
-                    val exit = bundle?.getInt("exitCode", -1) ?: -1
-                    finish(id, "failed", lastError.ifEmpty { "The download ended unexpectedly (exit $exit)." })
-                }
-            }
-        }
-    }
-
-    fun register() {
-        val filter = IntentFilter(ACTION_RESULT)
-        try {
-            ContextCompat.registerReceiver(activity, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
-        } catch (e: Exception) {
-            // Without it no result ever comes back; the time-out then ends the job.
-        }
+    /** Gets the bundled Python/yt-dlp/ffmpeg unpacked in the background (a few seconds, once per install). */
+    fun warmUp() {
+        pool.execute { ensureEngine() }
     }
 
     fun release() {
-        timeouts.values.forEach { main.removeCallbacks(it) }
-        timeouts.clear()
-        try { activity.unregisterReceiver(receiver) } catch (e: Exception) { /* not registered */ }
+        pool.shutdownNow()
     }
 
-    /** True while a job is out with Termux (the app must not close itself meanwhile). */
+    /** True while a job is unanswered (the app must not close itself meanwhile). */
     fun isBusy(): Boolean = synchronized(lock) { running.isNotEmpty() }
 
     /**
@@ -184,128 +96,194 @@ class SongDownloader(
      * May be called from the WebView's bridge thread.
      */
     fun stage(jobId: String, url: String): Boolean {
-        if (!begin(jobId)) return false
-        main.post {
-            if (!isWebLink(url)) finish(jobId, "failed", "That doesn't look like a web link.")
-            else launch(jobId, listOf("--stage", url.trim()))
-        }
+        if (!begin(jobId, isDownload = true)) return false
+        pool.execute { runStage(jobId, url.trim()) }
         return true
     }
 
     /** Accepts a placement job: [path] is the staged file, [name] its final name ("" = keep it). */
     fun place(jobId: String, path: String, name: String, folder: String): Boolean {
-        if (!begin(jobId)) return false
-        val cleanedFolder = cleanFolder(folder)
-        val cleanedName = cleanSongName(name)
-        main.post {
-            when {
-                !isStagedPath(path) -> finish(jobId, "failed", "That song is no longer there. Download it again.")
-                folder.isNotBlank() && cleanedFolder.isEmpty() ->
-                    finish(jobId, "failed", "That playlist name has no usable letters or numbers.")
-                else -> {
-                    val args = ArrayList<String>()
-                    args.add("--place")
-                    args.add(path)
-                    if (cleanedName.isNotEmpty()) { args.add("--name"); args.add(cleanedName) }
-                    if (cleanedFolder.isNotEmpty()) args.add(cleanedFolder)
-                    launch(jobId, args)
-                }
-            }
-        }
+        if (!begin(jobId, isDownload = false)) return false
+        pool.execute { runPlace(jobId, path, SongNames.cleanSongName(name), folder) }
         return true
     }
 
-    /** Asks every running song_dl.py to stop; each then reports "Stopped" by itself. */
+    /** Stops every running download; each then reports "Stopped" by itself. */
     fun cancel() {
-        main.post { sendStop() }
-    }
-
-    private fun begin(jobId: String): Boolean = synchronized(lock) { running.add(jobId) }
-
-    // ---- main thread from here on ----------------------------------------------------
-
-    private fun launch(jobId: String, scriptArgs: List<String>) {
-        if (activity.packageManager.getLaunchIntentForPackage(TERMUX_PACKAGE) == null) {
-            finish(jobId, "failed", "Termux isn't installed on this device.")
-            return
-        }
-        if (ContextCompat.checkSelfPermission(activity, PERMISSION) != PackageManager.PERMISSION_GRANTED) {
-            askPermission()
-            finish(jobId, "failed",
-                "Allow \"Run commands in Termux environment\" for this app, then tap Retry. " +
-                    "(Needs Termux from F-Droid or GitHub.)")
-            return
-        }
-        val script = try {
-            activity.assets.open(SCRIPT_ASSET).bufferedReader().use { it.readText() }
-        } catch (e: Exception) {
-            finish(jobId, "failed", "The download script is missing from the app.")
-            return
-        }
-
-        // python -c SCRIPT [options] ...: the script sees sys.argv = ["-c", ...scriptArgs].
-        val args = ArrayList<String>()
-        args.add("-c")
-        args.add(script)
-        args.addAll(scriptArgs)
-
-        val reply = Intent(ACTION_RESULT).setPackage(activity.packageName).putExtra(EXTRA_JOB, jobId)
-        // Termux adds its result to this intent, so the PendingIntent has to be mutable.
-        val flags = PendingIntent.FLAG_UPDATE_CURRENT or
-            (if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0)
-        val pending = PendingIntent.getBroadcast(activity, ++requestSeq, reply, flags)
-
-        val run = Intent(ACTION_RUN).apply {
-            setClassName(TERMUX_PACKAGE, TERMUX_SERVICE)
-            putExtra("com.termux.RUN_COMMAND_PATH", "$TERMUX_BIN/python")
-            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", args.toTypedArray())
-            putExtra("com.termux.RUN_COMMAND_WORKDIR", TERMUX_HOME)
-            putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
-            putExtra("com.termux.RUN_COMMAND_PENDING_INTENT", pending)
-        }
-        try {
-            activity.startService(run)
-            val watchdog = Runnable {
-                sendStop()
-                finish(jobId, "failed",
-                    "Termux did not answer. Check that allow-external-apps=true is set in ~/.termux/termux.properties.")
-            }
-            timeouts[jobId] = watchdog
-            main.postDelayed(watchdog, ANSWER_TIMEOUT_MS)
-        } catch (e: SecurityException) {
-            askPermission()
-            finish(jobId, "failed", "Termux refused the request. Allow \"Run commands in Termux environment\" " +
-                "for this app, then tap Retry.")
-        } catch (e: Exception) {
-            // Android 12+ also refuses to start another app's service while this app is in the background.
-            finish(jobId, "failed", "Could not reach Termux. Keep Novel Reader open while it downloads.")
+        val ids = synchronized(lock) { downloading.toList() }
+        cancelled.addAll(ids)
+        for (id in ids) {
+            try { YoutubeDL.getInstance().destroyProcessById(id) } catch (e: Exception) { /* already over */ }
         }
     }
 
-    /** Sends SIGTERM to every running song_dl.py, found through the pid file each one keeps. */
-    private fun sendStop() {
-        try {
-            val stop = Intent(ACTION_RUN).apply {
-                setClassName(TERMUX_PACKAGE, TERMUX_SERVICE)
-                putExtra("com.termux.RUN_COMMAND_PATH", "$TERMUX_BIN/sh")
-                putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf(
-                    "-c",
-                    "d=\"\${TMPDIR:-$TERMUX_TMP}\"; for f in \"\$d\"/song_dl.*.pid; do " +
-                        "[ -f \"\$f\" ] && kill -TERM \"\$(cat \"\$f\")\" 2>/dev/null; done; true"
-                ))
-                putExtra("com.termux.RUN_COMMAND_WORKDIR", TERMUX_HOME)
-                putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
-            }
-            activity.startService(stop)
+    private fun begin(jobId: String, isDownload: Boolean): Boolean = synchronized(lock) {
+        val fresh = running.add(jobId)
+        if (fresh && isDownload) downloading.add(jobId)
+        fresh
+    }
+
+    // ---- worker threads from here on ---------------------------------------------------
+
+    /** Unpacks and starts the bundled tools. Returns null when ready, else a message for the user. */
+    @Synchronized
+    private fun ensureEngine(): String? {
+        if (engineReady) return null
+        return try {
+            val context = activity.applicationContext
+            YoutubeDL.getInstance().init(context)
+            FFmpeg.getInstance().init(context)
+            engineReady = true
+            null
         } catch (e: Exception) {
-            // The job still ends by itself (or through the time-out).
+            "Could not start the built-in downloader (${e.message ?: e.cause?.message ?: "unknown error"})."
         }
+    }
+
+    private fun runStage(jobId: String, url: String) {
+        if (!SongNames.isWebLink(url)) return report(jobId, "failed", "That doesn't look like a web link.")
+        ensureEngine()?.let { return report(jobId, "failed", it) }
+        if (jobId in cancelled) return report(jobId, "failed", "Stopped")
+
+        val runDir = File(STAGING_DIR, "s_" + UUID.randomUUID().toString().take(8))
+        // Half-finished downloads (.webm, .part, thumbnails) go to a cache folder, so the music scan
+        // never sees them.
+        val tmpDir = File(activity.cacheDir, "song_dl_" + UUID.randomUUID().toString().take(8))
+        try {
+            if (!runDir.mkdirs() && !runDir.isDirectory) {
+                return report(jobId, "failed", "Can't create $STAGING_DIR. Allow \"All files access\" for this app.")
+            }
+            tmpDir.mkdirs()
+
+            var error = download(jobId, url, runDir, tmpDir)
+            if (error != null && jobId !in cancelled && updateTried.compareAndSet(false, true)) {
+                // yt-dlp goes stale when a site changes: update it once, then try again.
+                val updated = try {
+                    YoutubeDL.getInstance().updateYoutubeDL(activity.applicationContext) == YoutubeDL.UpdateStatus.DONE
+                } catch (e: Exception) {
+                    false
+                }
+                if (updated) {
+                    runDir.listFiles()?.forEach { it.deleteRecursively() }
+                    error = download(jobId, url, runDir, tmpDir)
+                }
+            }
+
+            if (jobId in cancelled) {
+                runDir.deleteRecursively()
+                return report(jobId, "failed", "Stopped")
+            }
+            if (error != null) {
+                runDir.deleteRecursively()
+                return report(jobId, "failed", error)
+            }
+            val song = runDir.listFiles { f -> f.isFile && f.extension.equals("mp3", ignoreCase = true) }
+                ?.maxByOrNull { it.lastModified() }
+            if (song == null) {
+                runDir.deleteRecursively()
+                return report(jobId, "failed", "The download finished but no song file was made.")
+            }
+            report(jobId, "done", song.absolutePath)
+        } catch (e: Exception) {
+            runDir.deleteRecursively()
+            report(jobId, "failed", SongNames.failureReason(e.message).ifEmpty { "The download failed." })
+        } finally {
+            tmpDir.deleteRecursively()
+        }
+    }
+
+    /** Runs yt-dlp once. Returns null on success, else the message to show. */
+    private fun download(jobId: String, url: String, runDir: File, tmpDir: File): String? {
+        // Same settings as the old script: best audio, converted to mp3 (quality 0), metadata and
+        // cover art embedded, one video only.
+        val request = YoutubeDLRequest(url)
+            .addOption("--no-playlist")
+            .addOption("-f", "bestaudio")
+            .addOption("-x")
+            .addOption("--audio-format", "mp3")
+            .addOption("--audio-quality", "0")
+            .addOption("--embed-metadata")
+            .addOption("--embed-thumbnail")
+            .addOption("--convert-thumbnails", "jpg")
+            .addOption("--trim-filenames", "180")
+            .addOption("-P", "home:" + runDir.absolutePath)
+            .addOption("-P", "temp:" + tmpDir.absolutePath)
+            .addOption("-o", "%(title)s.%(ext)s")
+            .addOption("--no-warnings")
+        return try {
+            YoutubeDL.getInstance().execute(request, jobId, null)
+            null
+        } catch (e: YoutubeDL.CanceledException) {
+            "Stopped"
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            "Stopped"
+        } catch (e: Exception) {
+            SongNames.failureReason(e.message ?: e.cause?.message).ifEmpty { "The download failed." }
+        }
+    }
+
+    private fun runPlace(jobId: String, path: String, name: String, folder: String) {
+        val cleanedFolder = SongNames.cleanFolder(folder)
+        if (!isStagedPath(path)) return report(jobId, "failed", "That song is no longer there. Download it again.")
+        if (folder.isNotBlank() && cleanedFolder.isEmpty()) {
+            return report(jobId, "failed", "That playlist name has no usable letters or numbers.")
+        }
+
+        val staged = File(path)
+        val stem = name.ifEmpty { staged.nameWithoutExtension }
+        val destDir = if (cleanedFolder.isEmpty()) File(AUDIO_DIR) else File(AUDIO_DIR, cleanedFolder)
+        if (!destDir.isDirectory && !destDir.mkdirs() && !destDir.isDirectory) {
+            return report(jobId, "failed", "Can't create ${destDir.path}. Allow \"All files access\" for this app.")
+        }
+        val target = File(destDir, stem + "." + staged.extension)
+        if (target.exists()) {
+            return report(jobId, "failed",
+                "A song called \u201c$stem\u201d is already in ${cleanedFolder.ifEmpty { "All songs" }}. Change the name.")
+        }
+
+        // With a name, the title tag is rewritten into a second file first, so a failure leaves the
+        // staged song untouched. ".part" is not an audio extension, so the music scan ignores it.
+        var source = staged
+        var copy: File? = null
+        if (name.isNotEmpty()) {
+            copy = File(staged.parentFile, ".retag_" + UUID.randomUUID().toString().take(8) + ".part")
+            try {
+                Id3Title.copyWithTitle(staged, copy, name)
+                source = copy
+            } catch (e: Exception) {
+                copy.delete()
+                return report(jobId, "failed", "Could not change the song's title (${e.message ?: "unknown error"}).")
+            }
+        }
+
+        val moved = source.renameTo(target) || try {         // renameTo is an instant move on the same storage
+            source.copyTo(target, overwrite = false)
+            true
+        } catch (e: Exception) {
+            target.delete()
+            false
+        }
+        copy?.let { if (it.exists()) it.delete() }
+        if (!moved) return report(jobId, "failed", "Could not move the song into ${cleanedFolder.ifEmpty { "Audio" }}.")
+
+        staged.delete()
+        staged.parentFile?.delete()                           // the song's own now-empty staging folder (only if empty)
+        report(jobId, "done", target.absolutePath)
+    }
+
+    /** Hands a result to the main thread; the page hears about it there. */
+    private fun report(jobId: String, status: String, message: String) {
+        main.post { finish(jobId, status, message) }
     }
 
     private fun finish(jobId: String, status: String, message: String) {
-        val mine = synchronized(lock) { running.remove(jobId) }
+        val mine = synchronized(lock) {
+            downloading.remove(jobId)
+            running.remove(jobId)
+        }
+        cancelled.remove(jobId)
         if (!mine) return                    // a late or repeated answer changes nothing
-        timeouts.remove(jobId)?.let { main.removeCallbacks(it) }
         onStatus(jobId, status, message)
     }
 }

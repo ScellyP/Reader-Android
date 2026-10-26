@@ -228,13 +228,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // "Run commands in Termux environment": a permission that Termux defines. It is asked for
-    // the first time a song download starts; the job fails with a hint and the user taps Retry.
-    private val termuxPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { /* nothing to do: the user taps Retry in the Download songs sheet */ }
-
-    // Runs the "Download songs" jobs in Termux (see SongDownloader.kt and song-download.js).
+    // Runs the "Download songs" jobs with the yt-dlp that is bundled in this app (see SongDownloader.kt
+    // and song-download.js).
     private val songDownloader = SongDownloader(
         activity = this,
         onStatus = { jobId, status, message ->
@@ -243,7 +238,6 @@ class MainActivity : ComponentActivity() {
                 JSONObject.quote(jobId) + ", " + JSONObject.quote(status) + ", " + JSONObject.quote(message)
             )
         },
-        askPermission = { termuxPermissionLauncher.launch(SongDownloader.PERMISSION) },
     )
 
     /** Asks for notification access and folder access in one go, once per
@@ -388,7 +382,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         installCrashLogger()
         registerVolumeReceiver()
-        songDownloader.register()
+        songDownloader.warmUp()
         // If access was already granted, make sure the folders exist right away.
         if (hasStoragePermission()) Thread { ensureNovelFolders() }.start()
 
