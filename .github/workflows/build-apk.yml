@@ -37,6 +37,9 @@ jobs:
     needs: check
     if: needs.check.outputs.should_build == 'true'
     runs-on: ubuntu-latest
+    # Needed to publish the GitHub Release the in-app updater reads (last step).
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -80,6 +83,7 @@ jobs:
               echo "ANDROID_KEYSTORE_PASSWORD=$ANDROID_KEYSTORE_PASSWORD"
               echo "ANDROID_KEY_ALIAS=$ANDROID_KEY_ALIAS"
               echo "ANDROID_KEY_PASSWORD=$ANDROID_KEY_PASSWORD"
+              echo "SIGNED_WITH_REAL_KEY=true"
             } >> "$GITHUB_ENV"
             echo "Signing with the key from GitHub secrets."
           else
@@ -100,3 +104,26 @@ jobs:
         with:
           name: novel-reader-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+
+      # The in-app updater (AppUpdater.kt) reads the newest GitHub Release of this repo. Only a build
+      # signed with the real key is published: Android refuses to update an app with an APK signed by a
+      # different key, so a debug-signed Release would be offered to phones and then fail to install.
+      # The tag is APP_VERSION from version.js; a redone build of the same version replaces the asset.
+      - name: Publish GitHub Release (for the in-app updater)
+        if: env.SIGNED_WITH_REAL_KEY == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(grep -oE "APP_VERSION = 'v[0-9]+\.[0-9]+\.[0-9]+" app/src/main/assets/version.js | grep -oE "v[0-9]+\.[0-9]+\.[0-9]+")
+          if [ -z "$TAG" ]; then
+            echo "::warning::Could not read APP_VERSION from version.js - no Release published."
+            exit 0
+          fi
+          APK="novel-reader-$TAG.apk"
+          cp app/build/outputs/apk/release/app-release.apk "$APK"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber
+          else
+            gh release create "$TAG" "$APK" --target "${{ github.sha }}" \
+              --title "Novel Reader $TAG" --notes "Built from commit ${{ github.sha }}." --latest
+          fi

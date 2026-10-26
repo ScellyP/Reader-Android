@@ -56,7 +56,22 @@ pick a different green run.
 
 ## Updating the app
 
-To update, repeat the steps above with the newest green run and install the APK
+**In the app (from v1.15.00):** the app checks GitHub for a newer version when it starts (at most every 6 hours).
+When there is one, a bar appears at the bottom of the side menu:
+
+1. **Update available** — on Wi-Fi the app downloads it by itself in the background (on mobile data it waits
+   for you to tap **Download**, because the file is large).
+2. **Install** — tap it. Android asks you to confirm the install (and, the first time, to allow *Install unknown
+   apps* for Novel Reader; the app takes you to that settings page and continues when you come back).
+3. The app restarts on the new version. Your chapters, bookmarks and settings stay.
+
+Tap the **version number** at the very bottom of the side menu to check right now. The bar also has an
+**Update automatically** switch; turn it off if you only want to check by hand.
+
+The first update this way only works from a build that already contains the updater, so install v1.15.00 by hand
+once (steps above). Updates only appear for builds that were signed with the real key (see *Signing and updates*).
+
+**By hand (always possible):** repeat the steps above with the newest green run and install the APK
 over the old one. Your chapters, bookmarks and settings stay.
 
 If Android refuses to install it as an update, uninstall the app once and
@@ -550,6 +565,14 @@ Notes:
 - Putting `[skip ci]` in a message skips the whole workflow, which is GitHub's
   own switch.
 - Only pushes to `main`/`master` build; other branches never do.
+
+### Releases (for the in-app updater)
+
+Every build that was signed with the real key also publishes a **GitHub Release** named after `APP_VERSION`
+(e.g. `v1.15.00`) with the APK attached (`novel-reader-v1.15.00.apk`). That is what the app looks at. If you redo a
+build with the same version number, its Release gets the new APK; the app only offers an update when the number
+is higher than the installed one, so bump the minor number if you want phones to pick up a redo. Builds without the
+signing secrets publish no Release (the APK could not update anything anyway).
 
 ### Signing and updates
 

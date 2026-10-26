@@ -25,6 +25,12 @@
          songs from the internet. Nothing else in the app uses the network. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- In-app updates (AppUpdater.kt): REQUEST_INSTALL_PACKAGES lets the app install the APK it
+         downloaded from GitHub (the user still allows "install unknown apps" for it once and
+         confirms each install); ACCESS_NETWORK_STATE lets it skip the automatic download on mobile data. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     <!-- "Fetch new chapters" and "Delete chapters" run the Python scripts in
          assets/scripts inside Termux (ChapterTools.kt). Termux's RUN_COMMAND
          permission is a runtime permission: the app asks for it the first time. -->

@@ -3109,6 +3109,21 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
 .sp-card-new .sp-cover { background: none; border: 1.5px dashed color-mix(in srgb, var(--text) 35%, transparent); box-shadow: none; }
 .sp-card-new .sp-cover .ico { width: 30%; height: 30%; }
 </style>
+<style id="app-update-css">
+/* In-app updater: the bar above the version number in the side menu, and a dot on the menu button. */
+#update-bar { flex-shrink: 0; padding: 10px 16px; border-top: 1px solid var(--border); background: var(--panel-2); font-size: 13px; color: var(--muted); }
+#update-bar.hidden, #update-progress.hidden, #update-action.hidden { display: none; }
+#update-text { color: var(--text); line-height: 1.35; }
+#update-progress { height: 5px; margin-top: 8px; border-radius: var(--r-pill); background: var(--border); overflow: hidden; }
+#update-progress-fill { height: 100%; width: 0; background: var(--accent); transition: width .25s linear; }
+#update-action { margin-top: 8px; width: 100%; padding: 9px 12px; border: 1px solid var(--accent-line); border-radius: var(--r-sm); background: var(--accent-soft); color: var(--accent-strong); font: inherit; font-weight: 600; cursor: pointer; }
+#update-action:active { background: var(--accent); color: var(--accent-ink); }
+#update-auto-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--faint); cursor: pointer; }
+#update-auto { accent-color: var(--accent); }
+#app-version { cursor: pointer; }
+body.has-update #toggle-sidebar { position: relative; }
+body.has-update #toggle-sidebar::after { content: ""; position: absolute; top: 6px; right: 6px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg); }
+</style>
 </head>
 <body>
 <!-- Icon sprite: 24x24 grid, 1.75px stroke, round caps/joins (set in .ico). -->
@@ -3227,7 +3242,14 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
       Allow access above, then add one folder per novel with its <b>.txt</b> chapters inside.
       <span class="en-path">/storage/emulated/0/Novel</span>
     </div>
-    <div id="app-version" title="App version"></div>
+    <!-- In-app updates (app-update.js / AppUpdater.kt): hidden until there is something to show. -->
+    <div id="update-bar" class="hidden" role="status" aria-live="polite">
+      <div id="update-text"></div>
+      <div id="update-progress" class="hidden"><div id="update-progress-fill"></div></div>
+      <button id="update-action" type="button" class="hidden"></button>
+      <label id="update-auto-row"><input type="checkbox" id="update-auto" checked> Update automatically</label>
+    </div>
+    <div id="app-version" role="button" tabindex="0" title="App version - tap to check for updates"></div>
   </div>
 
   <div id="main">
@@ -3733,6 +3755,7 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
 <script src="moon-theme.js"></script>
 <script src="chapter-swipe.js"></script>
 <script src="reader.js"></script>
+<script src="app-update.js"></script>
 <script src="color-wheel.js"></script>
 <script src="peek-mode.js"></script>
 <!-- Shown for a moment when a double tap in the middle of the screen likes the current song. -->

@@ -19,6 +19,7 @@ Key files:
 - `app/src/main/assets/scripts/chapter_downloader.py` (v5.3: adds `--resume`, `find_resume_point()`: the highest chapter number by first line / file name, its `Source:` link; `run(skip_first=True)` opens it only to find the next link) and `delete_chapters.py` (unchanged, always run with `--yes`). `tests/chapter-tools.test.js` runs both for real against a local fake site / temp folder, and checks page, Kotlin, manifest and scripts agree.
 - `app/src/main/java/.../SongNames.kt` — the text rules (`cleanFolder`, `cleanSongName`, `isWebLink`, `failureReason`), pure Kotlin; must give the same answers as `cleanFolderName` / `cleanSongName` in `song-download.js` (compared by `tests/kotlin-jvm.test.js`).
 - `app/src/main/java/.../Id3Title.kt` — rewrites an MP3's title tag (ID3v2.3/2.4 TIT2, plus a trailing ID3v1 title) without ffmpeg, copying every other frame and the audio byte for byte; used when a staged song is named, because the app lists songs by their title tag (`readAudioTags`). Pure `java.io`.
+- `app/src/main/java/.../AppUpdater.kt` + `app/src/main/assets/app-update.js` — the in-app updater: native half (GitHub Releases check, download, PackageInstaller) and the side-menu bar. Full description, contract and reasons: see **Auto-updater** below; every structural change goes in **Structure change log**.
 - `app/src/main/assets/settings-file.js` — mirrors settings to `/storage/emulated/0/Novel/settings.txt`.
 - `app/src/main/assets/version.js` — `APP_VERSION`.
 - `app/src/main/assets/color-wheel.js` — Page/Text colour wheel.
@@ -30,6 +31,7 @@ Key files:
 - `NativeCrossfade.kt` — native crossfade: two ExoPlayers, equal-power ramp, session hand-over.
 - `ReplayGainReader.kt` — reads ReplayGain tags from the file bytes (pure `java.io`, testable on a plain JVM).
 - `tests/index-html.test.js` — structure of `index.html`: no id used twice (a `<style id>` clashing with an icon id once left the Home tab icon blank), every `<use href>` and every `svgIcon()`/`makeIcon()` name has a `<symbol>`, every script file is loaded
+- `tests/app-update.test.js` — the updater: `plan()` for every state, the version rules run with the regexes taken out of `AppUpdater.kt`, page/Kotlin/manifest/workflow agreement, and the workflow's tag extraction run against the real `version.js` (12 checks). `AppUpdater.kt` itself needs a device.
 - `tests/chapter-swipe.test.js` — the swipe-up gesture (9 checks)
 - `tests/song-download.test.js` — link parsing, playlist/song-name cleaning, the wizard's state machine (steps, background download of the next song, Retry/Skip, name collisions, leaving deletes, late answers ignored; 26 checks in all), that the bridge names, script options, staging folder and scan filter agree between page, Kotlin and script, and that every element id the page looks up exists in `index.html`. The tab's own DOM code was only driven by hand in a headless browser with a fake phone, and `SongDownloader.kt` needs a device.
 - `tests/kotlin-jvm.test.js` — the pure-Kotlin parts on a plain JVM (needs `kotlinc` on PATH or in `$KOTLINC`, else skipped): `Id3Title.kt` (`tests/jvm/Id3TitleTest.kt`: v2.3/v2.4, UTF-16 titles, ID3v1, no tag, damaged tags, and a real ffmpeg-made file when ffmpeg is installed) and `SongNames.kt` against the JS rules.
@@ -95,6 +97,100 @@ interpolated into the shell, so keep it that way. `versionCode` is
 When you give the owner a change, suggest a commit message that starts with the
 new `APP_VERSION` number (e.g. `v1.04.02`) so the push builds; for docs-only or
 CI-only changes, suggest a message without a version number.
+
+## Auto-updater (in-app updates from GitHub Releases)
+
+**Status: written in v1.15.00, not yet run on a device.** Keep the checklist at the bottom of this section current.
+
+**Goal:** the app finds out by itself that a newer build exists on GitHub, downloads it, and installs it over
+the running copy, without the owner going to the Actions tab and hunting for an artifact.
+
+**Why GitHub Releases and not Actions artifacts:** an Actions artifact needs a logged-in GitHub session to
+download, so an app cannot fetch it. A Release asset has a public URL, and `api.github.com/repos/<owner>/<repo>/releases/latest`
+answers without a token (the repo is public). So the workflow has to *publish a Release* for every real build.
+
+### How it fits together
+
+```
+push with vX.Y.Z in the commit message
+  -> build-apk.yml (check -> build) builds the signed release APK
+  -> new last step "Publish GitHub Release": tag = APP_VERSION from version.js, asset = novel-reader-vX.Y.Z.apk
+       (only when the real signing key was used, see "Decisions" below)
+
+app (AppUpdater.kt, on a worker thread)
+  check     GET releases/latest -> tag_name + the .apk asset (url, size, sha256 digest if given)
+            newer than the installed APP_VERSION?  (numeric compare of MAJOR.MID.MINOR, never string compare)
+  download  asset -> cacheDir/updates/<name>.part -> checked (size, and sha256 when GitHub gives one) -> .apk
+  install   PackageInstaller session (no FileProvider needed) -> Android's own confirm screen
+page (app-update.js)  shows a bar in the side menu: available / downloading % / ready / failed, plus the
+                      "Update automatically" switch
+```
+
+### Contract between page and native
+
+- Bridge (all in `MainActivity.kt`'s `AndroidBridge`, each a one-line forward to `appUpdater`):
+  `checkForUpdate()` (a manual check: always answers, even "up to date"), `downloadUpdate()`, `installUpdate()`,
+  `updateState(): String` (latest state JSON, `""` before the first), `getAutoUpdate(): Boolean`, `setAutoUpdate(on)`.
+- Native -> page: `window.onUpdateState(json)`, `json = {"status","current","version","percent","message","manual"}`;
+  `status` is one of `checking | uptodate | available | downloading | ready | needpermission | installing | failed`.
+  `current` = installed version, `version` = the newer one (empty unless one exists), `percent` 0-100 while downloading.
+- Auto behaviour (when `getAutoUpdate()` is on, default on): a check at app start at most every 6 h; if a newer
+  build exists it is downloaded in the background **only on an unmetered network** (the APK is large because of the
+  bundled yt-dlp/ffmpeg); the install itself always needs one tap, because Android requires the user to confirm
+  an install made by a normal app (Android 12+ may skip the confirm screen for later updates, we ask for that with
+  `USER_ACTION_NOT_REQUIRED` but cannot rely on it).
+- Never installs while music plays or a song/chapter job is running: the page only offers "Install" and the
+  owner decides; `isBusy()` (checking/downloading/installing) also keeps `closeRunnable` from closing the app.
+- "Install unknown apps" must be allowed for this app once (`canRequestPackageInstalls()`); if not, status
+  `needpermission` and `installUpdate()` opens the system settings page for it; coming back continues the install.
+
+### Decisions and reasons
+
+- **Compare by `APP_VERSION` (`vMAJOR.MID.MINOR`), not by `versionCode`.** That number is the one the owner sees and
+  it already lives in one place (`version.js`); native code reads it from the asset, so there is no second copy to forget.
+  Consequence: a *redone* build with the same number is not offered as an update (the version rules already say a
+  redone build keeps its number). To force one, bump the minor number.
+- **Release tag = `APP_VERSION`.** A redone build of the same version updates the existing release's asset
+  (`gh release upload --clobber`) instead of failing on a duplicate tag.
+- **Only publish a Release when the build was signed with the real key.** Android refuses an update signed with a
+  different key; a debug-signed Release would be offered to every phone and then fail to install.
+- **PackageInstaller instead of an `ACTION_VIEW` intent + FileProvider.** No extra manifest provider or xml file,
+  works with the same permission, and reports success/failure back to us.
+- **Plain `HttpURLConnection`, no new library.** Two GET requests do not justify a dependency (and every new
+  library has cost a build in this project before: see the media3 note in `app/build.gradle`).
+- **Release APK only** (not the debug one): it is what the owner installs, and `minifyEnabled` keeps it smaller.
+
+### Checklist
+
+- [x] Workflow publishes a Release (`build-apk.yml`, `permissions: contents: write`)
+- [x] `AppUpdater.kt` (check, download, install, state)
+- [x] Manifest: `REQUEST_INSTALL_PACKAGES`, `ACCESS_NETWORK_STATE`
+- [x] `MainActivity.kt`: `appUpdater`, bridge methods, start-up check, `closeRunnable`, `onDestroy`
+- [x] Page: `app-update.js` + `#update-bar` in `index.html`, tap on the version = manual check
+- [x] `tests/app-update.test.js`
+- [x] Version bump + README
+- [ ] **Tested on a device** (nothing here has been run on a phone yet; the first update can only be tested
+      by installing this build and then pushing a newer one)
+
+## Structure change log
+
+**Rule for every AI assistant / chat working here:** whenever you change the *structure* of the project (a new or
+removed file, a renamed class, a new bridge method, a moved responsibility, a new workflow step, a changed contract
+between page and native), add a line here in the same change: **date, what changed, and why**. Newest first.
+Behaviour-only fixes do not need a line (the version number covers those).
+
+- **v1.15.00 — Auto-updater.**
+  - NEW `app/src/main/java/.../AppUpdater.kt` — all update logic native-side. *Why:* same split as `ChapterTools.kt` /
+    `SongDownloader.kt` (one native class per feature, `MainActivity` only forwards), so it stays testable and removable.
+  - NEW `app/src/main/assets/app-update.js` + `#update-bar` in `index.html` — the side-menu bar. *Why:* own file instead of
+    more code in `reader.js` (already very large); loaded after `reader.js` so it can use the themed dialog.
+  - NEW `tests/app-update.test.js`. *Why:* every feature here has a test file that checks page, Kotlin, manifest and workflow agree.
+  - CHANGED `.github/workflows/build-apk.yml` — last step publishes a GitHub Release with the APK. *Why:* an app cannot
+    download Actions artifacts (login needed); a Release asset has a public URL.
+  - CHANGED `AndroidManifest.xml` — `REQUEST_INSTALL_PACKAGES` (install the downloaded APK), `ACCESS_NETWORK_STATE`
+    (don't auto-download on mobile data).
+  - `AppUpdater` is built in a property initializer but only touches the activity in `start()` (called from `onCreate`), and its fields are `by lazy`: `ComponentActivity` has no Context yet while its properties are initialised. `appUpdater` has an explicit type (the untyped `chapterTools` / `termuxPermissionLauncher` pair caused a "recursive problem" build error in v1.14.00).
+  - CHANGED `MainActivity.kt` — new `appUpdater` (same pattern as `chapterTools`), 6 bridge methods, `isBusy()` in `closeRunnable`.
 
 ## Packaging rule for generated packages
 
@@ -360,5 +456,6 @@ the source of truth, so saving, recent colours and presets work as before.
 - **Update `Agent.md`** for internal changes: architecture, feature framework, native bridge, tests, versioning, packaging.
 - **Keep tests updated.** Add or adjust checks in `tests/` when behaviour changes.
 - **Follow the packaging rule.** Generated zips must contain one top-level folder named `novelreader`; GitHub uploads must put `app/src/main/assets/index.html` and `.github/workflows/` at repo root.
+- **Log structure changes.** Any new/removed/renamed file, class, bridge method, workflow step or page<->native contract gets a dated line with the *reason* in `Agent.md#structure-change-log`, in the same change.
 - **Suggest a commit message.** Start it with the new version (e.g. `v1.04.02: fix volume keys`) so the push builds. Docs/CI-only changes get a message with no version number, See `Agent.md#build-trigger-github-actions`.
 - **Do not commit keystores.** Update signing is handled through GitHub secrets; see the "Signing and updates" section of `README.md`.

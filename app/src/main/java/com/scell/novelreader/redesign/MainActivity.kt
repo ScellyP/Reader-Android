@@ -105,7 +105,7 @@ class MainActivity : ComponentActivity() {
             val nativeActive = c != null && (c.isPlaying ||
                 (c.playWhenReady && (c.playbackState == Player.STATE_BUFFERING ||
                     c.playbackState == Player.STATE_READY)))
-            if (nativeActive || songDownloader.isBusy() || chapterTools.isBusy()) {
+            if (nativeActive || songDownloader.isBusy() || chapterTools.isBusy() || appUpdater.isBusy()) {
                 closeRecheckPending = false
                 screenHandler.postDelayed(this, inactivityCloseMs)
                 return
@@ -283,6 +283,13 @@ class MainActivity : ComponentActivity() {
     private val termuxPermissionLauncher: androidx.activity.result.ActivityResultLauncher<String> = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> chapterTools.onPermissionResult(granted) }
+
+    // The in-app updater (GitHub Releases -> download -> PackageInstaller): see AppUpdater.kt and the
+    // update bar in app-update.js. Its state reaches the page through window.onUpdateState(json).
+    private val appUpdater: AppUpdater = AppUpdater(
+        activity = this,
+        onState = { json -> callPage("onUpdateState", JSONObject.quote(json)) },
+    )
     private val audioExtensions = setOf("mp3", "m4a", "aac", "flac", "ogg", "opus", "wav")
 
     /**
@@ -398,6 +405,9 @@ class MainActivity : ComponentActivity() {
         installCrashLogger()
         registerVolumeReceiver()
         songDownloader.warmUp()
+        appUpdater.start()
+        // A few seconds after launch, so the check does not compete with the splash and the library scan.
+        screenHandler.postDelayed({ appUpdater.checkOnStart() }, 6000L)
         // If access was already granted, make sure the folders exist right away.
         if (hasStoragePermission()) Thread { ensureNovelFolders() }.start()
 
@@ -965,6 +975,7 @@ class MainActivity : ComponentActivity() {
         try { unregisterReceiver(volumeReceiver) } catch (e: Exception) { /* not registered */ }
         songDownloader.release()
         chapterTools.release()
+        appUpdater.release()
         screenHandler.removeCallbacks(releaseScreenRunnable)
         screenHandler.removeCallbacks(closeRunnable)
         nightLockHandler.removeCallbacks(nightLockCheck)
@@ -991,6 +1002,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         appInForeground = true
         adaptiveBrightness.onResume()
+        appUpdater.onResume()
         // Push the current position right away (the poll may have been in slow mode).
         if (mediaController?.isPlaying == true) startProgressUpdates()
         keepScreenAwake()
@@ -1055,6 +1067,28 @@ class MainActivity : ComponentActivity() {
         @JavascriptInterface
         fun deleteChapters(novel: String, upToChapter: Int): Boolean =
             chapterTools.deleteChapters(novel, upToChapter)
+
+        // In-app updates (AppUpdater.kt, app-update.js). All answers arrive as window.onUpdateState(json).
+        // checkForUpdate: a manual check (always answers, even "up to date"); downloadUpdate and
+        // installUpdate act on what the last check found; updateState is the latest state JSON ("" before
+        // the first); the auto switch decides whether the app checks and downloads by itself.
+        @JavascriptInterface
+        fun checkForUpdate() { appUpdater.check(manual = true) }
+
+        @JavascriptInterface
+        fun downloadUpdate() { appUpdater.download() }
+
+        @JavascriptInterface
+        fun installUpdate() { runOnUiThread { appUpdater.install() } }
+
+        @JavascriptInterface
+        fun updateState(): String = appUpdater.stateJson()
+
+        @JavascriptInterface
+        fun getAutoUpdate(): Boolean = appUpdater.autoEnabled()
+
+        @JavascriptInterface
+        fun setAutoUpdate(on: Boolean) { appUpdater.setAutoEnabled(on) }
 
         // The latest window.onChapterJob state as JSON ("" if no job ran yet): lets the page catch up
         // after the app was in the background while the answer arrived.
