@@ -1048,27 +1048,45 @@ class MainActivity : ComponentActivity() {
             }
         }
 
-        // "Download songs" tab (song-download.js): one job at a time. Both methods return false
-        // only when a job is still running; any other problem comes back through
-        // window.onSongDownloadStatus(jobId, "failed", message). The result of a job comes the
-        // same way, exactly once. See SongDownloader.kt.
+        // "Download songs" wizard (song-download.js). A job is answered through
+        // window.onSongDownloadStatus(jobId, "done"|"failed", message), exactly once; both methods
+        // return false only when a job with that id is already running. Two jobs may run at once
+        // (the next song downloads while the current one is placed). See SongDownloader.kt.
         //
-        // lookupSongTitle: finds the song's name (the message of the "done" answer) so the page
-        // can show it and let the user change it. Nothing is saved.
+        // stageSong: downloads one link into Audio/.staging/ (invisible to the music scan). The
+        // "done" message is the downloaded file's full path.
         @JavascriptInterface
-        fun lookupSongTitle(jobId: String, url: String): Boolean =
-            songDownloader.start(jobId, url, "", "", titleOnly = true)
+        fun stageSong(jobId: String, url: String): Boolean =
+            songDownloader.stage(jobId, url)
 
-        // downloadSong: saves the song. [name] "" = keep the song's own name; otherwise it becomes
-        // the file name and the title tag.
+        // placeSong: names a staged song [name] ("" = keep) and moves it into the playlist folder
+        // [folder] ("" = Audio/ itself). The "done" message is the song's new full path.
         @JavascriptInterface
-        fun downloadSong(jobId: String, url: String, folder: String, name: String): Boolean =
-            songDownloader.start(jobId, url, folder, name)
+        fun placeSong(jobId: String, path: String, name: String, folder: String): Boolean =
+            songDownloader.place(jobId, path, name, folder)
 
-        // Stop button: the running song asks to stop and then reports "Stopped".
+        // Stops every running download/placement (the user left the tab).
         @JavascriptInterface
         fun cancelSongDownload() {
             songDownloader.cancel()
+        }
+
+        // Deletes everything in the staging folder: songs that were downloaded but never placed.
+        @JavascriptInterface
+        fun discardStagedSongs() {
+            try { File(SongDownloader.STAGING_DIR).deleteRecursively() } catch (e: Exception) { /* nothing to delete */ }
+        }
+
+        // The text on the clipboard ("" if none), for the "Click to paste" button. Android only lets
+        // an app read the clipboard while it is in the foreground, which it is when the button is tapped.
+        @JavascriptInterface
+        fun readClipboard(): String {
+            return try {
+                val cm = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                cm.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this@MainActivity)?.toString() ?: ""
+            } catch (e: Exception) {
+                ""
+            }
         }
 
         // Settings file: /storage/emulated/0/Novel/settings.txt. Returns null when storage isn't accessible yet, ""
@@ -1626,8 +1644,11 @@ class MainActivity : ComponentActivity() {
 
                 // Sorted by path-relative-to-Audio/ (not just filename) so
                 // tracks in the same playlist folder stay grouped together.
+                // Folders starting with a dot are skipped: Audio/.staging/ holds songs of the Download
+                // tab that are not named or placed yet.
                 val audioFiles = audioRoot.walkTopDown()
                     .filter { it.isFile && audioExtensions.contains(it.extension.lowercase()) }
+                    .filter { f -> f.toRelativeString(audioRoot).split(File.separatorChar).none { it.startsWith(".") } }
                     .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) {
                         it.toRelativeString(audioRoot)
                     })

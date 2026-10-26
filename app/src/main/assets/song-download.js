@@ -1,40 +1,53 @@
 /* =========================================================================
    Download songs tab (music panel -> bottom bar -> "Download")
    -------------------------------------------------------------------------
-   The page half only. Paste links, pick a playlist (folder) chip or
-   "+ New playlist", press Download. With "Check names before saving" on
-   (the default) each link is first looked up for its song name; the names
-   then appear as editable fields, and "Save songs" downloads them under the
-   names shown (leave a name alone to keep it). Jobs run one at a time; each
-   shows Waiting / Downloading / Done / Failed (Retry), with a Stop button.
+   A step-by-step wizard, one step on screen at a time (each new step replaces
+   the one before it):
 
-   The download itself runs natively: MainActivity's AndroidBridge hands each
-   job to Termux, which runs song_dl.py (yt-dlp). The contract:
+     1. paste      "Click to paste" reads the clipboard; every web link found on it
+                   is one song (up to 50). Songs go through steps 2-5 one after
+                   another.
+     2. download   the song downloads into a staging folder (nothing shows up in
+                   the library yet). While you name and place a song, the NEXT
+                   song already downloads in the background. A failed download
+                   offers Retry and Skip.
+     3. name       the song's thumbnail and its name, editable; Save.
+     4. playlist   tiles: "New playlist" first, then the playlist folders, then
+                   "No playlist" (the song stays directly in Audio/).
+     5. place      the song is renamed (file name and title tag), moved into the
+                   chosen folder, the library is rescanned and the song starts
+                   playing in that playlist. Then on to the next song.
 
-     page   -> AndroidBridge.lookupSongTitle(jobId, url)
-               AndroidBridge.downloadSong(jobId, url, folder, name)   folder "" = none,
-                                                                       name "" = keep the song's own
-               AndroidBridge.cancelSongDownload()                      (optional)
+   Leaving the tab (the ✕, another tab, closing the panel) before a song is
+   placed cancels the running downloads and deletes every staged song.
+
+   The work itself runs natively: MainActivity's AndroidBridge hands each job to
+   Termux, which runs song_dl.py (yt-dlp, ffmpeg). The contract:
+
+     page   -> AndroidBridge.stageSong(jobId, url)
+               AndroidBridge.placeSong(jobId, path, name, folder)  folder "" = none, name "" = keep
+               AndroidBridge.cancelSongDownload()                   stops every job
+               AndroidBridge.discardStagedSongs()                   deletes the staging folder
+               AndroidBridge.readClipboard()                        the clipboard's text
+               AndroidBridge.getArtwork(path)                       the thumbnail (data: URL or "")
      native -> window.onSongDownloadStatus(jobId, "running"|"done"|"failed", message)
-               exactly one done/failed per job; for a lookup, the message of
-               "done" is the song's name.
+               exactly one done/failed per job; the message of a "done" is a file
+               path (the staged file for stageSong, the song's new path for placeSong).
+     player -> NovelAudio.playAfterRescan(path, playlist), NovelAudio.getPlaylists(),
+               SpotifyUI.getCover(playlistName)
 
-   Without the native hook a job fails at once with "Not connected to Termux
-   yet". After a batch with at least one finished song, NovelAudio.rescan()
-   refreshes the library.
+   Without the native hook a job fails at once with "Not connected to Termux yet".
+   Playlist and song names are cleaned here (cleanFolderName, cleanSongName), again
+   natively and again in the script, and are always separate arguments, never part
+   of a shell string.
 
-   Playlist and song names are cleaned here (cleanFolderName, cleanSongName)
-   and are always passed on as separate arguments, never joined into a shell
-   string.
-
-   The pure helpers (parseLinks, cleanFolderName, cleanSongName, createQueue,
-   shortLink) are exported for tests/song-download.test.js.
+   The pure parts (parseLinks, cleanFolderName, cleanSongName, shortLink, stemOf,
+   createWizard) are exported for tests/song-download.test.js.
    ========================================================================= */
 (function (root) {
   'use strict';
 
   const MAX_LINKS = 50;
-  const NEW_PLAYLIST = '@new';
 
   /* =======================================================================
      Pure helpers (tested)
@@ -53,8 +66,8 @@
   }
 
   // A song's file name: any language is fine, but not the characters a file name cannot hold
-  // (/ \ : * ? " < > |); tabs, line breaks and other control characters become spaces. At most 120 characters. Same rule as
-  // clean_song_name in song_dl.py.
+  // (/ \ : * ? " < > |); tabs, line breaks and other control characters become spaces. At most
+  // 120 characters. Same rule as clean_song_name in song_dl.py.
   function cleanSongName(name) {
     const tidy = String(name == null ? '' : name)
       .replace(/[\u0000-\u001f\u007f]/g, ' ')
@@ -66,8 +79,10 @@
     return Array.from(tidy).slice(0, 120).join('');
   }
 
-  // Splits pasted text into web links: one per line (or separated by spaces), duplicates dropped.
-  // Returns { links, skipped } where skipped counts the pieces that were not http(s) links.
+  // Splits pasted text into web links: pieces separated by spaces, commas or line breaks, anything
+  // that is not an http(s) link ignored, duplicates dropped. Share texts such as "Song name
+  // https://…" therefore work. Returns { links, skipped }: skipped counts the pieces that were
+  // not links.
   function parseLinks(text) {
     const links = [];
     const seen = new Set();
@@ -82,155 +97,234 @@
     return { links: links.slice(0, MAX_LINKS), skipped: skipped + Math.max(0, links.length - MAX_LINKS) };
   }
 
-  // The download queue. One job runs at a time.
-  //   start(job)   begins a job; return false (or throw) when it cannot start
-  //   cancel()     asks the native side to stop the running job
-  //   onChange(jobs)           after any change
-  //   onBatchDone({done, failed, stopped})   when the queue runs empty
-  // A job is { id, url, folder, state, phase, message, title, name } with state
-  //   waiting | running | named | done | failed | stopped
-  // and phase "title" (look the song's name up) or "download" (save it).
-  // add(urls, folder, true) first looks the names up: each job ends in "named" and waits there,
-  // with its name editable through rename(), until confirm() sends them on to be downloaded.
-  function createQueue({ start, cancel, onChange, onBatchDone } = {}) {
-    const jobs = [];
-    let nextId = 1;
-    let current = null;
-    let batchOpen = false;
-
-    const emit = () => { if (onChange) onChange(jobs.slice()); };
-    const count = (state) => jobs.filter((j) => j.state === state).length;
-
-    function pump() {
-      if (current) return;
-      const job = jobs.find((j) => j.state === 'waiting');
-      if (!job) {
-        // Names found and waiting for the user's go-ahead: the batch is not over yet.
-        if (batchOpen && !jobs.some((j) => j.state === 'named')) {
-          batchOpen = false;
-          if (onBatchDone) onBatchDone({ done: count('done'), failed: count('failed'), stopped: count('stopped') });
-        }
-        return;
-      }
-      current = job;
-      job.state = 'running';
-      job.message = '';
-      let started = false;
-      let why = '';
-      try { started = !!start && start(job) !== false; } catch (e) { why = e && e.message ? e.message : ''; }
-      if (!started) { settle(job, false, why || 'Could not start the download'); return; }
-      emit();
-    }
-
-    // The one place a running job ends. A late or repeated report changes nothing.
-    function settle(job, ok, message) {
-      if (job.state !== 'running') return;
-      if (job.phase === 'title' && ok && !job.stopRequested) {
-        job.title = message || '';
-        job.name = cleanSongName(job.title);
-        job.state = 'named';
-        job.message = '';
-      } else {
-        const stopped = !!job.stopRequested && (!ok || job.phase === 'title');
-        job.state = stopped ? 'stopped' : (ok ? 'done' : 'failed');
-        job.message = stopped ? 'Stopped' : (message || '');
-      }
-      if (current === job) current = null;
-      emit();
-      pump();
-    }
-
-    const find = (id) => jobs.find((j) => String(j.id) === String(id));
-
-    return {
-      jobs,
-      add(urls, folder, review) {
-        if (!batchOpen && !current) {
-          // A fresh batch: forget the old finished rows so the list stays about this one.
-          for (let i = jobs.length - 1; i >= 0; i--) if (jobs[i].state !== 'waiting') jobs.splice(i, 1);
-        }
-        urls.forEach((url) => {
-          jobs.push({
-            id: 'j' + nextId++, url, folder: folder || '', state: 'waiting', message: '',
-            phase: review ? 'title' : 'download', title: '', name: '',
-          });
-        });
-        batchOpen = true;
-        emit();
-        pump();
-      },
-      // The native side answers here.
-      report(id, status, message) {
-        const job = find(id);
-        if (!job) return;
-        if (status === 'running') { if (job.state === 'running') { job.message = message || ''; emit(); } return; }
-        if (status === 'done') settle(job, true, message);
-        else if (status === 'failed') settle(job, false, message);
-      },
-      // The name the user typed for a job that is waiting for the go-ahead. Does not redraw:
-      // the user is typing in the field.
-      rename(id, text) {
-        const job = find(id);
-        if (job && job.state === 'named') job.name = String(text == null ? '' : text);
-      },
-      // The go-ahead: every named job is downloaded under its (cleaned) name. Returns how many.
-      confirm() {
-        let n = 0;
-        jobs.forEach((j) => {
-          if (j.state !== 'named') return;
-          j.name = cleanSongName(j.name);
-          j.phase = 'download';
-          j.state = 'waiting';
-          j.message = '';
-          n++;
-        });
-        if (n) { batchOpen = true; emit(); pump(); }
-        return n;
-      },
-      // Drops the jobs that are waiting for the go-ahead.
-      discard() {
-        for (let i = jobs.length - 1; i >= 0; i--) if (jobs[i].state === 'named') jobs.splice(i, 1);
-        emit();
-        pump();
-      },
-      retry(id) {
-        const job = find(id);
-        if (!job || (job.state !== 'failed' && job.state !== 'stopped')) return;
-        job.state = 'waiting';
-        job.message = '';
-        job.stopRequested = false;
-        batchOpen = true;
-        emit();
-        pump();
-      },
-      // Waiting jobs are dropped at once; the running one is asked to stop and reports back.
-      stop() {
-        jobs.forEach((j) => {
-          if (j.state === 'waiting' || j.state === 'named') { j.state = 'stopped'; j.message = 'Stopped'; }
-        });
-        if (current) {
-          current.stopRequested = true;
-          try { if (cancel) cancel(); } catch (e) { /* the job still ends by itself */ }
-        }
-        emit();
-        if (!current) pump();
-      },
-      busy() { return jobs.some((j) => j.state === 'waiting' || j.state === 'running'); },
-      reviewing() { return jobs.some((j) => j.state === 'named'); },
-      summary() {
-        return { total: jobs.length, waiting: count('waiting'), running: count('running'), named: count('named'),
-                 done: count('done'), failed: count('failed'), stopped: count('stopped') };
-      },
-    };
-  }
-
   // A short title for a link: host + path, without the scheme or tracking query.
   function shortLink(url) {
     const bare = String(url).replace(/^https?:\/\/(www\.)?/i, '').split(/[?#]/)[0].replace(/\/$/, '');
     return bare.length > 48 ? bare.slice(0, 47) + '…' : bare;
   }
 
-  const api = { parseLinks, cleanFolderName, cleanSongName, createQueue, shortLink };
+  // "/a/b/Some Song.mp3" -> "Some Song"
+  function stemOf(path) {
+    return String(path == null ? '' : path).split(/[\\/]/).pop().replace(/\.[^.]*$/, '');
+  }
+
+  /* -----------------------------------------------------------------------
+     The wizard's state machine.
+       stage(jobId, url)                        starts a download; return false (or throw) if it cannot start
+       place(jobId, path, name, folder)         starts a placement; same
+       cancel()                                 stops every running job
+       discard()                                deletes every staged song
+       play(path, folder)                       a song was placed: start playing it
+       onChange(state)                          after any change
+     state = { step, items, index, message, error, folder }
+       step    paste | download | name | playlist | newplaylist | placing | placefail | done
+       items   [{ id, url, state, path, name, error }]
+               state: waiting | downloading | ready | failed | placed | skipped
+       index   which item the screen is about
+     ----------------------------------------------------------------------- */
+  function createWizard({ stage, place, cancel, discard, play, onChange } = {}) {
+    const w = { step: 'paste', items: [], index: 0, message: '', error: '', folder: '' };
+    const jobs = {};            // jobId -> { kind: 'stage' | 'place', item }
+    let seq = 0;                // job ids never repeat within a session, so a late answer can't be mistaken
+
+    const emit = () => { if (onChange) onChange(w); };
+    const current = () => w.items[w.index] || null;
+    const stageRunning = () => Object.keys(jobs).some((id) => jobs[id].kind === 'stage');
+
+    function reset() {
+      w.step = 'paste'; w.items = []; w.index = 0; w.message = ''; w.error = ''; w.folder = '';
+    }
+
+    function startStage(item) {
+      const id = 's' + (++seq);
+      jobs[id] = { kind: 'stage', item };
+      item.state = 'downloading';
+      item.error = '';
+      let ok = false;
+      let why = '';
+      try { ok = !!stage && stage(id, item.url) !== false; } catch (e) { why = e && e.message ? e.message : ''; }
+      if (!ok) { delete jobs[id]; stageFailed(item, why || 'Could not start the download'); }
+    }
+
+    // One download at a time. The song on screen comes first; once it is downloaded, the next one
+    // downloads in the background. A failed song holds everything back until the user decides.
+    function pump() {
+      if (stageRunning()) return;
+      const cur = current();
+      if (!cur) return;
+      if (cur.state === 'waiting') return startStage(cur);
+      if (cur.state === 'ready') {
+        const next = w.items[w.index + 1];
+        if (next && next.state === 'waiting') startStage(next);
+      }
+    }
+
+    function stageDone(item, path) {
+      if (!path) return stageFailed(item, 'The download left no file behind.');
+      item.path = path;
+      item.name = cleanSongName(stemOf(path));
+      item.state = 'ready';
+      if (item === current() && w.step === 'download') w.step = 'name';
+      emit();
+      pump();
+    }
+
+    function stageFailed(item, message) {
+      item.state = 'failed';
+      item.error = message || 'The download failed.';
+      emit();
+    }
+
+    function startPlace(item) {
+      const id = 'p' + (++seq);
+      jobs[id] = { kind: 'place', item };
+      w.step = 'placing';
+      w.error = '';
+      let ok = false;
+      let why = '';
+      try { ok = !!place && place(id, item.path, item.name, w.folder) !== false; } catch (e) { why = e && e.message ? e.message : ''; }
+      if (!ok) { delete jobs[id]; placeFailed(why || 'Could not start moving the song'); return; }
+      emit();
+    }
+
+    function placeFailed(message) {
+      w.step = 'placefail';
+      w.error = message || 'The song could not be added.';
+      emit();
+    }
+
+    function placeDone(item, finalPath) {
+      item.state = 'placed';
+      item.finalPath = finalPath || '';
+      try { if (play && finalPath) play(finalPath, w.folder); } catch (e) { /* the song is placed either way */ }
+      advance();
+    }
+
+    // On to the next song (the one on screen is placed or skipped).
+    function advance() {
+      w.index++;
+      w.message = '';
+      w.error = '';
+      w.folder = '';
+      const next = current();
+      if (!next) w.step = 'done';
+      else w.step = next.state === 'ready' ? 'name' : 'download';
+      emit();
+      pump();
+    }
+
+    return {
+      state: w,
+      // Step 1 -> 2: the links found on the clipboard. Returns false when a run is already going.
+      start(urls) {
+        if (w.step !== 'paste' || !urls || !urls.length) return false;
+        try { if (discard) discard(); } catch (e) { /* nothing staged */ }
+        w.items = urls.map((url, i) => ({ id: i + 1, url, state: 'waiting', path: '', name: '', error: '' }));
+        w.index = 0;
+        w.message = '';
+        w.step = 'download';
+        emit();
+        pump();
+        return true;
+      },
+      // A message on the first step (nothing usable on the clipboard, ...).
+      setMessage(text) {
+        if (w.step !== 'paste') return;
+        w.message = text || '';
+        emit();
+      },
+      // The native side answers here.
+      report(id, status, message) {
+        const job = jobs[id];
+        if (!job || status === 'running') return;
+        delete jobs[id];
+        const ok = status === 'done';
+        if (job.kind === 'stage') return ok ? stageDone(job.item, message) : stageFailed(job.item, message);
+        if (job.item !== current()) return;
+        return ok ? placeDone(job.item, message) : placeFailed(message);
+      },
+      retryDownload() {
+        const cur = current();
+        if (w.step !== 'download' || !cur || cur.state !== 'failed') return;
+        cur.state = 'waiting';
+        cur.error = '';
+        emit();
+        pump();
+      },
+      // Give up on this song and move on to the next. (Nothing was downloaded, so nothing to delete.)
+      skip() {
+        const cur = current();
+        if (w.step !== 'download' || !cur || cur.state !== 'failed') return;
+        cur.state = 'skipped';
+        advance();
+      },
+      // The name being typed (no redraw: the user is typing in the field).
+      rename(text) {
+        const cur = current();
+        if (w.step === 'name' && cur) cur.name = String(text == null ? '' : text);
+      },
+      // Step 3 -> 4. An emptied name keeps the song's own.
+      save() {
+        const cur = current();
+        if (w.step !== 'name' || !cur) return;
+        cur.name = cleanSongName(cur.name) || cleanSongName(stemOf(cur.path));
+        w.step = 'playlist';
+        emit();
+      },
+      // The "New playlist" tile.
+      chooseNew() {
+        if (w.step !== 'playlist') return;
+        w.step = 'newplaylist';
+        emit();
+      },
+      // Back from "New playlist" to the tiles.
+      backToPlaylists() {
+        if (w.step !== 'newplaylist') return;
+        w.step = 'playlist';
+        emit();
+      },
+      // Step 4 -> 5. [folder] "" = no playlist. A name that cleans to nothing is refused.
+      choose(folder) {
+        const cur = current();
+        if (!cur || cur.state !== 'ready' || (w.step !== 'playlist' && w.step !== 'newplaylist')) return false;
+        const cleaned = cleanFolderName(folder);
+        if (String(folder == null ? '' : folder).trim() !== '' && !cleaned) return false;
+        w.folder = cleaned;
+        startPlace(cur);
+        return true;
+      },
+      // A failed placement: try the same again, or go back and change the name.
+      retryPlace() {
+        const cur = current();
+        if (w.step === 'placefail' && cur) startPlace(cur);
+      },
+      backToName() {
+        if (w.step !== 'placefail') return;
+        w.step = 'name';
+        emit();
+      },
+      // The ✕, another tab or closing the panel: stop everything and delete what was staged.
+      leave() {
+        const active = w.step !== 'paste' && w.step !== 'done';
+        Object.keys(jobs).forEach((id) => { delete jobs[id]; });
+        if (active) {
+          try { if (cancel) cancel(); } catch (e) { /* the jobs end by themselves */ }
+          try { if (discard) discard(); } catch (e) { /* nothing to delete */ }
+        }
+        reset();
+        emit();
+      },
+      // After "All done": back to the first step.
+      again() {
+        if (w.step !== 'done') return;
+        reset();
+        emit();
+      },
+      current,
+    };
+  }
+
+  const api = { parseLinks, cleanFolderName, cleanSongName, createWizard, shortLink, stemOf };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   if (typeof document === 'undefined' || !document.getElementById) return;
 
@@ -240,18 +334,9 @@
 
   const $ = (id) => document.getElementById(id);
   const view = $('sp-view-download');
-  if (!view) return;
+  const stageEl = $('dl-stage');
+  if (!view || !stageEl) return;
   const panel = $('audio-panel');
-
-  const el = {
-    links: $('dl-links'), note: $('dl-links-note'), clear: $('dl-clear'), paste: $('dl-paste'),
-    folders: $('dl-folders'), newName: $('dl-new-name'), folderNote: $('dl-folder-note'),
-    review: $('dl-review'), go: $('dl-go'), start: $('dl-start'),
-    summary: $('dl-summary'), stop: $('dl-stop'), jobs: $('dl-jobs'),
-  };
-
-  let chosen = '';              // '' = no playlist, NEW_PLAYLIST, or a folder name
-  let lastJobs = [];
 
   function icon(name) {
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -262,12 +347,25 @@
     return svg;
   }
 
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text != null) node.textContent = text;
+    return node;
+  }
+
   function button(label, className, onClick) {
-    const b = document.createElement('button');
+    const b = el('button', className, label);
     b.type = 'button';
-    if (className) b.className = className;
-    b.textContent = label;
     b.addEventListener('click', onClick);
+    return b;
+  }
+
+  const bridge = () => root.AndroidBridge;
+
+  function needBridge(method) {
+    const b = bridge();
+    if (!b || typeof b[method] !== 'function') throw new Error('Not connected to Termux yet');
     return b;
   }
 
@@ -276,242 +374,282 @@
     catch (e) { return []; }
   };
 
-  // The playlist the jobs will go to ('' for none).
-  function targetFolder() {
-    return chosen === NEW_PLAYLIST ? cleanFolderName(el.newName.value) : chosen;
+  function playlistCover(name) {
+    try { return (root.SpotifyUI && root.SpotifyUI.getCover && root.SpotifyUI.getCover(name)) || ''; }
+    catch (e) { return ''; }
   }
 
-  const queue = createQueue({
-    start(job) {
-      const bridge = root.AndroidBridge;
-      const call = job.phase === 'title' ? 'lookupSongTitle' : 'downloadSong';
-      if (!bridge || typeof bridge[call] !== 'function') throw new Error('Not connected to Termux yet');
-      return job.phase === 'title'
-        ? bridge.lookupSongTitle(job.id, job.url)
-        : bridge.downloadSong(job.id, job.url, job.folder, job.name || '');
-    },
-    cancel() {
-      const bridge = root.AndroidBridge;
-      if (bridge && typeof bridge.cancelSongDownload === 'function') bridge.cancelSongDownload();
-    },
-    onChange(jobs) { lastJobs = jobs; renderJobs(); updateGo(); },
-    onBatchDone(result) {
-      if (result.done > 0) {
-        try { if (root.NovelAudio && root.NovelAudio.rescan) root.NovelAudio.rescan(); } catch (e) { /* ignore */ }
-        renderFolders();
+  // A cover like the ones on Home: the picture when there is one, otherwise the theme-coloured mosaic.
+  function coverNode(url, tone, iconName, extraClass) {
+    const cover = el('span', 'sp-cover' + (extraClass ? ' ' + extraClass : ''));
+    cover.setAttribute('data-tone', String(tone % 4));
+    cover.appendChild(icon(iconName || 'i-moon-music'));
+    if (url) {
+      cover.style.setProperty('--sp-cover', 'url("' + url + '")');
+      cover.setAttribute('data-sp-cover', '1');
+    }
+    return cover;
+  }
+
+  const wizard = createWizard({
+    stage(id, url) { return needBridge('stageSong').stageSong(id, url); },
+    place(id, path, name, folder) { return needBridge('placeSong').placeSong(id, path, name, folder); },
+    cancel() { const b = bridge(); if (b && typeof b.cancelSongDownload === 'function') b.cancelSongDownload(); },
+    discard() { const b = bridge(); if (b && typeof b.discardStagedSongs === 'function') b.discardStagedSongs(); },
+    play(path, folder) {
+      const audio = root.NovelAudio;
+      if (audio && typeof audio.playAfterRescan === 'function') {
+        const done = audio.playAfterRescan(path, folder);
+        if (done && typeof done.catch === 'function') done.catch(() => {});
       }
     },
+    onChange() { render(); },
   });
 
   // The native side calls this.
-  root.onSongDownloadStatus = function (jobId, status, message) { queue.report(jobId, status, message); };
+  root.onSongDownloadStatus = function (jobId, status, message) { wizard.report(jobId, status, message); };
 
-  function renderFolders() {
-    const names = playlists();
-    if (chosen && chosen !== NEW_PLAYLIST && names.indexOf(chosen) < 0) chosen = '';
-    el.folders.textContent = '';
-    const chip = (label, value) => {
-      const b = button(label, chosen === value ? 'on' : '', () => {
-        chosen = value;
-        el.newName.classList.toggle('hidden', chosen !== NEW_PLAYLIST);
-        if (chosen === NEW_PLAYLIST) el.newName.focus();
-        renderFolders();
-        updateGo();
-      });
-      b.setAttribute('role', 'radio');
-      b.setAttribute('aria-checked', chosen === value ? 'true' : 'false');
-      el.folders.appendChild(b);
-    };
-    chip('No playlist', '');
-    names.forEach((name) => chip(name, name));
-    chip('+ New playlist', NEW_PLAYLIST);
-    updateFolderNote();
+  /* ---- step 1 ---------------------------------------------------------- */
+
+  function takeClipboardText(text) {
+    const parsed = parseLinks(text);
+    if (!parsed.links.length) wizard.setMessage('No song link on the clipboard. Copy a link, then tap again.');
+    else wizard.start(parsed.links);
   }
 
-  function updateFolderNote() {
-    if (chosen === NEW_PLAYLIST) {
-      const typed = el.newName.value.trim();
-      const cleaned = cleanFolderName(typed);
-      if (!typed) el.folderNote.textContent = 'Name the new playlist.';
-      else if (!cleaned) el.folderNote.textContent = 'Use letters, numbers and spaces.';
-      else if (cleaned !== typed) el.folderNote.textContent = 'Will be saved as “' + cleaned + '”.';
-      else el.folderNote.textContent = 'Creates the playlist “' + cleaned + '”.';
-    } else if (chosen) {
-      el.folderNote.textContent = 'Saved in the “' + chosen + '” playlist.';
-    } else {
-      el.folderNote.textContent = 'Saved with your other songs, in no playlist.';
+  function pasteFromClipboard() {
+    const b = bridge();
+    if (b && typeof b.readClipboard === 'function') {
+      let text = '';
+      try { text = b.readClipboard() || ''; } catch (e) { text = ''; }
+      return takeClipboardText(text);
     }
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        return navigator.clipboard.readText().then(takeClipboardText, () => wizard.setMessage('Could not read the clipboard.'));
+      }
+    } catch (e) { /* fall through */ }
+    wizard.setMessage('This device does not let the app read the clipboard.');
   }
 
-  function updateLinks() {
-    const parsed = parseLinks(el.links.value);
-    const n = parsed.links.length;
-    let text = n === 0 ? '' : (n === 1 ? '1 link' : n + ' links');
-    if (parsed.skipped > 0) text += (text ? ' · ' : '') + parsed.skipped + ' skipped (not a web link)';
-    el.note.textContent = text;
-    el.clear.hidden = el.links.value === '';
-    updateGo();
-    return parsed;
+  /* ---- the steps ------------------------------------------------------- */
+
+  function buildPaste(s) {
+    const box = el('div', 'dl-step');
+    box.appendChild(button('Click to paste', 'dl-primary dl-big', pasteFromClipboard));
+    if (s.message) box.appendChild(el('p', 'dl-msg', s.message));
+    return box;
   }
 
-  function updateGo() {
-    const hasLinks = parseLinks(el.links.value).links.length > 0;
-    const needsName = chosen === NEW_PLAYLIST && !cleanFolderName(el.newName.value);
-    el.go.disabled = !hasLinks || needsName;
+  function buildDownload(s) {
+    const item = wizard.current();
+    const box = el('div', 'dl-step');
+    if (item && item.state === 'failed') {
+      const mark = el('span', 'dl-mark dl-mark-bad');
+      mark.appendChild(icon('i-close'));
+      box.appendChild(mark);
+      box.appendChild(el('h2', 'dl-title', 'Download failed'));
+      box.appendChild(el('p', 'dl-msg dl-err', item.error));
+      const row = el('div', 'dl-row');
+      row.appendChild(button('Retry', 'dl-primary', () => wizard.retryDownload()));
+      row.appendChild(button('Skip', 'dl-secondary', () => wizard.skip()));
+      box.appendChild(row);
+      return box;
+    }
+    box.appendChild(el('span', 'dl-spinner'));
+    box.appendChild(el('h2', 'dl-title', 'Downloading…'));
+    const bar = el('span', 'dl-bar');
+    bar.appendChild(el('i'));
+    box.appendChild(bar);
+    if (item) box.appendChild(el('p', 'dl-sub', shortLink(item.url)));
+    return box;
   }
 
-  // What the "name" line under a field says while the user edits it.
   function nameHint(text) {
     const cleaned = cleanSongName(text);
     if (!cleaned) return 'Empty: the song keeps its own name.';
     if (cleaned !== String(text).trim()) return 'Will be saved as “' + cleaned + '”.';
-    return 'Change the name, or leave it as it is.';
+    return '';
   }
 
-  function renderJobs() {
-    // Re-drawing the list must not take the keyboard away from a name being typed.
-    const active = document.activeElement;
-    const typing = active && active.classList && active.classList.contains('dl-name') ? active : null;
-    const typingId = typing ? typing.getAttribute('data-job-id') : null;
-    const selStart = typing ? typing.selectionStart : 0;
-    const selEnd = typing ? typing.selectionEnd : 0;
+  function buildName(s) {
+    const item = wizard.current();
+    const box = el('div', 'dl-step');
+    if (item.art === undefined) {
+      let art = '';
+      try { art = (bridge() && bridge().getArtwork && bridge().getArtwork(item.path)) || ''; } catch (e) { art = ''; }
+      item.art = art;
+    }
+    box.appendChild(coverNode(item.art, 0, 'i-moon-music', 'dl-thumb'));
 
-    el.jobs.textContent = '';
-    lastJobs.forEach((job) => {
-      const li = document.createElement('li');
-      li.className = 'dl-job dl-' + job.state;
+    const input = el('input', 'dl-input');
+    input.type = 'text';
+    input.value = item.name;
+    input.maxLength = 120;
+    input.placeholder = 'Song name';
+    input.spellcheck = false;
+    input.autocomplete = 'off';
+    input.setAttribute('aria-label', 'Song name');
+    input.setAttribute('enterkeyhint', 'done');
+    input.setAttribute('data-keep', 'name');
+    const hint = el('p', 'dl-hint', nameHint(item.name));
+    input.addEventListener('input', () => { wizard.rename(input.value); hint.textContent = nameHint(input.value); });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { input.blur(); wizard.save(); } });
+    box.appendChild(input);
+    box.appendChild(hint);
 
-      const mark = document.createElement('span');
-      mark.className = 'dl-mark' + (job.state === 'running' ? ' dl-spin' : '');
-      if (job.state === 'done') mark.appendChild(icon('i-check'));
-      else if (job.state === 'failed' || job.state === 'stopped') mark.appendChild(icon('i-close'));
-      li.appendChild(mark);
+    const row = el('div', 'dl-row dl-row-end');
+    row.appendChild(button('Save', 'dl-primary', () => wizard.save()));
+    box.appendChild(row);
+    return box;
+  }
 
-      const text = document.createElement('div');
-      text.className = 'dl-job-text';
-      const small = document.createElement('small');
+  function tile(title, sub, cover, onClick, extraClass) {
+    const t = el('button', 'dl-tile' + (extraClass ? ' ' + extraClass : ''));
+    t.type = 'button';
+    t.appendChild(cover);
+    t.appendChild(el('span', 'dl-tile-name', title));
+    if (sub) t.appendChild(el('span', 'dl-tile-sub', sub));
+    t.addEventListener('click', onClick);
+    return t;
+  }
 
-      if (job.state === 'named') {
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'dl-name';
-        input.value = job.name;
-        input.maxLength = 120;
-        input.spellcheck = false;
-        input.autocomplete = 'off';
-        input.setAttribute('data-job-id', job.id);
-        input.setAttribute('aria-label', 'Song name');
-        small.textContent = nameHint(job.name);
-        input.addEventListener('input', () => { queue.rename(job.id, input.value); small.textContent = nameHint(input.value); });
-        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
-        text.appendChild(input);
-      } else {
-        const title = document.createElement('b');
-        // After the look-up the song's name is known; before it, only the link is.
-        title.textContent = job.phase === 'download' && (job.name || job.title) ? (job.name || job.title) : shortLink(job.url);
-        text.appendChild(title);
-        small.textContent = job.state === 'waiting' ? 'Waiting'
-          : job.state === 'running' ? (job.message || (job.phase === 'title' ? 'Finding the name…' : 'Downloading…'))
-          : job.message || (job.state === 'done' ? 'Done' : 'Failed');
-      }
-      text.appendChild(small);
-      li.appendChild(text);
-
-      if (job.state === 'failed' || job.state === 'stopped') {
-        li.appendChild(button('Retry', 'dl-retry', () => queue.retry(job.id)));
-      }
-      el.jobs.appendChild(li);
+  function buildPlaylist(s) {
+    const box = el('div', 'dl-step dl-wide');
+    box.appendChild(el('h2', 'dl-title dl-left', 'Choose playlist'));
+    const grid = el('div', 'dl-grid');
+    grid.appendChild(tile('New playlist', '', coverNode('', 0, 'i-plus', 'dl-new'), () => wizard.chooseNew(), 'dl-tile-new'));
+    playlists().forEach((name, i) => {
+      grid.appendChild(tile(name, '', coverNode(playlistCover(name), i, 'i-moon-music'), () => wizard.choose(name)));
     });
+    grid.appendChild(tile('No playlist', 'All songs', coverNode('', playlists().length, 'i-moon-music'), () => wizard.choose('')));
+    box.appendChild(grid);
+    return box;
+  }
 
-    if (typingId) {
-      const again = el.jobs.querySelector('input[data-job-id="' + typingId + '"]');
+  function buildNewPlaylist(s) {
+    const box = el('div', 'dl-step dl-wide');
+    box.appendChild(el('h2', 'dl-title dl-left', 'New playlist'));
+    const input = el('input', 'dl-input');
+    input.type = 'text';
+    input.maxLength = 60;
+    input.placeholder = 'Playlist name';
+    input.spellcheck = false;
+    input.autocomplete = 'off';
+    input.setAttribute('aria-label', 'Playlist name');
+    input.setAttribute('enterkeyhint', 'done');
+    input.setAttribute('data-keep', 'newname');
+    const hint = el('p', 'dl-hint', '');
+    const create = button('Create', 'dl-primary', () => wizard.choose(input.value));
+    create.disabled = true;
+    const update = () => {
+      const typed = input.value.trim();
+      const cleaned = cleanFolderName(typed);
+      create.disabled = !cleaned;
+      if (!typed) hint.textContent = 'Letters, numbers and spaces.';
+      else if (!cleaned) hint.textContent = 'Use letters, numbers and spaces.';
+      else if (playlists().some((n) => n.toLowerCase() === cleaned.toLowerCase())) hint.textContent = 'That playlist already exists: the song will go in it.';
+      else if (cleaned !== typed) hint.textContent = 'Will be saved as “' + cleaned + '”.';
+      else hint.textContent = '';
+    };
+    update();
+    input.addEventListener('input', update);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !create.disabled) { input.blur(); wizard.choose(input.value); } });
+    box.appendChild(input);
+    box.appendChild(hint);
+    const row = el('div', 'dl-row dl-row-end');
+    row.appendChild(button('Back', 'dl-secondary', () => wizard.backToPlaylists()));
+    row.appendChild(create);
+    box.appendChild(row);
+    return box;
+  }
+
+  function buildPlacing(s) {
+    const box = el('div', 'dl-step');
+    box.appendChild(el('span', 'dl-spinner'));
+    box.appendChild(el('h2', 'dl-title', 'Adding song…'));
+    box.appendChild(el('p', 'dl-sub', s.folder ? 'To ' + s.folder : 'To All songs'));
+    return box;
+  }
+
+  function buildPlaceFail(s) {
+    const box = el('div', 'dl-step');
+    const mark = el('span', 'dl-mark dl-mark-bad');
+    mark.appendChild(icon('i-close'));
+    box.appendChild(mark);
+    box.appendChild(el('h2', 'dl-title', 'Couldn’t add the song'));
+    box.appendChild(el('p', 'dl-msg dl-err', s.error));
+    const row = el('div', 'dl-row');
+    row.appendChild(button('Try again', 'dl-primary', () => wizard.retryPlace()));
+    row.appendChild(button('Change name', 'dl-secondary', () => wizard.backToName()));
+    box.appendChild(row);
+    return box;
+  }
+
+  function buildDone(s) {
+    const placed = s.items.filter((i) => i.state === 'placed').length;
+    const box = el('div', 'dl-step');
+    const mark = el('span', 'dl-mark');
+    mark.appendChild(icon('i-check'));
+    box.appendChild(mark);
+    box.appendChild(el('h2', 'dl-title', placed ? 'All done' : 'No songs were added'));
+    box.appendChild(button('Paste more', 'dl-primary', () => wizard.again()));
+    return box;
+  }
+
+  const BUILDERS = {
+    paste: buildPaste, download: buildDownload, name: buildName, playlist: buildPlaylist,
+    newplaylist: buildNewPlaylist, placing: buildPlacing, placefail: buildPlaceFail, done: buildDone,
+  };
+
+  function render() {
+    const s = wizard.state;
+    // A step that is redrawn because something happened in the background (the next song finished
+    // downloading) must not take the keyboard away from a field being typed in.
+    const active = document.activeElement;
+    const keep = active && active.getAttribute ? active.getAttribute('data-keep') : null;
+    const selStart = keep ? active.selectionStart : 0;
+    const selEnd = keep ? active.selectionEnd : 0;
+
+    stageEl.textContent = '';
+    stageEl.setAttribute('data-step', s.step);
+    stageEl.appendChild(BUILDERS[s.step](s));
+
+    if (keep) {
+      const again = stageEl.querySelector('[data-keep="' + keep + '"]');
       if (again) {
         again.focus();
         try { again.setSelectionRange(selStart, selEnd); } catch (e) { /* not essential */ }
       }
     }
-
-    const s = queue.summary();
-    const busy = s.waiting + s.running > 0;
-    const ready = !busy && s.named > 0;
-    el.stop.hidden = !(busy || ready);
-    el.stop.textContent = busy ? 'Stop' : 'Discard';
-    el.start.hidden = !ready;
-    el.start.textContent = 'Save ' + s.named + (s.named === 1 ? ' song' : ' songs');
-    el.summary.hidden = s.total === 0;
-    if (busy) {
-      // Count within the kind of job that is running now: names being found, or songs being saved.
-      const running = lastJobs.find((j) => j.state === 'running');
-      const phase = running ? running.phase : 'download';
-      const group = lastJobs.filter((j) => j.phase === phase);
-      const over = group.filter((j) => j.state !== 'waiting' && j.state !== 'running').length;
-      el.summary.textContent = (phase === 'title' ? 'Finding names ' : 'Downloading ') +
-        Math.min(group.length, over + 1) + ' of ' + group.length;
-    } else if (ready) {
-      el.summary.textContent = 'Check the names below, then save';
-    } else if (s.total) {
-      const parts = [];
-      if (s.done) parts.push(s.done + ' done');
-      if (s.failed) parts.push(s.failed + ' failed');
-      if (s.stopped) parts.push(s.stopped + ' stopped');
-      el.summary.textContent = parts.join(' · ');
-    }
   }
 
-  // Everything on the tab is re-read each time it is shown (the playlists may have changed).
-  function refresh() {
-    renderFolders();
-    updateLinks();
-    renderJobs();
-  }
-
-  const isOpen = () => !!panel && panel.getAttribute('data-view') === 'download';
+  const isShown = () => !!panel && panel.getAttribute('data-view') === 'download' && !panel.classList.contains('hidden');
   const openTab = () => {
     if (root.SpotifyUI && root.SpotifyUI.setView) root.SpotifyUI.setView('download');
-    else refresh();
+    else render();
   };
   const closeTab = () => {
-    if (isOpen() && root.SpotifyUI && root.SpotifyUI.setView) root.SpotifyUI.setView('library');
+    if (isShown() && root.SpotifyUI && root.SpotifyUI.setView) root.SpotifyUI.setView('library');
   };
 
-  // The bottom bar switches tabs on its own, so watch for this one coming into view.
+  // Leaving the tab (another tab, the ✕, the panel closing) ends a run that is not finished.
+  // The playlists and covers are re-read each time the tab comes into view.
+  let wasShown = isShown();
   if (panel && typeof MutationObserver === 'function') {
-    new MutationObserver(() => { if (isOpen()) refresh(); })
-      .observe(panel, { attributes: true, attributeFilter: ['data-view'] });
+    new MutationObserver(() => {
+      const shown = isShown();
+      if (shown && !wasShown) render();
+      if (!shown && wasShown) wizard.leave();
+      wasShown = shown;
+    }).observe(panel, { attributes: true, attributeFilter: ['data-view', 'class'] });
   }
-  refresh();
-
-  el.links.addEventListener('input', updateLinks);
-  el.newName.addEventListener('input', () => { updateFolderNote(); updateGo(); });
-  el.clear.addEventListener('click', () => { el.links.value = ''; updateLinks(); });
-
-  el.paste.addEventListener('click', () => {
-    const fallback = () => { el.links.focus(); el.note.textContent = 'Long-press the box and choose Paste.'; };
-    try {
-      if (!navigator.clipboard || !navigator.clipboard.readText) return fallback();
-      navigator.clipboard.readText().then((text) => {
-        if (!text) return fallback();
-        el.links.value = el.links.value ? el.links.value.replace(/\s*$/, '\n') + text : text;
-        updateLinks();
-      }, fallback);
-    } catch (e) { fallback(); }
-  });
-
-  el.go.addEventListener('click', () => {
-    const parsed = parseLinks(el.links.value);
-    if (!parsed.links.length) return;
-    const folder = targetFolder();
-    queue.add(parsed.links, folder, !!(el.review && el.review.checked));
-    el.links.value = '';
-    updateLinks();
-  });
-
-  el.start.addEventListener('click', () => { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); queue.confirm(); });
-  el.stop.addEventListener('click', () => { if (queue.busy()) queue.stop(); else queue.discard(); });
+  render();
 
   root.SongDownload = Object.assign({}, api, {
     open: openTab,
     close: closeTab,
-    isOpen,
+    isOpen: isShown,
+    wizard,
   });
 })(typeof window !== 'undefined' ? window : this);

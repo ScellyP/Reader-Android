@@ -361,21 +361,30 @@ above or below it) to open the music player.
 ## Download songs
 
 The music player has a **Download** tab, the last one in the bottom bar (Home / Songs / Now
-playing / Download), also reached by swiping. Paste one or more links (one
-per line, up to 50), choose where they go (no playlist, an existing playlist, or **+ New
-playlist**) and press **Download**. Songs are saved one after another as mp3 files with their
-tags and cover art into `Novel/Audio` (or the playlist's folder inside it), and the library
-refreshes by itself when the batch ends. Each link shows *Waiting*, *Downloading*, *Done* or
-*Failed* (with the reason and a **Retry** button); **Stop** cancels the rest.
+playing / Download), also reached by swiping. It is a step-by-step wizard: one step on
+screen at a time, and each new step replaces the one before it.
 
-**Song names.** With **Check song names before saving** on (the default), each link is first
-looked up for its name. The names then appear as editable fields: change any of them, or leave
-it as it is, and press **Save N songs**. The name you see is the file name *and* the song's
-title tag (the library lists songs by that tag). Characters a file name cannot hold
-(`/ \ : * ? " < > |`) are dropped and any language is fine; the line under the field shows
-what will really be used, and an emptied field keeps the song's own name. **Discard** throws
-the looked-up names away. Switch the box off to download straight away under the songs' own
-names.
+1. **Click to paste.** Copy a song link (or several; a share text such as "Song name
+   https://…" works too), then tap the button. Every link on the clipboard is one song, up
+   to 50; they go through steps 2 to 4 one after another.
+2. **Downloading.** The song downloads as an mp3 with its tags and cover art. It is kept aside
+   (`Novel/Audio/.staging`, which the library ignores), so it does not show up anywhere yet.
+   While you name and place a song, the **next one is already downloading** in the background.
+   If a download fails you get **Retry** and **Skip**.
+3. **Name.** The song's thumbnail and its name, ready to edit. Leave it as it is or change it,
+   then **Save**. The name becomes the file name *and* the song's title tag (the library lists
+   songs by that tag). Characters a file name cannot hold (`/ \ : * ? " < > |`) are dropped and any
+   language is fine; the line under the field shows what will really be used, and an emptied
+   field keeps the song's own name.
+4. **Choose playlist.** Tiles with the playlists' covers: **New playlist** first, then your
+   playlists (the folders in `Novel/Audio`), then **No playlist** (the song stays in All songs).
+   The song is then moved there, the library refreshes, and **the song starts playing** in that
+   playlist, replacing whatever was playing. If a song with that name is already in the
+   playlist nothing is overwritten: you are asked to change the name.
+
+When the last song is placed it says **All done** (**Paste more** starts over). Leaving the tab
+before a song is placed (the ✕, another tab, a swipe, closing the player) stops the running
+downloads and **deletes every song that was downloaded but not placed yet**.
 
 The download itself is done by [Termux](https://termux.dev) with yt-dlp, so this needs a
 one-time setup. Use Termux from **F-Droid** or its **GitHub releases** (the Play Store version
@@ -394,23 +403,26 @@ is too old to take commands from other apps):
    termux-reload-settings
    ```
 
-2. Open Novel Reader and press Download once. It asks for **Run commands in
-   Termux environment**; allow it (the first link fails with a hint, tap **Retry**).
+2. Open Novel Reader, paste a link on the Download tab. It asks for **Run commands in
+   Termux environment**; allow it (the first download fails with a hint, tap **Retry**).
    If Android doesn't show the question, switch it on in the phone's
    Settings → Apps → Novel Reader → Permissions.
 
 Notes:
 
 - Keep Novel Reader open while it downloads. Android doesn't let an app in the
-  background start Termux, so a long list only keeps going while the app is on screen.
+  background start Termux, so the next steps only work while the app is on screen. The downloads
+  show a spinner and a moving bar, not a percentage: Termux only reports when a song is finished.
 - If links that used to work start failing, update yt-dlp: `pip install -U yt-dlp`.
 - If `ffmpeg` fails with a "CANNOT LINK EXECUTABLE" error, run `pkg upgrade` (and
   `termux-change-repo` if it persists): Termux packages must all be from the same mirror state.
 - Playlist names may use letters, numbers, spaces and `_ - ( ) . & ' ,`; anything else
   is removed, and the tab shows the name it will really use.
 - The script is built into the app, so there is nothing to copy. The same script
-  also runs by hand: `python song_dl.py URL "Playlist name"`, `python song_dl.py --name "My title" URL`,
-  or `python song_dl.py --title URL` (only prints the song's name).
+  also runs by hand in Termux: `python song_dl.py URL "Playlist name"` (straight into a
+  playlist), `python song_dl.py --name "My title" URL`, `python song_dl.py --title URL` (only
+  prints the song's name), and the two steps the wizard uses: `--stage URL` and
+  `--place FILE [--name NAME] [Playlist]`.
 
 ## Library (novel selector)
 

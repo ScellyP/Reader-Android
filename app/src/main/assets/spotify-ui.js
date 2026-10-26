@@ -186,7 +186,12 @@
     return true;
   }
 
-  window.SpotifyUI = { setView, stepView };
+  /** The cover picture (a data: URL) the Home screen shows for a playlist folder, or '' when it has none yet. */
+  function getCover(name) {
+    return coverUrlByName[name] || '';
+  }
+
+  window.SpotifyUI = { setView, stepView, getCover };
 
   /* =======================================================================
      "..." sheet

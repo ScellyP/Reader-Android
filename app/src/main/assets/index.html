@@ -2613,57 +2613,78 @@ input[type="range"]:disabled::-webkit-slider-runnable-track { background: var(--
 #audio-panel input, #audio-panel textarea { user-select: text; -webkit-user-select: text; -webkit-touch-callout: default; }
 
 /* ---- Download songs tab (song-download.js) ---------------------------------------------------- */
-#sp-view-download [hidden] { display: none !important; }
+/* A wizard: one step on screen at a time, each new step fades in where the last one was. */
+#sp-view-download { min-height: 100%; }
 #sp-view-download h1 { margin: 0; font: 700 24px/1.2 var(--font-ui); color: var(--text); }
-#dl-body { padding: 0 20px 24px; text-align: left; }
-.dl-label { display: block; margin: 16px 0 8px; font: 700 13px/1.2 var(--font-ui); letter-spacing: .3px; color: var(--text); }
-.dl-label small { font-weight: 400; color: var(--sp-sub); margin-left: 6px; }
-#dl-links, #dl-new-name, .dl-name {
-  width: 100%; box-sizing: border-box; padding: 12px 14px; border: 0; border-radius: 8px; resize: none;
-  background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); font: 400 14px/1.4 var(--font-ui);
+#dl-body { flex: 1; display: flex; flex-direction: column; padding: 0 20px 24px; }
+#dl-stage { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; min-height: 320px; }
+#dl-stage[data-step="playlist"], #dl-stage[data-step="newplaylist"] { justify-content: flex-start; align-items: stretch; text-align: left; }
+.dl-step { display: flex; flex-direction: column; align-items: center; width: 100%; animation: dlStepIn .24s var(--ease) both; }
+.dl-step.dl-wide { align-items: stretch; }
+@keyframes dlStepIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
+
+/* Buttons: Spotify's pill, bold; bigger and a little brighter on hover, pressed in on tap. */
+.dl-primary, .dl-secondary {
+  min-width: 112px; height: 48px; padding: 0 28px; border-radius: 999px; font: 700 15px/1 var(--font-ui); letter-spacing: .2px; cursor: pointer;
+  transition: transform .12s var(--ease), background .15s ease, border-color .15s ease, opacity .15s ease;
 }
-#dl-links::placeholder, #dl-new-name::placeholder { color: var(--sp-sub); }
-#dl-links:focus, #dl-new-name:focus, .dl-name:focus { outline: 2px solid var(--sp-accent); outline-offset: 0; }
-#dl-new-name { margin-top: 10px; }
-#dl-new-name.hidden { display: none; }
-#dl-links-row { display: flex; align-items: center; gap: 14px; min-height: 28px; margin-top: 6px; }
-#dl-links-note { flex: 1; min-width: 0; font-size: 12px; color: var(--sp-sub); }
-.dl-text-btn { background: none; border: 0; padding: 4px 2px; color: var(--sp-accent-hi); font: 700 13px var(--font-ui); cursor: pointer; }
-#dl-folders { display: flex; flex-wrap: wrap; gap: 8px; }
-#dl-folders button {
-  max-width: 100%; padding: 8px 14px; border: 0; border-radius: 999px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); font: 400 13px var(--font-ui); cursor: pointer;
-  transition: transform .15s var(--ease), background .15s ease;
+.dl-primary { border: 0; background: var(--sp-accent); color: var(--sp-ink); }
+.dl-secondary { border: 1px solid color-mix(in srgb, var(--text) 45%, transparent); background: none; color: var(--text); }
+.dl-primary:active, .dl-secondary:active { transform: scale(.96); }
+.dl-primary:disabled { opacity: .4; cursor: default; transform: none; }
+@media (hover: hover) {
+  .dl-primary:hover:not(:disabled) { transform: scale(1.04); background: var(--sp-accent-hi); }
+  .dl-secondary:hover { transform: scale(1.04); border-color: var(--text); }
 }
-#dl-folders button:active { transform: scale(.96); }
-#dl-folders button.on { background: var(--sp-accent); color: var(--sp-ink); font-weight: 700; }
-#dl-folder-note { min-height: 16px; margin-top: 6px; font-size: 12px; color: var(--sp-sub); }
-#dl-review-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; font: 400 13px var(--font-ui); color: var(--text); cursor: pointer; }
-#dl-review { width: 18px; height: 18px; margin: 0; accent-color: var(--sp-accent); }
-#dl-go, #dl-start {
-  display: block; width: 100%; height: 48px; margin-top: 14px; border: 0; border-radius: 999px;
-  background: var(--sp-accent); color: var(--sp-ink); font: 700 15px var(--font-ui); cursor: pointer;
-  transition: transform .15s var(--ease), opacity .15s ease;
-}
-#dl-go:active:not(:disabled), #dl-start:active { transform: scale(.98); }
-#dl-go:disabled { opacity: .35; cursor: default; }
-#dl-status-row { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; }
-#dl-summary { font: 700 13px var(--font-ui); color: var(--text); }
-#dl-jobs { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; }
-.dl-job { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 9px 0; }
-.dl-mark { width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border-radius: 50%; box-sizing: border-box; border: 2px solid color-mix(in srgb, var(--text) 25%, transparent); }
-.dl-mark .ico { width: 14px; height: 14px; }
-.dl-named .dl-mark { border-color: var(--sp-accent); }
-.dl-done .dl-mark { border: 0; background: var(--sp-accent); color: var(--sp-ink); }
-.dl-failed .dl-mark, .dl-stopped .dl-mark { border: 0; background: color-mix(in srgb, var(--danger, #e77a6a) 80%, transparent); color: var(--bg); }
-.dl-spin { border-color: color-mix(in srgb, var(--text) 20%, transparent); border-top-color: var(--sp-accent); animation: dlSpin .8s linear infinite; }
+.dl-big { width: min(100%, 320px); height: 56px; font-size: 16px; }
+.dl-row { display: flex; gap: 12px; justify-content: center; margin-top: 22px; }
+.dl-row-end { justify-content: flex-end; align-self: stretch; }
+
+/* Messages and titles */
+.dl-title { margin: 18px 0 0; font: 700 22px/1.25 var(--font-ui); color: var(--text); }
+.dl-title.dl-left { margin: 4px 0 16px; }
+.dl-sub { margin: 8px 0 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 13px/1.4 var(--font-ui); color: var(--sp-sub); }
+.dl-msg { margin: 16px 0 0; max-width: 320px; font: 400 14px/1.45 var(--font-ui); color: var(--sp-sub); overflow-wrap: anywhere; }
+.dl-err { color: var(--danger, #e77a6a); }
+.dl-hint { align-self: stretch; min-height: 18px; margin: 8px 0 0; text-align: left; font: 400 12px/1.4 var(--font-ui); color: var(--sp-sub); }
+
+/* Progress: a spinner and a thin indeterminate bar (the phone does not report a percentage) */
+.dl-spinner { width: 44px; height: 44px; box-sizing: border-box; border: 4px solid color-mix(in srgb, var(--text) 18%, transparent);
+  border-top-color: var(--sp-accent); border-radius: 50%; animation: dlSpin .8s linear infinite; }
 @keyframes dlSpin { to { transform: rotate(360deg); } }
-.dl-job-text { display: flex; flex-direction: column; min-width: 0; gap: 2px; }
-.dl-job-text b { font: 600 14px/1.25 var(--font-ui); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dl-job-text small { font-size: 12px; color: var(--sp-sub); overflow-wrap: anywhere; }
-.dl-name { padding: 9px 12px; font-weight: 600; }
-.dl-retry { padding: 6px 12px; border: 0; border-radius: 999px; background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); font: 700 12px var(--font-ui); cursor: pointer; }
-@media (prefers-reduced-motion: reduce) { .dl-spin { animation-duration: 2.4s; } }
+.dl-bar { position: relative; display: block; width: min(100%, 260px); height: 4px; margin-top: 20px; overflow: hidden; border-radius: 2px;
+  background: color-mix(in srgb, var(--text) 16%, transparent); }
+.dl-bar i { position: absolute; top: 0; bottom: 0; width: 40%; border-radius: 2px; background: var(--sp-accent); animation: dlBar 1.3s ease-in-out infinite; }
+@keyframes dlBar { from { left: -40%; } to { left: 100%; } }
+
+/* Check / cross badge */
+.dl-mark { width: 56px; height: 56px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background: var(--sp-accent); color: var(--sp-ink); }
+.dl-mark .ico { width: 28px; height: 28px; }
+.dl-mark-bad { background: color-mix(in srgb, var(--danger, #e77a6a) 85%, transparent); color: var(--bg); }
+
+/* Step 3: the thumbnail and the name */
+.dl-thumb { width: min(72vw, 260px); height: min(72vw, 260px); border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,.45); }
+.dl-thumb .ico { width: 34%; height: 34%; }
+.dl-input {
+  width: 100%; box-sizing: border-box; margin-top: 22px; padding: 14px 16px; border: 0; border-radius: 6px; text-align: left;
+  background: color-mix(in srgb, var(--text) 10%, transparent); color: var(--text); font: 700 16px/1.3 var(--font-ui);
+}
+.dl-input::placeholder { color: var(--sp-sub); font-weight: 400; }
+.dl-input:focus { outline: 2px solid var(--sp-accent); outline-offset: 0; }
+
+/* Step 4: the playlist tiles, two to a row like Spotify's library grid */
+.dl-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.dl-tile { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px; border: 0; border-radius: 8px; background: none;
+  color: var(--text); text-align: left; cursor: pointer; transition: transform .12s var(--ease), background .15s ease; }
+.dl-tile:active { transform: scale(.97); }
+@media (hover: hover) { .dl-tile:hover { background: color-mix(in srgb, var(--text) 8%, transparent); } }
+.dl-tile .sp-cover { width: 100%; aspect-ratio: 1 / 1; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,.35); }
+.dl-tile .sp-cover .ico { width: 34%; height: 34%; }
+.dl-tile .sp-cover.dl-new { background: none; border: 1.5px dashed color-mix(in srgb, var(--text) 40%, transparent); box-shadow: none; box-sizing: border-box; }
+.dl-tile .sp-cover.dl-new .ico { width: 30%; height: 30%; }
+.dl-tile-name { font: 700 14px/1.25 var(--font-ui); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dl-tile-sub { margin-top: -6px; font: 400 12px/1.35 var(--font-ui); color: var(--sp-sub); }
+@media (prefers-reduced-motion: reduce) { .dl-step { animation: none; } .dl-spinner { animation-duration: 2.4s; } .dl-bar i { animation-duration: 2.6s; } }
 
 /* ---- "..." sheet --------------------------------------------------------- */
 #sp-sheet { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; justify-content: flex-end; }
@@ -3405,28 +3426,8 @@ input[type="range"]::-webkit-slider-thumb { box-shadow: 0 0 0 4px var(--accent-s
             <button type="button" class="sp-icon-btn" data-close-panel title="Close" aria-label="Close music"><svg class="ico"><use href="#i-close"/></svg></button>
           </div>
           <div id="dl-body">
-            <label class="dl-label" for="dl-links">Song links <small>one per line</small></label>
-            <textarea id="dl-links" rows="4" placeholder="Paste links here" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off"></textarea>
-            <div id="dl-links-row">
-              <span id="dl-links-note"></span>
-              <button type="button" id="dl-clear" class="dl-text-btn" hidden>Clear</button>
-              <button type="button" id="dl-paste" class="dl-text-btn">Paste</button>
-            </div>
-
-            <div class="dl-label" id="dl-folders-label">Save to</div>
-            <div id="dl-folders" role="radiogroup" aria-labelledby="dl-folders-label"></div>
-            <input id="dl-new-name" class="hidden" type="text" maxlength="60" placeholder="New playlist name" spellcheck="false" autocomplete="off">
-            <div id="dl-folder-note"></div>
-
-            <label id="dl-review-row"><input type="checkbox" id="dl-review" checked><span>Check song names before saving</span></label>
-            <button type="button" id="dl-go" disabled>Download</button>
-
-            <div id="dl-status-row">
-              <span id="dl-summary" hidden></span>
-              <button type="button" id="dl-stop" class="dl-text-btn" hidden>Stop</button>
-            </div>
-            <ul id="dl-jobs"></ul>
-            <button type="button" id="dl-start" hidden>Save songs</button>
+            <!-- One step at a time: song-download.js replaces this box's content as the steps go by. -->
+            <div id="dl-stage" data-step="paste" aria-live="polite"></div>
           </div>
         </section>
 

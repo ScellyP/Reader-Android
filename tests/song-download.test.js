@@ -1,7 +1,8 @@
 // Run with: node tests/song-download.test.js
 // The "Download songs" tab (app/src/main/assets/song-download.js): link parsing, playlist and song
-// name cleaning, the download queue (including the "check the names first" step) and that the page,
-// the native bridge and the script agree. The tab itself needs a page and is not covered.
+// name cleaning, the wizard's state machine (download, name, playlist, place, play) and that the
+// page, the native bridge and the script agree. The tab's own DOM code needs a page and is not
+// covered here (it was driven by hand in a headless browser).
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -11,22 +12,24 @@ const SD = require('../app/src/main/assets/song-download.js');
 let n = 0;
 function check(name, fn) { fn(); n++; console.log('ok -', name); }
 
-// A queue wired to a fake native side: records starts and lets a test answer them.
-function setup({ failStart = null } = {}) {
-  const started = [], cancels = [], changes = [], batches = [], calls = [];
-  const queue = SD.createQueue({
-    start(job) {
-      if (failStart === 'throw') throw new Error('Not connected to Termux yet');
-      if (failStart === 'false') return false;
-      started.push(job.id);
-      calls.push(job.phase + ' ' + job.id + (job.phase === 'download' ? ' as "' + job.name + '"' : ''));
+const STAGED = (i) => '/storage/emulated/0/Novel/Audio/.staging/s_' + i + '/Song ' + i + ' (Official).mp3';
+
+// A wizard wired to a fake native side that records what it was asked and lets a test answer.
+function setup({ failStage = null } = {}) {
+  const log = [], played = [], changes = [];
+  const w = SD.createWizard({
+    stage(id, url) {
+      if (failStage === 'throw') throw new Error('Not connected to Termux yet');
+      log.push('stage ' + id + ' ' + url);
     },
-    cancel() { cancels.push(1); },
-    onChange(jobs) { changes.push(jobs.map((j) => j.state).join(',')); },
-    onBatchDone(r) { batches.push(r); },
+    place(id, p, name, folder) { log.push('place ' + id + ' ' + p + ' | ' + name + ' | ' + folder); },
+    cancel() { log.push('cancel'); },
+    discard() { log.push('discard'); },
+    play(p, folder) { played.push(p + ' | ' + folder); },
+    onChange(state) { changes.push(state.step); },
   });
-  const states = () => queue.jobs.map((j) => j.state);
-  return { queue, started, calls, cancels, changes, batches, states };
+  const ids = (kind) => log.filter((l) => l.startsWith(kind + ' ')).map((l) => l.split(' ')[1]);
+  return { w, s: w.state, log, played, changes, ids, step: () => w.state.step };
 }
 
 check('parseLinks keeps web links, drops duplicates, counts what it skipped', () => {
@@ -94,192 +97,275 @@ check('cleanSongName gives the same answer as clean_song_name in song_dl.py', ()
   assert.deepStrictEqual(JSON.parse(out), samples.map(SD.cleanSongName));
 });
 
-check('the queue runs one job at a time, in order, and reports one result per job', () => {
+check('starting a run: only from the first step, discards leftovers, downloads the first song', () => {
   const t = setup();
-  t.queue.add(['https://a/1', 'https://a/2', 'https://a/3'], 'Mix');
-  assert.deepStrictEqual(t.started, ['j1']);
-  assert.deepStrictEqual(t.states(), ['running', 'waiting', 'waiting']);
-  assert.ok(t.queue.busy());
-  t.queue.report('j1', 'running', 'Converting…');
-  assert.strictEqual(t.queue.jobs[0].message, 'Converting…');
-  t.queue.report('j1', 'done', 'Saved 1');
-  t.queue.report('j1', 'failed', 'late and ignored');          // a second answer changes nothing
-  assert.deepStrictEqual(t.started, ['j1', 'j2']);
-  t.queue.report('j2', 'failed', 'Video unavailable');
-  t.queue.report('j3', 'done', 'Saved 3');
-  assert.deepStrictEqual(t.states(), ['done', 'failed', 'done']);
-  assert.strictEqual(t.queue.jobs[1].message, 'Video unavailable');
-  assert.ok(!t.queue.busy());
-  assert.deepStrictEqual(t.queue.jobs.map((j) => j.folder), ['Mix', 'Mix', 'Mix']);
+  assert.strictEqual(t.w.start([]), false);
+  assert.strictEqual(t.w.start(['https://a/1', 'https://a/2']), true);
+  assert.strictEqual(t.step(), 'download');
+  assert.deepStrictEqual(t.log, ['discard', 'stage s1 https://a/1']);
+  assert.strictEqual(t.w.start(['https://a/9']), false);          // a run is already going
 });
 
-check('onBatchDone fires once, when the queue runs empty, with the totals', () => {
+check('a downloaded song goes to the name step, named after its file, with the next song downloading behind it', () => {
   const t = setup();
-  t.queue.add(['https://a/1', 'https://a/2'], '');
-  t.queue.report('j1', 'done', '');
-  assert.strictEqual(t.batches.length, 0);
-  t.queue.report('j2', 'failed', 'x');
-  assert.deepStrictEqual(t.batches, [{ done: 1, failed: 1, stopped: 0 }]);
-  t.queue.report('j2', 'failed', 'again');
-  assert.strictEqual(t.batches.length, 1);
+  t.w.start(['https://a/1', 'https://a/2', 'https://a/3']);
+  t.w.report('s1', 'done', STAGED(1));
+  assert.strictEqual(t.step(), 'name');
+  assert.strictEqual(t.w.current().path, STAGED(1));
+  assert.strictEqual(t.w.current().name, 'Song 1 (Official)');
+  assert.deepStrictEqual(t.ids('stage'), ['s1', 's2']);           // the next one is already on its way
+  t.w.report('s2', 'done', STAGED(2));
+  assert.deepStrictEqual(t.ids('stage'), ['s1', 's2']);           // but only one ahead: song 3 waits
 });
 
-check('a job that cannot start fails at once with the reason, and the next one still runs', () => {
-  const thrown = setup({ failStart: 'throw' });
-  thrown.queue.add(['https://a/1', 'https://a/2'], '');
-  assert.deepStrictEqual(thrown.states(), ['failed', 'failed']);
-  assert.strictEqual(thrown.queue.jobs[0].message, 'Not connected to Termux yet');
-  assert.ok(!thrown.queue.busy());
-
-  const refused = setup({ failStart: 'false' });
-  refused.queue.add(['https://a/1'], '');
-  assert.strictEqual(refused.queue.jobs[0].state, 'failed');
-  assert.strictEqual(refused.queue.jobs[0].message, 'Could not start the download');
+check('a song is never downloaded two at a time', () => {
+  const t = setup();
+  t.w.start(['https://a/1', 'https://a/2']);
+  t.w.report('s1', 'running', 'x');
+  assert.deepStrictEqual(t.ids('stage'), ['s1']);
+  t.w.report('s1', 'done', STAGED(1));
+  assert.deepStrictEqual(t.ids('stage'), ['s1', 's2']);
+  t.w.report('s1', 'done', STAGED(1));                            // a repeated answer changes nothing
+  assert.deepStrictEqual(t.ids('stage'), ['s1', 's2']);
 });
 
-check('Retry puts a failed job back in the line and runs it again', () => {
+check('Save moves on to the playlists with the cleaned name; an emptied name keeps the song\'s own', () => {
   const t = setup();
-  t.queue.add(['https://a/1'], 'Mix');
-  t.queue.report('j1', 'failed', 'Network down');
-  t.queue.retry('j1');
-  assert.strictEqual(t.queue.jobs[0].state, 'running');
-  assert.deepStrictEqual(t.started, ['j1', 'j1']);
-  t.queue.report('j1', 'done', 'ok');
-  t.queue.retry('j1');                                          // only failed/stopped jobs retry
-  assert.strictEqual(t.queue.jobs[0].state, 'done');
-});
-
-check('Stop drops the waiting jobs, asks the running one to stop, and shows it as Stopped', () => {
-  const t = setup();
-  t.queue.add(['https://a/1', 'https://a/2', 'https://a/3'], '');
-  t.queue.stop();
-  assert.strictEqual(t.cancels.length, 1);
-  assert.deepStrictEqual(t.states(), ['running', 'stopped', 'stopped']);
-  t.queue.report('j1', 'failed', 'Stopped');
-  assert.deepStrictEqual(t.states(), ['stopped', 'stopped', 'stopped']);
-  assert.strictEqual(t.queue.jobs[0].message, 'Stopped');
-  assert.deepStrictEqual(t.batches, [{ done: 0, failed: 0, stopped: 3 }]);
-  assert.deepStrictEqual(t.started, ['j1']);                    // nothing else was started
-});
-
-check('checking names first: every name is looked up, then the jobs wait for the go-ahead', () => {
-  const t = setup();
-  t.queue.add(['https://a/1', 'https://a/2'], 'Mix', true);
-  assert.deepStrictEqual(t.calls, ['title j1']);                  // one look-up at a time
-  assert.deepStrictEqual(t.states(), ['running', 'waiting']);
-  t.queue.report('j1', 'done', 'AC/DC - Back In Black (Official)');
-  assert.strictEqual(t.queue.jobs[0].state, 'named');
-  assert.strictEqual(t.queue.jobs[0].name, 'ACDC - Back In Black (Official)');   // what will be saved, already cleaned
-  assert.strictEqual(t.queue.jobs[0].title, 'AC/DC - Back In Black (Official)');
-  assert.deepStrictEqual(t.calls, ['title j1', 'title j2']);
-  t.queue.report('j2', 'done', 'Hells Bells');
-  assert.deepStrictEqual(t.states(), ['named', 'named']);
-  assert.ok(t.queue.reviewing() && !t.queue.busy());
-  assert.deepStrictEqual(t.batches, []);                          // not finished: the user still has to decide
-  assert.deepStrictEqual(t.calls, ['title j1', 'title j2']);      // and nothing has been downloaded
-});
-
-check('after the go-ahead the songs are downloaded under the names shown, one at a time', () => {
-  const t = setup();
-  t.queue.add(['https://a/1', 'https://a/2'], 'Mix', true);
-  t.queue.report('j1', 'done', 'First Song');
-  t.queue.report('j2', 'done', 'Second Song');
-  t.queue.rename('j2', '  My / own: name  ');                     // edited by the user; "keep" = left alone
-  assert.strictEqual(t.queue.confirm(), 2);
-  assert.deepStrictEqual(t.calls, ['title j1', 'title j2', 'download j1 as "First Song"']);
-  t.queue.report('j1', 'done', 'Saved First Song.mp3 to Mix');
-  assert.deepStrictEqual(t.calls.slice(3), ['download j2 as "My own name"']);
-  assert.strictEqual(t.batches.length, 0);
-  t.queue.report('j2', 'done', 'Saved');
-  assert.deepStrictEqual(t.batches, [{ done: 2, failed: 0, stopped: 0 }]);
-  assert.strictEqual(t.queue.confirm(), 0);                       // nothing left to confirm
-});
-
-check('an emptied name means "keep the song\'s own name"; rename only works while a job waits for the go-ahead', () => {
-  const t = setup();
-  t.queue.add(['https://a/1'], '', true);
-  t.queue.report('j1', 'done', 'Title');
-  t.queue.rename('j1', '   ');
-  t.queue.confirm();
-  assert.deepStrictEqual(t.calls, ['title j1', 'download j1 as ""']);
-  t.queue.rename('j1', 'too late');
-  assert.strictEqual(t.queue.jobs[0].name, '');
-});
-
-check('a failed name look-up shows the reason; Retry looks it up again and the others carry on', () => {
-  const t = setup();
-  t.queue.add(['https://a/1', 'https://a/2'], '', true);
-  t.queue.report('j1', 'failed', 'Video unavailable');
-  assert.deepStrictEqual(t.states(), ['failed', 'running']);
-  assert.strictEqual(t.queue.jobs[0].message, 'Video unavailable');
-  t.queue.report('j2', 'done', 'Fine');
-  t.queue.retry('j1');
-  assert.deepStrictEqual(t.calls.slice(-1), ['title j1']);
-  t.queue.report('j1', 'done', 'Now Found');
-  assert.deepStrictEqual(t.states(), ['named', 'named']);
-});
-
-check('Discard drops the jobs waiting for the go-ahead; Stop also ends a look-up in progress', () => {
-  const t = setup();
-  t.queue.add(['https://a/1', 'https://a/2'], '', true);
-  t.queue.report('j1', 'done', 'One');
-  t.queue.report('j2', 'done', 'Two');
-  t.queue.discard();
-  assert.strictEqual(t.queue.jobs.length, 0);
-  assert.ok(!t.queue.reviewing());
+  t.w.start(['https://a/1']);
+  t.w.report('s1', 'done', STAGED(1));
+  t.w.rename('  My / own: name  ');
+  t.w.save();
+  assert.strictEqual(t.step(), 'playlist');
+  assert.strictEqual(t.w.current().name, 'My own name');
 
   const u = setup();
-  u.queue.add(['https://a/1', 'https://a/2'], '', true);
-  u.queue.stop();
-  assert.strictEqual(u.cancels.length, 1);
-  u.queue.report('j1', 'done', 'Found it anyway');                // answered after Stop: it still counts as stopped
-  assert.deepStrictEqual(u.states(), ['stopped', 'stopped']);
-  assert.deepStrictEqual(u.calls, ['title j1']);                  // the second look-up never started
-  assert.deepStrictEqual(u.batches, [{ done: 0, failed: 0, stopped: 2 }]);
+  u.w.start(['https://a/1']);
+  u.w.report('s1', 'done', STAGED(1));
+  u.w.rename('  ');
+  u.w.save();
+  assert.strictEqual(u.w.current().name, 'Song 1 (Official)');
 });
 
-check('links added while names are waiting join the same batch', () => {
+check('choosing a playlist places the song, then plays it and moves on to the next one', () => {
   const t = setup();
-  t.queue.add(['https://a/1'], '', true);
-  t.queue.report('j1', 'done', 'One');
-  t.queue.add(['https://a/2'], '', true);                         // does not wipe the named row
-  assert.deepStrictEqual(t.states(), ['named', 'running']);
-  t.queue.report('j2', 'done', 'Two');
-  assert.strictEqual(t.queue.confirm(), 2);
+  t.w.start(['https://a/1', 'https://a/2']);
+  t.w.report('s1', 'done', STAGED(1));
+  t.w.report('s2', 'done', STAGED(2));
+  t.w.rename('First');
+  t.w.save();
+  assert.strictEqual(t.w.choose('Road Trip!'), true);
+  assert.strictEqual(t.step(), 'placing');
+  assert.strictEqual(t.s.folder, 'Road Trip');                    // cleaned
+  assert.ok(t.log.includes('place p3 ' + STAGED(1) + ' | First | Road Trip'));
+  t.w.report('p3', 'done', '/storage/emulated/0/Novel/Audio/Road Trip/First.mp3');
+  assert.deepStrictEqual(t.played, ['/storage/emulated/0/Novel/Audio/Road Trip/First.mp3 | Road Trip']);
+  assert.strictEqual(t.step(), 'name');                           // song 2 was ready: straight to its name
+  assert.strictEqual(t.w.current().path, STAGED(2));
+  assert.strictEqual(t.s.folder, '');
 });
 
-check('a new batch clears the old finished rows; a batch added mid-run joins the line', () => {
+check('"No playlist" places the song directly in Audio; every placed song starts playing', () => {
   const t = setup();
-  t.queue.add(['https://a/1'], '');
-  t.queue.report('j1', 'done', '');
-  t.queue.add(['https://a/2'], 'Other');
-  assert.deepStrictEqual(t.queue.jobs.map((j) => j.url), ['https://a/2']);
-  t.queue.add(['https://a/3'], 'Other');                        // while j2 runs: appended, not cleared
-  assert.deepStrictEqual(t.queue.jobs.map((j) => j.url), ['https://a/2', 'https://a/3']);
-  assert.strictEqual(t.queue.summary().total, 2);
+  t.w.start(['https://a/1']);
+  t.w.report('s1', 'done', STAGED(1));
+  t.w.save();
+  assert.strictEqual(t.w.choose(''), true);
+  assert.ok(t.log.some((l) => /^place p\d+ .* \| Song 1 \(Official\) \| $/.test(l)));
+  t.w.report('p2', 'done', '/storage/emulated/0/Novel/Audio/Song 1 (Official).mp3');
+  assert.deepStrictEqual(t.played, ['/storage/emulated/0/Novel/Audio/Song 1 (Official).mp3 | ']);
+  assert.strictEqual(t.step(), 'done');
 });
 
-check('shortLink drops the scheme, www and tracking query', () => {
-  assert.strictEqual(SD.shortLink('https://www.youtube.com/watch?v=abc&list=x'), 'youtube.com/watch');
-  assert.strictEqual(SD.shortLink('https://youtu.be/abc/'), 'youtu.be/abc');
-  assert.ok(SD.shortLink('https://example.com/' + 'a'.repeat(80)).length <= 48);
+check('New playlist: its own step, a name that cleans to nothing is refused, Back returns to the tiles', () => {
+  const t = setup();
+  t.w.start(['https://a/1']);
+  t.w.report('s1', 'done', STAGED(1));
+  t.w.save();
+  t.w.chooseNew();
+  assert.strictEqual(t.step(), 'newplaylist');
+  assert.strictEqual(t.w.choose('???'), false);
+  assert.strictEqual(t.w.choose('../..'), false);
+  assert.strictEqual(t.step(), 'newplaylist');
+  t.w.backToPlaylists();
+  assert.strictEqual(t.step(), 'playlist');
+  t.w.chooseNew();
+  assert.strictEqual(t.w.choose('  Lo-fi  Focus '), true);
+  assert.strictEqual(t.s.folder, 'Lo-fi Focus');
+});
+
+check('choosing is only possible on the playlist steps', () => {
+  const t = setup();
+  t.w.start(['https://a/1']);
+  assert.strictEqual(t.w.choose('Rock'), false);                  // still downloading
+  t.w.report('s1', 'done', STAGED(1));
+  assert.strictEqual(t.w.choose('Rock'), false);                  // still on the name
+  t.w.save();
+  assert.strictEqual(t.w.choose('Rock'), true);
+  assert.strictEqual(t.w.choose('Jazz'), false);                  // already placing
+});
+
+check('a failed download offers Retry (same song again) and Skip (on to the next)', () => {
+  const t = setup();
+  t.w.start(['https://a/1', 'https://a/2']);
+  t.w.report('s1', 'failed', 'Video unavailable');
+  assert.strictEqual(t.step(), 'download');
+  assert.strictEqual(t.w.current().state, 'failed');
+  assert.strictEqual(t.w.current().error, 'Video unavailable');
+  assert.deepStrictEqual(t.ids('stage'), ['s1']);                 // nothing else starts behind a failure
+  t.w.retryDownload();
+  assert.deepStrictEqual(t.ids('stage'), ['s1', 's2']);           // a fresh job for the same song
+  t.w.report('s2', 'failed', 'Still no');
+  t.w.skip();
+  assert.deepStrictEqual(t.ids('stage'), ['s1', 's2', 's3']);     // song 2 of the run is now on screen
+  assert.strictEqual(t.w.current().url, 'https://a/2');
+  t.w.report('s3', 'done', STAGED(2));
+  assert.strictEqual(t.step(), 'name');
+});
+
+check('a song that fails in the background waits until its turn; skipping everything ends the run', () => {
+  const t = setup();
+  t.w.start(['https://a/1', 'https://a/2']);
+  t.w.report('s1', 'done', STAGED(1));
+  t.w.report('s2', 'failed', 'Private video');                    // song 2, while song 1 is being named
+  assert.strictEqual(t.step(), 'name');                           // the user is not interrupted
+  t.w.save();
+  t.w.choose('Rock');
+  t.w.report('p3', 'done', '/x/Rock/a.mp3');
+  assert.strictEqual(t.step(), 'download');
+  assert.strictEqual(t.w.current().error, 'Private video');
+  t.w.skip();
+  assert.strictEqual(t.step(), 'done');
+});
+
+check('a failed placement keeps the song: Try again, or go back and change the name', () => {
+  const t = setup();
+  t.w.start(['https://a/1']);
+  t.w.report('s1', 'done', STAGED(1));
+  t.w.rename('Taken');
+  t.w.save();
+  t.w.choose('Rock');
+  t.w.report('p2', 'failed', 'A song called “Taken” is already in Rock. Change the name.');
+  assert.strictEqual(t.step(), 'placefail');
+  assert.ok(t.s.error.includes('already in Rock'));
+  assert.deepStrictEqual(t.played, []);
+  t.w.retryPlace();
+  assert.strictEqual(t.step(), 'placing');
+  t.w.report('p3', 'failed', 'again');
+  t.w.backToName();
+  assert.strictEqual(t.step(), 'name');
+  assert.strictEqual(t.w.current().name, 'Taken');                // what was typed is still there
+  t.w.rename('Fixed');
+  t.w.save();
+  t.w.choose('Rock');
+  assert.ok(t.log.some((l) => l.endsWith('| Fixed | Rock')));
+});
+
+check('after the last song: All done, then Paste more starts over', () => {
+  const t = setup();
+  t.w.start(['https://a/1']);
+  t.w.report('s1', 'done', STAGED(1));
+  t.w.save();
+  t.w.choose('');
+  t.w.report('p2', 'done', '/x/a.mp3');
+  assert.strictEqual(t.step(), 'done');
+  t.w.again();
+  assert.strictEqual(t.step(), 'paste');
+  assert.deepStrictEqual(t.s.items, []);
+  assert.strictEqual(t.w.start(['https://a/2']), true);
+});
+
+check('leaving mid-run cancels the jobs and deletes the staged songs; late answers are ignored', () => {
+  const t = setup();
+  t.w.start(['https://a/1', 'https://a/2']);
+  t.w.report('s1', 'done', STAGED(1));                            // song 2 is downloading behind it
+  t.log.length = 0;
+  t.w.leave();
+  assert.deepStrictEqual(t.log, ['cancel', 'discard']);
+  assert.strictEqual(t.step(), 'paste');
+  assert.deepStrictEqual(t.s.items, []);
+  t.w.report('s2', 'done', STAGED(2));                            // arrives after leaving
+  assert.strictEqual(t.step(), 'paste');
+  assert.deepStrictEqual(t.log, ['cancel', 'discard']);
+});
+
+check('leaving costs nothing on the first step or after All done', () => {
+  const t = setup();
+  t.w.leave();
+  assert.deepStrictEqual(t.log, []);
+  t.w.start(['https://a/1']);
+  t.w.report('s1', 'done', STAGED(1));
+  t.w.save();
+  t.w.choose('');
+  t.w.report('p2', 'done', '/x/a.mp3');
+  t.log.length = 0;
+  t.w.leave();
+  assert.deepStrictEqual(t.log, []);
+  assert.strictEqual(t.step(), 'paste');
+});
+
+check('without the native side a song fails at once with the reason, and can be skipped', () => {
+  const t = setup({ failStage: 'throw' });
+  t.w.start(['https://a/1']);
+  assert.strictEqual(t.step(), 'download');
+  assert.strictEqual(t.w.current().state, 'failed');
+  assert.strictEqual(t.w.current().error, 'Not connected to Termux yet');
+  t.w.skip();
+  assert.strictEqual(t.step(), 'done');
+});
+
+check('job ids never repeat, even across runs, so a late answer from an old run cannot be mistaken', () => {
+  const t = setup();
+  t.w.start(['https://a/1']);
+  t.w.leave();
+  t.w.start(['https://a/1']);
+  assert.deepStrictEqual(t.ids('stage'), ['s1', 's2']);
+  t.w.report('s1', 'done', STAGED(1));                            // the old run's answer
+  assert.strictEqual(t.step(), 'download');
+  t.w.report('s2', 'done', STAGED(2));
+  assert.strictEqual(t.step(), 'name');
+});
+
+check('a message on the first step (nothing on the clipboard) is shown there only', () => {
+  const t = setup();
+  t.w.setMessage('No song link on the clipboard.');
+  assert.strictEqual(t.s.message, 'No song link on the clipboard.');
+  t.w.start(['https://a/1']);
+  assert.strictEqual(t.s.message, '');
+  t.w.setMessage('ignored');
+  assert.strictEqual(t.s.message, '');
 });
 
 check('the page, the native bridge and the script agree on names', () => {
   const assets = path.join(__dirname, '../app/src/main/assets');
-  const kt = fs.readFileSync(path.join(__dirname, '../app/src/main/java/com/scell/novelreader/redesign/MainActivity.kt'), 'utf8');
+  const kdir = path.join(__dirname, '../app/src/main/java/com/scell/novelreader/redesign');
+  const kt = fs.readFileSync(path.join(kdir, 'MainActivity.kt'), 'utf8');
+  const dl = fs.readFileSync(path.join(kdir, 'SongDownloader.kt'), 'utf8');
   const js = fs.readFileSync(path.join(assets, 'song-download.js'), 'utf8');
-  ['lookupSongTitle', 'downloadSong', 'cancelSongDownload'].forEach((name) => {
-    assert.ok(js.includes('bridge.' + name), 'page does not call ' + name);
+  const py = fs.readFileSync(path.join(assets, 'song_dl.py'), 'utf8');
+  ['stageSong', 'placeSong', 'cancelSongDownload', 'discardStagedSongs', 'readClipboard'].forEach((name) => {
+    assert.ok(js.includes(name), 'page does not use ' + name);
     assert.ok(new RegExp('@JavascriptInterface\\s+fun ' + name + '\\(').test(kt), 'MainActivity has no bridge method ' + name);
   });
+  ['lookupSongTitle', 'downloadSong'].forEach((old) => assert.ok(!kt.includes('fun ' + old), old + ' should be gone'));
   assert.ok(kt.includes('"onSongDownloadStatus"') && js.includes('root.onSongDownloadStatus'));
-  const py = fs.readFileSync(path.join(assets, 'song_dl.py'), 'utf8');
-  assert.ok(py.includes('"--title"') && py.includes('"--name"'), 'song_dl.py lost an option');
-  const dl = fs.readFileSync(path.join(__dirname, '../app/src/main/java/com/scell/novelreader/redesign/SongDownloader.kt'), 'utf8');
-  assert.ok(dl.includes('"--title"') && dl.includes('"--name"'), 'SongDownloader.kt does not send the options');
+  ['--stage', '--place', '--name'].forEach((flag) => {
+    assert.ok(py.includes('"' + flag + '"'), 'song_dl.py lost ' + flag);
+    assert.ok(dl.includes('"' + flag + '"'), 'SongDownloader.kt does not send ' + flag);
+  });
+  assert.ok(js.includes('playAfterRescan') && fs.readFileSync(path.join(assets, 'audio-player.js'), 'utf8').includes('playAfterRescan('));
+  assert.ok(js.includes('SpotifyUI.getCover') && fs.readFileSync(path.join(assets, 'spotify-ui.js'), 'utf8').includes('getCover'));
   const manifest = fs.readFileSync(path.join(__dirname, '../app/src/main/AndroidManifest.xml'), 'utf8');
   assert.ok(manifest.includes('com.termux.permission.RUN_COMMAND'));
+});
+
+check('the staging folder is the same in the app and the script, and the music scan skips it', () => {
+  const kdir = path.join(__dirname, '../app/src/main/java/com/scell/novelreader/redesign');
+  const kt = fs.readFileSync(path.join(kdir, 'MainActivity.kt'), 'utf8');
+  const dl = fs.readFileSync(path.join(kdir, 'SongDownloader.kt'), 'utf8');
+  const py = fs.readFileSync(path.join(__dirname, '../app/src/main/assets/song_dl.py'), 'utf8');
+  assert.ok(dl.includes('STAGING_DIR = "/storage/emulated/0/Novel/Audio/.staging"'));
+  assert.ok(py.includes('os.path.join(AUDIO_ROOT, ".staging")'));
+  assert.ok(/walkTopDown\(\)[\s\S]{0,400}startsWith\("\."\)/.test(kt), 'the scan must skip folders that start with a dot');
 });
 
 check('every element the page looks up exists in index.html, and Download is a tab of the music panel', () => {
@@ -287,13 +373,14 @@ check('every element the page looks up exists in index.html, and Download is a t
   const html = fs.readFileSync(path.join(assets, 'index.html'), 'utf8');
   const js = fs.readFileSync(path.join(assets, 'song-download.js'), 'utf8');
   const ids = new Set([...js.matchAll(/\$\('([\w-]+)'\)/g)].map((m) => m[1]));
-  assert.ok(ids.size >= 15, 'found the ids the page uses');
+  assert.ok(ids.size >= 3, 'found the ids the page uses');
   ids.forEach((id) => assert.ok(new RegExp('id="' + id + '"').test(html), 'index.html has no #' + id));
-  assert.ok(!html.includes('id="dl-sheet"'), 'the old sheet is gone');
+  ['dl-links', 'dl-go', 'dl-review', 'dl-jobs', 'dl-folders', 'dl-sheet', 'dl-open-btn'].forEach((old) =>
+    assert.ok(!html.includes('id="' + old + '"'), 'the old #' + old + ' is gone'));
   assert.ok(/data-sp-view="download"/.test(html), 'the bottom bar has a Download tab');
-  const ui = fs.readFileSync(path.join(assets, 'spotify-ui.js'), 'utf8');
-  assert.ok(/const VIEWS = \[[^\]]*'download'/.test(ui), 'spotify-ui.js knows the download view');
   assert.ok(/data-view="download"\] #sp-view-download/.test(html), 'the download view can be shown');
+  ['i-check', 'i-close', 'i-plus', 'i-moon-music'].forEach((icon) =>
+    assert.ok(html.includes('id="' + icon + '"'), 'icon ' + icon + ' exists'));
 });
 
 console.log(n + ' checks passed');

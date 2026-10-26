@@ -210,7 +210,16 @@ window.NovelAudio = (function () {
         state.scanning = false;
         AudioUI.setNote('Scanning for music only works in the installed Android app.');
         AudioUI.render();
+        this._flushWaiters();
       }
+    },
+
+    // Callbacks waiting for the next scan result (see NovelAudio.playAfterRescan).
+    _waiters: [],
+    _flushWaiters() {
+      const fns = this._waiters;
+      this._waiters = [];
+      fns.forEach((fn) => { try { fn(); } catch (e) { /* one listener must not stop the others */ } });
     },
 
     /* Called by the native side with the scan result. Each track may
@@ -251,6 +260,7 @@ window.NovelAudio = (function () {
       }
       AudioUI.render();
       StartupPlayback.libraryScanned(state.tracks.length > 0);
+      this._flushWaiters();
     },
 
     getTrack(id) {
@@ -2374,6 +2384,25 @@ window.NovelAudio = (function () {
     },
     rescan() {
       MediaLibrary.scan();
+    },
+
+    // For the Download tab: a song was just moved into the library. Rescans, then starts playing
+    // that song inside its playlist (the folder name; "" for a song directly in Audio/), so the
+    // queue is that playlist. The song may not show up in a scan that was already running, so it
+    // looks up to three times. Resolves true when the song was found and started, false if not.
+    playAfterRescan(path, playlist) {
+      const once = () => new Promise((resolve) => {
+        MediaLibrary._waiters.push(resolve);
+        MediaLibrary.scan();
+      });
+      const attempt = (n) => once().then(() => {
+        const track = state.tracks.find((t) => t.id === path);
+        if (!track) return n < 3 ? new Promise((r) => setTimeout(r, 700)).then(() => attempt(n + 1)) : false;
+        AudioUI.selectPlaylist(track.playlist || 'all');
+        AudioEngine.play(track.id);
+        return true;
+      });
+      return attempt(1);
     },
 
     // For the big Play button inside a playlist (spotify-ui.js). Is the song that is loaded part

@@ -15,24 +15,28 @@ import androidx.core.content.ContextCompat
 import org.json.JSONObject
 
 /**
- * The native half of the "Download songs" sheet (song-download.js).
+ * The native half of the "Download songs" wizard (song-download.js).
  *
- * The page hands over one job at a time. A job is either
- *   - a name look-up: the link only; the answer is the song's name (message of a "done"), or
- *   - a download: a link, an optional playlist (folder) and an optional song name to save it under.
- * Each is run in Termux with song_dl.py (yt-dlp), through Termux's RUN_COMMAND service:
+ * The page runs two kinds of job, and may have one of each at the same time (the next song
+ * downloads while the current one is being named and placed):
+ *   - stage: download one link into the staging folder, Audio/.staging/<run>/ (the music scan skips
+ *            folders that start with a dot, so nothing shows up in the library yet). The answer's
+ *            message is the downloaded file's full path.
+ *   - place: give a staged song its final name (file name and title tag) and move it into its
+ *            playlist folder, or Audio/ itself. The answer's message is the song's new full path.
+ * Both are run in Termux with song_dl.py (yt-dlp, ffmpeg), through Termux's RUN_COMMAND service:
  *
- *   page   -> AndroidBridge.lookupSongTitle(jobId, url)               -> [start], titleOnly
- *             AndroidBridge.downloadSong(jobId, url, folder, name)    -> [start]
- *             AndroidBridge.cancelSongDownload()                       -> [cancel]
+ *   page   -> AndroidBridge.stageSong(jobId, url)                       -> [stage]
+ *             AndroidBridge.placeSong(jobId, path, name, folder)         -> [place]
+ *             AndroidBridge.cancelSongDownload()                          -> [cancel]  (stops every job)
  *   native -> window.onSongDownloadStatus(jobId, "done"|"failed", message)   (via [onStatus])
  *
  * Exactly one done/failed is reported per accepted job.
  *
  * How the script gets to Termux: song_dl.py ships in this app's assets and is handed to
  * `python -c` as an argument, so there is no copy in shared storage that another app could
- * swap out, and nothing to install by hand. Link and playlist go in as separate arguments
- * (never a shell string; RUN_COMMAND starts the program directly).
+ * swap out, and nothing to install by hand. Link, path, name and playlist go in as separate
+ * arguments (never a shell string; RUN_COMMAND starts the program directly).
  *
  * Needs, on the phone: Termux from F-Droid or GitHub (the Play Store build is too old),
  * `pkg install python ffmpeg`, `pip install yt-dlp`, `termux-setup-storage`,
@@ -52,6 +56,9 @@ class SongDownloader(
     companion object {
         const val PERMISSION = "com.termux.permission.RUN_COMMAND"
         const val SCRIPT_ASSET = "song_dl.py"
+
+        /** Where downloads wait until they are named and placed. Must match STAGING_ROOT in song_dl.py. */
+        const val STAGING_DIR = "/storage/emulated/0/Novel/Audio/.staging"
 
         private const val TERMUX_PACKAGE = "com.termux"
         private const val TERMUX_SERVICE = "com.termux.app.RunCommandService"
@@ -81,6 +88,18 @@ class SongDownloader(
                 .take(60)
 
         fun isWebLink(url: String?): Boolean = url != null && webLink.matches(url)
+
+        /** Is [path] a file inside the staging folder? (Nothing else may be moved or renamed.) */
+        fun isStagedPath(path: String?): Boolean {
+            if (path.isNullOrBlank()) return false
+            return try {
+                val file = java.io.File(path).canonicalFile
+                val root = java.io.File(STAGING_DIR).canonicalFile
+                file.path.startsWith(root.path + java.io.File.separator) && file.isFile
+            } catch (e: Exception) {
+                false
+            }
+        }
 
         private val controlChars = Regex("[\\u0000-\\u001f\\u007f]")
         private val badNameChars = Regex("[\\\\/:*?\"<>|]")
@@ -118,15 +137,9 @@ class SongDownloader(
 
     private val main = Handler(Looper.getMainLooper())
     private val lock = Any()
-    private var current: String? = null   // the job Termux is working on
+    private val running = HashSet<String>()                 // jobs Termux is working on
+    private val timeouts = HashMap<String, Runnable>()      // one watchdog per job (main thread only)
     private var requestSeq = 0
-
-    private val timeout = Runnable {
-        val id = synchronized(lock) { current } ?: return@Runnable
-        sendStop()
-        finish(id, "failed",
-            "Termux did not answer. Check that allow-external-apps=true is set in ~/.termux/termux.properties.")
-    }
 
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -157,44 +170,61 @@ class SongDownloader(
     }
 
     fun release() {
-        main.removeCallbacks(timeout)
+        timeouts.values.forEach { main.removeCallbacks(it) }
+        timeouts.clear()
         try { activity.unregisterReceiver(receiver) } catch (e: Exception) { /* not registered */ }
     }
 
     /** True while a job is out with Termux (the app must not close itself meanwhile). */
-    fun isBusy(): Boolean = synchronized(lock) { current != null }
+    fun isBusy(): Boolean = synchronized(lock) { running.isNotEmpty() }
 
     /**
-     * Accepts one job. Returns false only when another job is still running; every other
-     * problem is reported to the page as a "failed" result with a message the user can act on.
+     * Accepts a download job. Returns false only when a job with this id is already running; every
+     * other problem is reported to the page as a "failed" result with a message the user can act on.
      * May be called from the WebView's bridge thread.
      */
-    fun start(jobId: String, url: String, folder: String, name: String = "", titleOnly: Boolean = false): Boolean {
-        synchronized(lock) {
-            if (current != null) return false
-            current = jobId
+    fun stage(jobId: String, url: String): Boolean {
+        if (!begin(jobId)) return false
+        main.post {
+            if (!isWebLink(url)) finish(jobId, "failed", "That doesn't look like a web link.")
+            else launch(jobId, listOf("--stage", url.trim()))
         }
+        return true
+    }
+
+    /** Accepts a placement job: [path] is the staged file, [name] its final name ("" = keep it). */
+    fun place(jobId: String, path: String, name: String, folder: String): Boolean {
+        if (!begin(jobId)) return false
         val cleanedFolder = cleanFolder(folder)
         val cleanedName = cleanSongName(name)
         main.post {
             when {
-                !isWebLink(url) -> finish(jobId, "failed", "That doesn't look like a web link.")
+                !isStagedPath(path) -> finish(jobId, "failed", "That song is no longer there. Download it again.")
                 folder.isNotBlank() && cleanedFolder.isEmpty() ->
                     finish(jobId, "failed", "That playlist name has no usable letters or numbers.")
-                else -> launch(jobId, url.trim(), cleanedFolder, cleanedName, titleOnly)
+                else -> {
+                    val args = ArrayList<String>()
+                    args.add("--place")
+                    args.add(path)
+                    if (cleanedName.isNotEmpty()) { args.add("--name"); args.add(cleanedName) }
+                    if (cleanedFolder.isNotEmpty()) args.add(cleanedFolder)
+                    launch(jobId, args)
+                }
             }
         }
         return true
     }
 
-    /** Asks the running script to stop; it then reports "Stopped" by itself. */
+    /** Asks every running song_dl.py to stop; each then reports "Stopped" by itself. */
     fun cancel() {
         main.post { sendStop() }
     }
 
+    private fun begin(jobId: String): Boolean = synchronized(lock) { running.add(jobId) }
+
     // ---- main thread from here on ----------------------------------------------------
 
-    private fun launch(jobId: String, url: String, folder: String, name: String, titleOnly: Boolean) {
+    private fun launch(jobId: String, scriptArgs: List<String>) {
         if (activity.packageManager.getLaunchIntentForPackage(TERMUX_PACKAGE) == null) {
             finish(jobId, "failed", "Termux isn't installed on this device.")
             return
@@ -213,19 +243,11 @@ class SongDownloader(
             return
         }
 
-        // python -c SCRIPT [--title | --name NAME] URL [FOLDER]: the script sees
-        // sys.argv = ["-c", ...options, URL, FOLDER]. Options always come before the link.
+        // python -c SCRIPT [options] ...: the script sees sys.argv = ["-c", ...scriptArgs].
         val args = ArrayList<String>()
         args.add("-c")
         args.add(script)
-        if (titleOnly) {
-            args.add("--title")
-        } else if (name.isNotEmpty()) {
-            args.add("--name")
-            args.add(name)
-        }
-        args.add(url)
-        if (!titleOnly && folder.isNotEmpty()) args.add(folder)
+        args.addAll(scriptArgs)
 
         val reply = Intent(ACTION_RESULT).setPackage(activity.packageName).putExtra(EXTRA_JOB, jobId)
         // Termux adds its result to this intent, so the PendingIntent has to be mutable.
@@ -243,8 +265,13 @@ class SongDownloader(
         }
         try {
             activity.startService(run)
-            main.removeCallbacks(timeout)
-            main.postDelayed(timeout, ANSWER_TIMEOUT_MS)
+            val watchdog = Runnable {
+                sendStop()
+                finish(jobId, "failed",
+                    "Termux did not answer. Check that allow-external-apps=true is set in ~/.termux/termux.properties.")
+            }
+            timeouts[jobId] = watchdog
+            main.postDelayed(watchdog, ANSWER_TIMEOUT_MS)
         } catch (e: SecurityException) {
             askPermission()
             finish(jobId, "failed", "Termux refused the request. Allow \"Run commands in Termux environment\" " +
@@ -255,7 +282,7 @@ class SongDownloader(
         }
     }
 
-    /** Sends SIGTERM to the running song_dl.py, found through the pid file it keeps. */
+    /** Sends SIGTERM to every running song_dl.py, found through the pid file each one keeps. */
     private fun sendStop() {
         try {
             val stop = Intent(ACTION_RUN).apply {
@@ -263,7 +290,8 @@ class SongDownloader(
                 putExtra("com.termux.RUN_COMMAND_PATH", "$TERMUX_BIN/sh")
                 putExtra("com.termux.RUN_COMMAND_ARGUMENTS", arrayOf(
                     "-c",
-                    "f=\"\${TMPDIR:-$TERMUX_TMP}/song_dl.pid\"; [ -f \"\$f\" ] && kill -TERM \"\$(cat \"\$f\")\"; true"
+                    "d=\"\${TMPDIR:-$TERMUX_TMP}\"; for f in \"\$d\"/song_dl.*.pid; do " +
+                        "[ -f \"\$f\" ] && kill -TERM \"\$(cat \"\$f\")\" 2>/dev/null; done; true"
                 ))
                 putExtra("com.termux.RUN_COMMAND_WORKDIR", TERMUX_HOME)
                 putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
@@ -275,11 +303,9 @@ class SongDownloader(
     }
 
     private fun finish(jobId: String, status: String, message: String) {
-        val mine = synchronized(lock) {
-            if (current == jobId) { current = null; true } else false
-        }
+        val mine = synchronized(lock) { running.remove(jobId) }
         if (!mine) return                    // a late or repeated answer changes nothing
-        main.removeCallbacks(timeout)
+        timeouts.remove(jobId)?.let { main.removeCallbacks(it) }
         onStatus(jobId, status, message)
     }
 }
