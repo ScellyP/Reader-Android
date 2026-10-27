@@ -460,6 +460,33 @@ colour wheel (`color-wheel.js`: hue/saturation wheel, brightness slider, hex fie
 instead of the system colour dialog. The native colour inputs stay in the page as
 the source of truth, so saving, recent colours and presets work as before.
 
+## To be done (requested, NOT started)
+
+Added 2026-10-27 at the owner's request. **Nothing below has been started; do not begin one unless the owner asks.**
+When one is started: give it its own section here, and log every structure change with its reason in
+**Structure change log**. The notes under each item are ideas and open questions, not decisions.
+
+1. **Spotify-style music part as a separate app.** Split the music player (the 🎧 panel: `audio-player.js`,
+   `spotify-*.js`, `PlaybackService.kt`, `SongDownloader.kt` and friends) out of this reader into its own app.
+   Open: new Gradle module or new repo; its own `applicationId` and its own Release for the in-app updater
+   (`AppUpdater.kt` reads one repo's "latest" Release, so two apps need two tags/repos); how both apps share the
+   `Novel/Audio` folder and the settings file; what the reader keeps (nothing of the music UI).
+2. **Markdown file reading.** Open `.md` files and render them (headings, lists, code blocks, links, tables).
+   Open: where files come from (a folder next to `Novel/`, or a file picker); whether it reuses the chapter reader's
+   themes and font settings.
+3. **Text file reader.** Open any `.txt` file, not only chapter folders. Open: how it differs from a novel
+   (no chapter list; remember the scroll position per file).
+4. **PDF launcher with a dark-mode converter.** List/open PDFs and show them with dark colours. Open: render with
+   Android's `PdfRenderer` and invert/tint the pages (fast, images get inverted too) versus producing a converted
+   dark copy; keeping photos un-inverted; remembering the page.
+5. **Coder: a code editor for C++, Java, HTML, JS, CSS and Python.** Knows each language's keywords (highlighting,
+   completion) and has extra keys for what a phone keyboard makes awkward: Tab and the symbols `{ } ( ) [ ] ; : < > = " ' / \ | & _`
+   as a custom keyboard row or Termux-style extra-keys bar. Either inside this app, or a separate app that also runs the
+   code in Termux and shows the output.
+   Open: separate app or part of the reader; the Termux run could reuse `ChapterTools.kt` (RUN_COMMAND intent, result
+   PendingIntent, the progress/result window) with a compiler or interpreter per language (`g++`, `javac`/`java`,
+   `python`, `node`; HTML/CSS shown in a WebView instead); an editor view that stays fast on large files.
+
 ## AI assistant instructions
 
 - **Bump the version automatically** in the same change for every real bug fix or feature. State the new version in your reply. Follow `Agent.md#version-number`.

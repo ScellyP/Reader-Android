@@ -384,6 +384,17 @@ capitals) naming which playlist it came from.
 | Audio delay/sync adjustment | 🟡 Currently Testing | It only stores an offset and nothing uses it. |
 | Search box for the music library | ⚪ Not added | Only the chapter list has a search box today. |
 
+### Planned (not started)
+
+Requested, nothing built yet (details and open questions in `Agent.md`, "To be done"):
+
+1. The Spotify-style music part as a separate app
+2. Markdown file reading
+3. A plain text file reader
+4. A PDF launcher with a dark-mode converter
+5. A code editor ("Coder") for C++, Java, HTML, JS, CSS and Python, with keyword support, extra keys (Tab, symbols) and
+   running the code in Termux with the output shown
+
 ### The music player's Home screen
 
 The 🎧 panel opens on **Home**, laid out like a streaming app's home tab:
