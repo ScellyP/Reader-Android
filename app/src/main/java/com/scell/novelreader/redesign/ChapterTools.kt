@@ -33,7 +33,7 @@ import java.util.UUID
  *   page   -> AndroidBridge.fetchNewChapters(novel) / deleteChapters(novel, upTo) / chapterJobState()
  *   native -> window.onChapterJob(json)
  *             json = {"id","kind":"fetch"|"delete","status":"waiting"|"running"|"done"|"failed",
- *                     "novel","count","message"}
+ *                     "novel","count","message","latest"}
  *             "count" is how many chapter files appeared (fetch) or disappeared (delete) so far.
  *             A job ends with exactly one "done" or "failed".
  *
@@ -98,6 +98,16 @@ class ChapterTools(
 
         fun countChapters(dir: File): Int =
             dir.listFiles { f -> f.isFile && isChapterFile(f.name) }?.size ?: 0
+
+        /** The name (without ".txt") of the chapter file saved most recently, or "" when there is none. */
+        fun latestChapterName(dir: File): String {
+            val files = dir.listFiles { f -> f.isFile && isChapterFile(f.name) } ?: return ""
+            var newest: File? = null
+            for (f in files) {
+                if (newest == null || f.lastModified() > newest.lastModified()) newest = f
+            }
+            return newest?.name?.removeSuffix(".txt") ?: ""
+        }
 
         /** The last few lines of a script's output, short enough for a message box. */
         fun tail(text: String?, maxLines: Int = 4, maxChars: Int = 320): String {
@@ -391,6 +401,8 @@ class ChapterTools(
             .put("novel", j.novel)
             .put("count", count)
             .put("message", message)
+            // The newest chapter saved so far; the page's progress window shows it while fetching.
+            .put("latest", if (j.kind == "fetch" && count > 0) latestChapterName(j.dir) else "")
             .toString()
         lastStateJson = json
         onState(json)

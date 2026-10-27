@@ -40,16 +40,80 @@ check('the bridge methods the page calls exist in MainActivity', () => {
 check('the page answers the native state callback', () => {
   assert.ok(mainActivity.includes('"onChapterJob"'));
   assert.ok(reader.includes('window.onChapterJob'));
-  ['id', 'kind', 'status', 'novel', 'count', 'message'].forEach((k) =>
+  ['id', 'kind', 'status', 'novel', 'count', 'message', 'latest'].forEach((k) =>
     assert.ok(chapterTools.includes('.put("' + k + '"'), 'state lacks ' + k));
 });
 
 check('every element id reader.js looks up for these buttons exists in index.html', () => {
-  ['fetch-chapters-btn', 'fetch-chapters-label', 'delete-chapters-btn', 'delete-layer', 'delete-text',
-    'delete-input', 'delete-preview', 'delete-confirm', 'delete-cancel'].forEach((id) => {
+  ['delete-chapters-btn', 'delete-layer', 'delete-text', 'delete-input', 'delete-preview', 'delete-confirm',
+    'delete-cancel', 'job-layer', 'job-box', 'job-icon-use', 'job-title', 'job-novel', 'job-status', 'job-latest',
+    'job-message', 'job-hide'].forEach((id) => {
     assert.ok(reader.includes("getElementById('" + id + "')"), 'reader.js does not use ' + id);
     assert.ok(html.includes('id="' + id + '"'), 'index.html lacks ' + id);
   });
+});
+
+// ---------- the fetch entry in the menu and the progress window ----------
+function pageFunction(name) {
+  const start = reader.indexOf('function ' + name + '(');
+  assert.ok(start >= 0, 'reader.js has no ' + name);
+  let depth = 0, i = reader.indexOf('{', start);
+  for (let k = i; k < reader.length; k++) {
+    if (reader[k] === '{') depth++;
+    else if (reader[k] === '}' && --depth === 0) return reader.slice(start, k + 1);
+  }
+  throw new Error('unbalanced ' + name);
+}
+
+check('"Fetch new chapters" is the last row of the chapter list, not a button under the chapter', () => {
+  assert.ok(!html.includes('fetch-chapters-btn') && !reader.includes('fetch-chapters-btn'), 'the old reader button is still around');
+  assert.ok(/appendFetchItem\(\)/.test(reader) && /className = 'fetch-item'/.test(reader));
+  const render = pageFunction('renderChapterList');
+  assert.ok(render.indexOf('forEach') < render.indexOf('appendFetchItem'), 'the row must come after the chapters');
+  assert.ok(/li\.fetch-item/.test(html));
+  // renderChapterList can run before the job block: the row's own code may only use var state
+  const fn = pageFunction('renderFetchItem');
+  assert.ok(!/\b(deleteBtn|jobBox|jobLayer)\b/.test(fn), 'renderFetchItem touches a const of the job block');
+  assert.ok(/var chapterJob/.test(reader) && /var fetchItemEl/.test(reader));
+});
+
+check('the reader and the menu keep clear of the navigation bar', () => {
+  assert.ok(/#reader \{[^}]*calc\(110px \+ var\(--nav-bar-height, 0px\)\)/.test(html));
+  assert.ok(/#reader \{ padding: 30px 20px calc\(120px \+ var\(--nav-bar-height, 0px\)\)/.test(html));
+  assert.ok(/#chapter-list \{ padding-bottom: calc\(16px \+ var\(--nav-bar-height, 0px\)\)/.test(html));
+});
+
+check('describeJob(): what the progress window says', () => {
+  const describeJob = new Function('chaptersWord', 'elapsedText', pageFunction('describeJob') + '; return describeJob;')(
+    (n) => (n === 1 ? '1 chapter' : n + ' chapters'),
+    (ms) => Math.floor(ms / 60000) + ':' + String(Math.floor(ms / 1000) % 60).padStart(2, '0'));
+  assert.strictEqual(describeJob({ kind: 'fetch', status: 'starting' }, 0).status, 'Starting\u2026');
+  assert.ok(/permission/.test(describeJob({ kind: 'fetch', status: 'waiting', message: 'Allow it' }, 0).status));
+  const none = describeJob({ kind: 'fetch', status: 'running', count: 0 }, 5000);
+  assert.ok(/Looking/.test(none.status) && /Running for 0:05/.test(none.message) && none.button === 'Hide' && none.phase === 'running');
+  const some = describeJob({ kind: 'fetch', status: 'running', count: 12, latest: 'Chapter 312 The Doll' }, 65000);
+  assert.strictEqual(some.status, '12 chapters downloaded so far');
+  assert.strictEqual(some.latest, 'Latest: Chapter 312 The Doll');
+  assert.ok(/1:05/.test(some.message));
+  assert.strictEqual(describeJob({ kind: 'fetch', status: 'running', count: 1 }, 0).status, '1 chapter downloaded so far');
+  const done = describeJob({ kind: 'fetch', status: 'done', count: 3, latest: 'Chapter 9', message: '3 chapters downloaded.' }, 0);
+  assert.ok(done.phase === 'done' && done.button === 'Close' && done.status === '3 chapters downloaded' && done.latest === 'Newest: Chapter 9');
+  assert.strictEqual(describeJob({ kind: 'fetch', status: 'done', count: 0, message: 'No new chapters yet.' }, 0).status, "You're up to date");
+  const bad = describeJob({ kind: 'fetch', status: 'failed', count: 0, message: 'Termux isn\'t installed.' }, 0);
+  assert.ok(bad.phase === 'failed' && bad.message === 'Termux isn\'t installed.' && bad.button === 'Close');
+  const del = describeJob({ kind: 'delete', status: 'running', count: 4 }, 0);
+  assert.ok(del.title === 'Deleting chapters' && del.status === '4 chapters deleted so far' && del.latest === '');
+});
+
+check('back and Escape close the progress window, and a result is shown in it only when it is open', () => {
+  assert.ok(/if \(jobOpen\) \{ closeJobWindow\(\); return true; \}/.test(reader));
+  assert.ok(/e\.key === 'Escape' && jobOpen/.test(reader));
+  assert.ok(/if \(jobOpen\) renderJobWindow\(\);\s*else if \(s\.message\) showMessage\(s\.message\)/.test(reader));
+});
+
+check('ChapterTools reports the newest chapter file', () => {
+  assert.ok(/fun latestChapterName\(dir: File\): String/.test(chapterTools));
+  assert.ok(/\.put\("latest"/.test(chapterTools));
 });
 
 check('manifest: Termux permission and package visibility', () => {

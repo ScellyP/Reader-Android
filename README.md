@@ -200,14 +200,18 @@ bookmarks are listed in the panel.
 
 ### Fetch new chapters
 
-When you reach the last chapter, a **Fetch new chapters** button appears under it.
+Open the side menu: the last entry after the final chapter is **Fetch new chapters**.
 Tap it and the app runs the chapter downloader in **Termux**, in the background (no
 Termux window opens). It takes the link the newest chapter was downloaded from (the
 `Source:` line inside that chapter's file), opens that page only to find the link to
 the next chapter, and downloads everything after it, up to the latest. That first page
-is not saved again. The button shows how many chapters have arrived; when it is done
-the novel is read again and a message tells you how many new chapters there are (or
-that you are up to date). While it runs, the app does not close itself.
+is not saved again.
+
+A **progress window** opens and shows how many chapters have arrived, the newest one,
+and how long it has been running. **Hide** closes the window while the download carries
+on (the menu entry keeps counting; tap it to bring the window back). When it is done the
+novel is read again and the window (or, if you hid it, a message) tells you how many new
+chapters there are, or that you are up to date. While it runs, the app does not close itself.
 
 The same thing from Termux: `python chapter_downloader.py --resume -o /storage/emulated/0/Novel/<novel>`
 (the app puts `chapter_downloader.py` and `delete_chapters.py` straight into your `Novel`
