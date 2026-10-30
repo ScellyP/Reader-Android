@@ -90,20 +90,34 @@ jobs:
             echo "::warning::Signing secrets are not set - building with the default debug key (this APK cannot update an app signed with the real key)."
           fi
 
-      - name: Build release and debug APKs
+      # Builds both versions of the app (flavors "full" = with the music player, "noaudio" = without),
+      # each as release and debug: four APKs. See "Two versions" in README.md.
+      - name: Build release and debug APKs (both versions)
         run: ./gradlew assembleRelease assembleDebug --stacktrace
 
-      - name: Upload release APK artifact
+      - name: Upload release APK artifact (with audio player)
         uses: actions/upload-artifact@v4
         with:
           name: novel-reader-release-apk
-          path: app/build/outputs/apk/release/app-release.apk
+          path: app/build/outputs/apk/full/release/app-full-release.apk
 
-      - name: Upload debug APK artifact
+      - name: Upload debug APK artifact (with audio player)
         uses: actions/upload-artifact@v4
         with:
           name: novel-reader-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: app/build/outputs/apk/full/debug/app-full-debug.apk
+
+      - name: Upload release APK artifact (no audio player)
+        uses: actions/upload-artifact@v4
+        with:
+          name: novel-reader-noaudio-release-apk
+          path: app/build/outputs/apk/noaudio/release/app-noaudio-release.apk
+
+      - name: Upload debug APK artifact (no audio player)
+        uses: actions/upload-artifact@v4
+        with:
+          name: novel-reader-noaudio-debug-apk
+          path: app/build/outputs/apk/noaudio/debug/app-noaudio-debug.apk
 
       # The in-app updater (AppUpdater.kt) reads the newest GitHub Release of this repo. Only a build
       # signed with the real key is published: Android refuses to update an app with an APK signed by a
@@ -120,10 +134,15 @@ jobs:
             exit 0
           fi
           APK="novel-reader-$TAG.apk"
-          cp app/build/outputs/apk/release/app-release.apk "$APK"
+          APK_NOAUDIO="novel-reader-noaudio-$TAG.apk"
+          cp app/build/outputs/apk/full/release/app-full-release.apk "$APK"
+          cp app/build/outputs/apk/noaudio/release/app-noaudio-release.apk "$APK_NOAUDIO"
+          # The full APK goes first and alone: older installed copies of the app take the FIRST .apk
+          # of the newest Release, so it must be the full one. The no-audio APK is added afterwards.
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" "$APK" --clobber
           else
             gh release create "$TAG" "$APK" --target "${{ github.sha }}" \
-              --title "Novel Reader $TAG" --notes "Built from commit ${{ github.sha }}." --latest
+              --title "Novel Reader $TAG" --notes "Built from commit ${{ github.sha }}. novel-reader-$TAG.apk has the music player; novel-reader-noaudio-$TAG.apk is the same app without it." --latest
           fi
+          gh release upload "$TAG" "$APK_NOAUDIO" --clobber

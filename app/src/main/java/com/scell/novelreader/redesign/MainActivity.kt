@@ -247,7 +247,8 @@ class MainActivity : ComponentActivity() {
         if (permissionFlowStarted) return
         permissionFlowStarted = true
         permissionFlowActive = true
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        // Notifications are only for the player's system notification, so the "noaudio" build skips them.
+        if (BuildConfig.HAS_AUDIO && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED
         ) {
@@ -404,7 +405,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         installCrashLogger()
         registerVolumeReceiver()
-        songDownloader.warmUp()
+        if (BuildConfig.HAS_AUDIO) songDownloader.warmUp()   // unpacks yt-dlp / ffmpeg: not needed without the player
         appUpdater.start()
         // A few seconds after launch, so the check does not compete with the splash and the library scan.
         screenHandler.postDelayed({ appUpdater.checkOnStart() }, 6000L)
@@ -620,6 +621,7 @@ class MainActivity : ComponentActivity() {
      * stay on the UI thread.
      */
     private fun connectNativePlayer() {
+        if (!BuildConfig.HAS_AUDIO) return   // the "noaudio" build has no PlaybackService to connect to
         val sessionToken = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         val future = MediaController.Builder(this, sessionToken).buildAsync()
         mediaControllerFuture = future
@@ -1679,6 +1681,7 @@ class MainActivity : ComponentActivity() {
      *     standalone-track.mp3      -> no playlist
      */
     private fun runAudioScan() {
+        if (!BuildConfig.HAS_AUDIO) return   // the "noaudio" build has no music library
         if (audioScanRunning) return
         audioScanRunning = true
         Thread {

@@ -231,13 +231,18 @@ class AppUpdater(
                     setState("uptodate", manual = manual)
                     return@Thread
                 }
-                // The first .apk attached to the Release.
+                // The first .apk attached to the Release that belongs to this build. Every Release carries
+                // two: novel-reader-<tag>.apk (full) and novel-reader-noaudio-<tag>.apk. Each build takes
+                // its own, because the other one has a different application id and would not install.
                 val assets = release.optJSONArray("assets")
                 var found: JSONObject? = null
                 if (assets != null) {
                     for (i in 0 until assets.length()) {
                         val a = assets.optJSONObject(i) ?: continue
-                        if (a.optString("name", "").endsWith(".apk", ignoreCase = true)) {
+                        val assetName = a.optString("name", "")
+                        if (assetName.endsWith(".apk", ignoreCase = true) &&
+                            assetName.contains("noaudio", ignoreCase = true) == !BuildConfig.HAS_AUDIO
+                        ) {
                             found = a
                             break
                         }

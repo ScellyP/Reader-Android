@@ -34,6 +34,34 @@ android {
         }
     }
 
+    // Two builds of the same app (see "Two versions" in README.md):
+    //   full     the app with the music player (default)
+    //   noaudio  the same app without it: no music panel, no playback service, no notification /
+    //            foreground-service permissions, no song downloads. It has the SAME application id
+    //            and signing key as "full", so only one of them can be installed at a time and
+    //            installing either over the other is an update (chapters and settings stay). Its
+    //            APK has its own name in every GitHub Release, which the in-app updater uses to
+    //            pick the right file, so each one keeps updating as itself.
+    // The no-audio build is made by overlays in app/src/noaudio/ (manifest, app name, and stub
+    // versions of audio-player.js / spotify-ui.js / song-download.js) plus the BuildConfig.HAS_AUDIO
+    // checks in MainActivity.kt and AppUpdater.kt. Nothing in app/src/main is a copy.
+    flavorDimensions 'audio'
+    productFlavors {
+        full {
+            dimension 'audio'
+            buildConfigField 'boolean', 'HAS_AUDIO', 'true'
+        }
+        noaudio {
+            dimension 'audio'
+            versionNameSuffix '-noaudio'
+            buildConfigField 'boolean', 'HAS_AUDIO', 'false'
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
     // The signing key is NOT stored in the repo. Android only lets a new APK
     // update an installed app when both are signed with the SAME key, so CI
     // supplies it through four environment variables (filled from the GitHub

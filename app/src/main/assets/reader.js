@@ -1661,6 +1661,7 @@
      player stays a self-contained module you can keep building on
      without touching the reader. */
   function toggleAudioPanel() {
+    if (window.NO_AUDIO) return;   // the "noaudio" build has no player (see src/noaudio/assets)
     togglePanel(audioPanel, () => {
       if (window.NovelAudio && window.NovelAudio.onPanelOpened) {
         window.NovelAudio.onPanelOpened();
@@ -1680,6 +1681,7 @@
   }
 
   function openAudioFromSwipe() {
+    if (window.NO_AUDIO) return;
     setAudioEntrance(true);
     toggleAudioPanel();
   }

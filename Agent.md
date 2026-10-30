@@ -24,12 +24,14 @@ Key files:
 - `app/src/main/assets/version.js` — `APP_VERSION`.
 - `app/src/main/assets/color-wheel.js` — Page/Text colour wheel.
 - `app/src/main/assets/moon-theme.js` — fills the `[data-moon]` phase badges. The rest of the moon/space theme is CSS in `<style id="moon-theme">` in `index.html` (`.sky` starfield, ornaments, splash moon).
+- **Two builds (`full` / `noaudio`)** — `app/build.gradle` has two product flavors (dimension `audio`). `full` is the app as it always was. `noaudio` has the **same application id and signing key** as `full` (only one can be installed; installing either over the other is an update that keeps chapters and settings), name "Novel Reader (No Audio)", and is made only by **overlays in `app/src/noaudio/`** — never by copying main files: `AndroidManifest.xml` (`tools:node="remove"` for `PlaybackService`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `POST_NOTIFICATIONS`), `res/values/strings.xml` (`app_name`), and `assets/audio-player.js` / `spotify-ui.js` / `song-download.js`, which replace the main files of the same name (a flavor's assets win over `main`). The `audio-player.js` there sets `window.NO_AUDIO = true`, never defines `window.NovelAudio` (so every `window.NovelAudio && …` in `reader.js` stays false) and hides `#audio-toggle`, `#audio-toggle-top`, `#audio-panel`, `#novel-picker-player-hint` and the "Volume keys in audio player" row; the other two are empty. Shared code only knows `BuildConfig.HAS_AUDIO` (`MainActivity.kt`: `connectNativePlayer()`, `runAudioScan()`, `songDownloader.warmUp()` and the notification prompt are skipped; `AppUpdater.kt`: picks the Release asset whose name has `noaudio` iff this is the no-audio build) and `window.NO_AUDIO` (`reader.js`: `toggleAudioPanel()` / `openAudioFromSwipe()` do nothing). **Anything new that belongs to the music player must keep working in both builds:** put new page code in `audio-player.js` / `spotify-ui.js` / `song-download.js` (or guard it with `window.NO_AUDIO`), new native code behind `BuildConfig.HAS_AUDIO`, and a new audio-only manifest entry in `src/noaudio/AndroidManifest.xml` as another `remove`. The media3 and youtubedl libraries are still compiled into both builds (the Kotlin is shared), so the no-audio APK is not smaller yet. `tests/build-flavors.test.js` checks all of this.
 - `MainActivity.kt` — Android host, hardcoded `novelRoot` (one subfolder per novel), `connectNativePlayer()`, `runAudioScan()`.
 - `PlaybackService.kt` — Media3 foreground service, `QueueAwarePlayer`, notification controls.
 - `NativeAudioEffects.kt` — native loudness boost (positive replay gain).
 - `AdaptiveBrightness.kt` — the "Adaptive brightness" setting: light sensor → this window's brightness (log curve, smoothed). The Kotlin was written without being compiled or run; test it on a device.
 - `NativeCrossfade.kt` — native crossfade: two ExoPlayers, equal-power ramp, session hand-over.
 - `ReplayGainReader.kt` — reads ReplayGain tags from the file bytes (pure `java.io`, testable on a plain JVM).
+- `tests/build-flavors.test.js` — the two builds: Gradle flavors, overlay manifest / assets, the `NO_AUDIO` / `HAS_AUDIO` guards, the updater's asset choice, the workflow's four artifacts and two Release files (9 checks)
 - `tests/index-html.test.js` — structure of `index.html`: no id used twice (a `<style id>` clashing with an icon id once left the Home tab icon blank), every `<use href>` and every `svgIcon()`/`makeIcon()` name has a `<symbol>`, every script file is loaded
 - `tests/app-update.test.js` — the updater: `plan()` for every state, the version rules run with the regexes taken out of `AppUpdater.kt`, page/Kotlin/manifest/workflow agreement, and the workflow's tag extraction run against the real `version.js` (12 checks). `AppUpdater.kt` itself needs a device.
 - `tests/chapter-swipe.test.js` — the swipe-up gesture (9 checks)
@@ -179,6 +181,20 @@ removed file, a renamed class, a new bridge method, a moved responsibility, a ne
 between page and native), add a line here in the same change: **date, what changed, and why**. Newest first.
 Behaviour-only fixes do not need a line (the version number covers those).
 
+- **v1.16.00 — Two versions of the app: with and without the audio player.**
+  - NEW product flavors `full` / `noaudio` in `app/build.gradle` (`BuildConfig.HAS_AUDIO`, `buildFeatures.buildConfig true`;
+    `noaudio` has `versionNameSuffix '-noaudio'`, same application id as `full`). NEW folder `app/src/noaudio/`
+    (manifest, `strings.xml`, three stub scripts) — see the project map. *Why:* a build of the reader that has no music
+    player at all, from the same source, so a fix is made once and both builds get it.
+  - CHANGED `.github/workflows/build-apk.yml`: builds all four APKs; artifacts `novel-reader-release-apk` / `-debug-apk`
+    (full, names unchanged) and `novel-reader-noaudio-release-apk` / `-debug-apk`; each Release carries
+    `novel-reader-<tag>.apk` (attached first, on its own) and `novel-reader-noaudio-<tag>.apk` (attached second). *Why the
+    order:* installed copies older than this change take the *first* `.apk` of the newest Release.
+  - CHANGED `AppUpdater.kt` asset choice (see above) and APK paths in the workflow / `tests/app-update.test.js` (now
+    `apk/<flavor>/<type>/app-<flavor>-<type>.apk`).
+  - NOT DONE (on purpose): the Kotlin audio classes and the media3 / youtubedl dependencies are still in the no-audio APK.
+    Dropping them needs `MainActivity.kt` split per flavor and could not be compiled where this was written.
+  - **Written without being built** (no Android SDK / Maven access where it was made): the first CI run is the real test.
 - **v1.15.01 — Fetch moved into the menu, progress window.**
   - MOVED "Fetch new chapters" from a button under the last chapter (`#fetch-chapters-btn` in `#reader`, removed together
     with its CSS) to the last row of the chapter list in the side menu (`li.fetch-item`, `reader.js` `appendFetchItem()`).

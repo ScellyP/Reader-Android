@@ -43,16 +43,36 @@ lets signed-in users download build files.
 4. Pick the newest run with a **green checkmark** ✅. If the top one is still
    yellow, it's building: wait a few minutes and refresh.
 5. Open that run and scroll to the **Artifacts** section at the bottom.
-6. Tap **novel-reader-debug-apk**. Your browser saves a `.zip`.
+6. Tap the artifact you want. Your browser saves a `.zip`. There are two
+   versions of the app (see [Two versions](#two-versions)):
+   **novel-reader-debug-apk** (with the audio player) or
+   **novel-reader-noaudio-debug-apk** (without it).
 7. Open your file manager, go to **Downloads**, and unzip it. Inside is
-   `app-debug.apk`.
-8. Tap `app-debug.apk` to install. Android will ask you to allow
+   `app-full-debug.apk` or `app-noaudio-debug.apk`.
+8. Tap the APK to install. Android will ask you to allow
    **"install unknown apps"** for your browser or file manager the first time.
    Allow it, then finish the install.
 
 **Can't see an Artifacts section?** That run didn't produce an APK (it was a
 small change that skipped the build) or its files have expired. Go back and
 pick a different green run.
+
+## Two versions
+
+Every build now makes two versions of the app from the same source:
+
+| | With audio player | Without audio player |
+| --- | --- | --- |
+| Name on the phone | Novel Reader (New) | Novel Reader (No Audio) |
+| Release file | `novel-reader-vX.XX.XX.apk` | `novel-reader-noaudio-vX.XX.XX.apk` |
+| Actions artifact | `novel-reader-release-apk` / `-debug-apk` | `novel-reader-noaudio-release-apk` / `-debug-apk` |
+| Music button, music panel, Download songs, double-tap like, swipe-up to the player | yes | no |
+| Music permissions (notifications, background playback) | yes | no |
+
+Both versions are the same app on the phone (same app id, same signing key), so only one can be installed at a
+time. To switch, just install the other APK over the one you have: your chapters, bookmarks and settings stay. Each
+one updates itself from the same GitHub Release, using its own file, so it stays the version you chose. The version
+number is the same for both.
 
 ## Updating the app
 
@@ -629,7 +649,9 @@ If you'd rather build on a computer with Android Studio:
    project folder).
 2. Let Android Studio sync Gradle (needs internet the first time).
 3. Click **Run ▶**, or go to **Build → Build Bundle(s)/APK(s) → Build APK(s)**.
-4. The APK will be at `app/build/outputs/apk/debug/app-debug.apk`.
+4. The APK will be at `app/build/outputs/apk/full/debug/app-full-debug.apk` (with the audio player) or, for the
+   version without it, `app/build/outputs/apk/noaudio/debug/app-noaudio-debug.apk` (pick the build variant
+   `fullDebug` or `noaudioDebug` in Android Studio).
 
 This APK is signed with Android's default debug key, so it can't update an app
 installed from a GitHub build. You would have to uninstall and reinstall each

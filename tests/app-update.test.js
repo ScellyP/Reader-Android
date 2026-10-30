@@ -161,7 +161,7 @@ check('workflow: publishes a Release, only for real-key builds, with a tag that 
   const step = workflow.slice(workflow.indexOf('Publish GitHub Release'));
   assert.ok(step.includes("if: env.SIGNED_WITH_REAL_KEY == 'true'"));
   assert.ok(step.includes('gh release upload') && step.includes('--clobber') && step.includes('gh release create'));
-  assert.ok(/\.apk/.test(step) && step.includes('app-release.apk'));
+  assert.ok(/\.apk/.test(step) && step.includes('app-full-release.apk') && step.includes('app-noaudio-release.apk'));
   // run the step's own tag extraction on the real version.js
   const line = step.split('\n').find((l) => l.includes('TAG=$('));
   const cmd = line.trim().replace(/app\/src\/main\/assets\/version\.js/g, path.join(ASSETS, 'version.js')) + '\necho "$TAG"';
