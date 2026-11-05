@@ -310,14 +310,16 @@ check('the page, the native bridge and the script agree on names', () => {
   const assets = path.join(__dirname, '../app/src/main/assets');
   const kdir = path.join(__dirname, '../app/src/main/java/com/scell/novelreader/redesign');
   const kt = fs.readFileSync(path.join(kdir, 'MainActivity.kt'), 'utf8');
-  const dl = fs.readFileSync(path.join(kdir, 'SongDownloader.kt'), 'utf8');
+  const fdir = path.join(__dirname, '../app/src/full/java/com/scell/novelreader/redesign');
+  const dl = fs.readFileSync(path.join(fdir, 'SongDownloader.kt'), 'utf8');
+  const backend = fs.readFileSync(path.join(fdir, 'AudioBackend.kt'), 'utf8');
   const js = fs.readFileSync(path.join(assets, 'song-download.js'), 'utf8');
   ['stageSong', 'placeSong', 'cancelSongDownload', 'discardStagedSongs', 'readClipboard'].forEach((name) => {
     assert.ok(js.includes(name), 'page does not use ' + name);
     assert.ok(new RegExp('@JavascriptInterface\\s+fun ' + name + '\\(').test(kt), 'MainActivity has no bridge method ' + name);
   });
   ['lookupSongTitle', 'downloadSong'].forEach((old) => assert.ok(!kt.includes('fun ' + old), old + ' should be gone'));
-  assert.ok(kt.includes('"onSongDownloadStatus"') && js.includes('root.onSongDownloadStatus'));
+  assert.ok(backend.includes('"onSongDownloadStatus"') && js.includes('root.onSongDownloadStatus'));
   ['fun stage(', 'fun place(', 'fun cancel(', 'fun isBusy('].forEach((m) => assert.ok(dl.includes(m), 'SongDownloader.kt lost ' + m));
   assert.ok(js.includes('playAfterRescan') && fs.readFileSync(path.join(assets, 'audio-player.js'), 'utf8').includes('playAfterRescan('));
   assert.ok(js.includes('SpotifyUI.getCover') && fs.readFileSync(path.join(assets, 'spotify-ui.js'), 'utf8').includes('getCover'));
@@ -330,6 +332,7 @@ check('the page, the native bridge and the script agree on names', () => {
   const versionOf = (name) => (gradle.match(new RegExp('youtubedl-android:' + name + ':([\\d.]+)')) || [])[1];
   assert.ok(versionOf('library'), 'the youtubedl-android library is not a dependency');
   assert.strictEqual(versionOf('library'), versionOf('ffmpeg'), 'library and ffmpeg modules must be the same version');
+  assert.ok(/fullImplementation 'io\.github\.junkfood02\.youtubedl-android:library/.test(gradle), 'yt-dlp must be a full-flavor-only dependency');
   assert.ok(/useLegacyPackaging\s*=\s*true/.test(gradle), 'the bundled binaries must be unpacked on install');
   const rules = fs.readFileSync(path.join(__dirname, '../app/proguard-rules.pro'), 'utf8');
   assert.ok(rules.includes('-keep class com.yausername.**'), 'R8 would strip the downloader library');
@@ -337,8 +340,9 @@ check('the page, the native bridge and the script agree on names', () => {
 
 check('the staging folder is inside the music folder, and the music scan skips it', () => {
   const kdir = path.join(__dirname, '../app/src/main/java/com/scell/novelreader/redesign');
-  const kt = fs.readFileSync(path.join(kdir, 'MainActivity.kt'), 'utf8');
-  const dl = fs.readFileSync(path.join(kdir, 'SongDownloader.kt'), 'utf8');
+  const fdir = path.join(__dirname, '../app/src/full/java/com/scell/novelreader/redesign');
+  const kt = fs.readFileSync(path.join(fdir, 'AudioBackend.kt'), 'utf8');
+  const dl = fs.readFileSync(path.join(fdir, 'SongDownloader.kt'), 'utf8');
   assert.ok(dl.includes('STAGING_DIR = "/storage/emulated/0/Novel/Audio/.staging"'));
   assert.ok(dl.includes('AUDIO_DIR = "/storage/emulated/0/Novel/Audio"'));
   assert.ok(/walkTopDown\(\)[\s\S]{0,400}startsWith\("\."\)/.test(kt), 'the scan must skip folders that start with a dot');

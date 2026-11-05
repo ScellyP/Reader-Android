@@ -18,16 +18,17 @@ android {
         versionCode runNumber
         versionName "1.0.${runNumber}"
 
-        // The bundled yt-dlp/Python/ffmpeg (see the dependencies below) come with native libraries
-        // for four CPU types; real phones are arm64-v8a (or, rarely, armeabi-v7a). Leaving the
-        // x86 ones out roughly halves the APK. Add them back to run on an x86 emulator.
+        // The bundled yt-dlp/Python/ffmpeg (full flavor only, see the dependencies below) come with
+        // native libraries for four CPU types; real phones are arm64-v8a (or, rarely, armeabi-v7a).
+        // Leaving the x86 ones out roughly halves the APK. Add them back to run on an x86 emulator.
         ndk {
             abiFilters 'arm64-v8a', 'armeabi-v7a'
         }
     }
 
-    // youtubedl-android starts Python and ffmpeg as programs out of the app's native-library folder,
-    // so the libraries must be unpacked on install instead of being read from inside the APK.
+    // youtubedl-android (full flavor only) starts Python and ffmpeg as programs out of the app's
+    // native-library folder, so the libraries must be unpacked on install instead of being read from
+    // inside the APK. The noaudio build has no native libraries, so this changes nothing there.
     packaging {
         jniLibs {
             useLegacyPackaging = true
@@ -42,9 +43,12 @@ android {
     //            installing either over the other is an update (chapters and settings stay). Its
     //            APK has its own name in every GitHub Release, which the in-app updater uses to
     //            pick the right file, so each one keeps updating as itself.
-    // The no-audio build is made by overlays in app/src/noaudio/ (manifest, app name, and stub
-    // versions of audio-player.js / spotify-ui.js / song-download.js) plus the BuildConfig.HAS_AUDIO
-    // checks in MainActivity.kt and AppUpdater.kt. Nothing in app/src/main is a copy.
+    // The music code is split by source set: app/src/full/ holds PlaybackService, SongDownloader,
+    // the real AudioBackend and the other music classes (and the notification icon); app/src/noaudio/
+    // has an empty AudioBackend, the manifest overlay, the app name and stub versions of
+    // audio-player.js / spotify-ui.js / song-download.js. The media3 and yt-dlp libraries are
+    // dependencies of the full flavor only (fullImplementation below), so the no-audio APK does not
+    // contain them. app/src/main (MainActivity.kt etc.) has no music code of its own and is shared.
     flavorDimensions 'audio'
     productFlavors {
         full {
@@ -127,7 +131,7 @@ dependencies {
     // compileSdk 34, matching this project.
     implementation 'androidx.webkit:webkit:1.11.0'
 
-    // Real background audio playback (PlaybackService.kt): ExoPlayer for
+    // (full flavor only) Real background audio playback (PlaybackService.kt): ExoPlayer for
     // decoding/playback, media3-session for the MediaSession that gives
     // us the system media notification, lock-screen transport controls,
     // and audio-focus/headset handling for free.
@@ -145,13 +149,13 @@ dependencies {
     // downgrade. If you bump this later, bump compileSdk/targetSdk (and
     // check AGP's supported range) in the same change, or you'll hit
     // this exact failure again.
-    implementation 'androidx.media3:media3-exoplayer:1.4.1'
-    implementation 'androidx.media3:media3-session:1.4.1'
+    fullImplementation 'androidx.media3:media3-exoplayer:1.4.1'
+    fullImplementation 'androidx.media3:media3-session:1.4.1'
 
     // "Download songs": yt-dlp (+ Python, + ffmpeg for mp3 conversion and cover art) bundled in the
     // app, run by SongDownloader.kt. Both modules must have the same version. 0.17.4 is pinned like
     // media3 above: its AARs need only compileSdk 34 and minSdk 24, which is what this project has.
     // yt-dlp itself is updated from inside the app when a download fails (see SongDownloader.kt).
-    implementation 'io.github.junkfood02.youtubedl-android:library:0.18.1'
-    implementation 'io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1'
+    fullImplementation 'io.github.junkfood02.youtubedl-android:library:0.18.1'
+    fullImplementation 'io.github.junkfood02.youtubedl-android:ffmpeg:0.18.1'
 }

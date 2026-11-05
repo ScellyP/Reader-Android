@@ -95,11 +95,42 @@ check('the page still loads those three scripts by name, and the shared reader.j
     'unguarded NovelAudio use: only likeFromDoubleTap() is allowed, and it is only reached after hasCurrentTrack()');
 });
 
-check('MainActivity: the native player, the scan, song-download warm-up and the notification prompt are skipped without audio', () => {
-  assert.ok(/private fun connectNativePlayer\(\) \{\s*if \(!BuildConfig\.HAS_AUDIO\) return/.test(mainActivity));
-  assert.ok(/private fun runAudioScan\(\) \{\s*if \(!BuildConfig\.HAS_AUDIO\) return/.test(mainActivity));
-  assert.ok(/if \(BuildConfig\.HAS_AUDIO\) songDownloader\.warmUp\(\)/.test(mainActivity));
+check('the music code is split by source set: full has the real AudioBackend, noaudio an empty one, main has none', () => {
+  const KT = 'java/com/scell/novelreader/redesign/';
+  const full = 'app/src/full/' + KT;
+  for (const f of ['AudioBackend', 'PlaybackService', 'NativeCrossfade', 'NativeAudioEffects', 'ReplayGainReader', 'SongDownloader', 'SongNames', 'Id3Title']) {
+    assert.ok(fs.existsSync(path.join(ROOT, full + f + '.kt')), f + '.kt must be in app/src/full');
+    assert.ok(!fs.existsSync(path.join(ROOT, MAIN + KT + f + '.kt')), f + '.kt must not be in app/src/main');
+  }
+  assert.ok(fs.existsSync(path.join(ROOT, 'app/src/full/res/drawable/ic_stat_music.xml')));
+  const stub = read(OVER + KT + 'AudioBackend.kt');
+  const real = read(full + 'AudioBackend.kt');
+  // every member of the real backend that MainActivity can call exists in the stub too
+  const members = (src) => [...src.matchAll(/^    fun (\w+)\(/gm)].map((m) => m[1]).sort();
+  assert.deepStrictEqual(members(stub), members(real));
+  assert.ok(!/androidx\.media3|yausername|SongDownloader|PlaybackService/.test(stub.replace(/\/\*[\s\S]*?\*\//g, '')), 'the stub must not touch the music libraries');
+  // nothing left in the shared sources that needs the music libraries
+  for (const f of fs.readdirSync(path.join(ROOT, MAIN + KT))) {
+    const src = read(MAIN + KT + f).split('\n').filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join('\n');
+    assert.ok(!/import androidx\.media3|import com\.yausername|import com\.google\.common/.test(src), f + ' imports a music library');
+    assert.ok(!/\b(PlaybackService|SongDownloader|NativeCrossfade|ReplayGainReader)\./.test(src), f + ' uses a music class');
+  }
+});
+
+check('gradle: media3 and yt-dlp are dependencies of the full flavor only', () => {
+  for (const lib of ['androidx.media3:media3-exoplayer', 'androidx.media3:media3-session', 'youtubedl-android:library', 'youtubedl-android:ffmpeg']) {
+    assert.ok(new RegExp("fullImplementation '[^']*" + lib.replace(/[.]/g, '\\.')).test(gradle), lib + ' must be fullImplementation');
+    assert.ok(!new RegExp("^\\s*implementation '[^']*" + lib.replace(/[.]/g, '\\.'), 'm').test(gradle), lib + ' must not be a shared dependency');
+  }
+});
+
+check('MainActivity: the music paths go through AudioBackend and the no-audio build skips the idle work', () => {
+  assert.ok(/private val audio = AudioBackend\(this\)/.test(mainActivity));
+  assert.ok(/audio\.connect\(\)/.test(mainActivity) && /audio\.warmUp\(\)/.test(mainActivity));
   assert.ok(/BuildConfig\.HAS_AUDIO && Build\.VERSION\.SDK_INT >= Build\.VERSION_CODES\.TIRAMISU/.test(mainActivity));
+  assert.ok(/if \(BuildConfig\.HAS_AUDIO\) registerVolumeReceiver\(\)/.test(mainActivity));
+  assert.ok(/if \(BuildConfig\.HAS_AUDIO\) nightLockHandler\.post\(nightLockCheck\)/.test(mainActivity));
+  assert.ok(mainActivity.includes('audio.serveAudio('));
 });
 
 check('AppUpdater: each build takes the Release asset that is its own', () => {
@@ -130,7 +161,7 @@ check('workflow: builds both versions, uploads four artifacts, publishes the ful
 });
 
 check('the version was bumped and documented', () => {
-  assert.ok(/APP_VERSION = 'v1\.16\.00'/.test(read(MAIN + 'assets/version.js')));
+  assert.ok(/APP_VERSION = 'v1\.16\.01'/.test(read(MAIN + 'assets/version.js')));
   assert.ok(read('Agent.md').includes('v1.16.00'));
   assert.ok(read('README.md').includes('## Two versions'));
 });

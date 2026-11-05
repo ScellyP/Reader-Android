@@ -7,9 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.media.AudioDeviceInfo
 import android.media.AudioManager
-import android.media.MediaMetadataRetriever
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -39,21 +37,9 @@ import androidx.core.view.ViewCompat
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.session.MediaController
-import androidx.media3.session.SessionToken
-import com.google.common.util.concurrent.ListenableFuture
-import com.google.common.util.concurrent.MoreExecutors
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.io.FileInputStream
-import java.io.FilterInputStream
-import java.io.InputStream
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import android.graphics.Bitmap
@@ -101,11 +87,8 @@ class MainActivity : ComponentActivity() {
 
     private val closeRunnable = object : Runnable {
         override fun run() {
-            val c = mediaController
-            val nativeActive = c != null && (c.isPlaying ||
-                (c.playWhenReady && (c.playbackState == Player.STATE_BUFFERING ||
-                    c.playbackState == Player.STATE_READY)))
-            if (nativeActive || songDownloader.isBusy() || chapterTools.isBusy() || appUpdater.isBusy()) {
+            val nativeActive = audio.isNativeActive()
+            if (nativeActive || audio.isBusy() || chapterTools.isBusy() || appUpdater.isBusy()) {
                 closeRecheckPending = false
                 screenHandler.postDelayed(this, inactivityCloseMs)
                 return
@@ -131,7 +114,7 @@ class MainActivity : ComponentActivity() {
                 // paused WebView that can't run the script) is not proof that
                 // nothing is playing.
                 if (result == "false") {
-                    logAutoClose("idle for 10 min, native=${c?.playbackState}/${c?.playWhenReady}, js=false")
+                    logAutoClose("idle for 10 min, native=${audio.nativeStateDebug()}, js=false")
                     finishAndRemoveTask()
                 } else {
                     screenHandler.postDelayed(this, inactivityCloseMs)
@@ -162,7 +145,7 @@ class MainActivity : ComponentActivity() {
         override fun run() {
             val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
             if (hour < 6 && moonUnlock.remainingMs() <= 0L) {
-                mediaController?.pause()
+                audio.pauseNative()
             }
             nightLockHandler.postDelayed(this, 15_000L)
         }
@@ -183,19 +166,6 @@ class MainActivity : ComponentActivity() {
 
     private val settingsFile get() = File(novelRoot, "settings.txt")
 
-    // The native audio engine (audio-player.js's NativeAudioEngine) talks
-    // to PlaybackService's real ExoPlayer through this controller — see
-    // connectNativePlayer(). Null until that async connection completes,
-    // during which the web page keeps using its WebView <audio> fallback.
-    private var mediaController: MediaController? = null
-    private var mediaControllerFuture: ListenableFuture<MediaController>? = null
-
-    // Polls mediaController.currentPosition while playing and reports it
-    // to JS — MediaController has no built-in "position changed" event,
-    // unlike the WebView <audio> element's 'timeupdate'.
-    private val progressHandler = Handler(Looper.getMainLooper())
-    private var progressRunnable: Runnable? = null
-
     // True once the page has finished loading. Permission answers that arrive
     // earlier leave the novel listing to onPageFinished().
     private var pageLoaded = false
@@ -204,7 +174,7 @@ class MainActivity : ComponentActivity() {
     // thrown away (see onRenderProcessGone); the activity is then rebuilt.
     private var webViewGone = false
     // True between onResume and onPause; the progress poll slows down when false.
-    @Volatile private var appInForeground = false
+    @Volatile internal var appInForeground = false
     private var lastBackPressMs = 0L
     private var permissionFlowActive = false
     private var permissionFlowStarted = false
@@ -228,17 +198,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Runs the "Download songs" jobs with the yt-dlp that is bundled in this app (see SongDownloader.kt
-    // and song-download.js).
-    private val songDownloader = SongDownloader(
-        activity = this,
-        onStatus = { jobId, status, message ->
-            callPage(
-                "onSongDownloadStatus",
-                JSONObject.quote(jobId) + ", " + JSONObject.quote(status) + ", " + JSONObject.quote(message)
-            )
-        },
-    )
+    // Everything for the music player (native player, library scan, song downloads) lives in
+    // AudioBackend, which exists twice: the real one in app/src/full/, an empty one in app/src/noaudio/.
+    private val audio = AudioBackend(this)
 
     /** Asks for notification access and folder access in one go, once per
      * launch. Called from onCreate and (if the page asks before then)
@@ -268,7 +230,7 @@ class MainActivity : ComponentActivity() {
 
     // Where audio-player.js's MediaLibrary.scan() expects to find music —
     // documented in the README's "Audio player" section.
-    private val audioRoot = File("/storage/emulated/0/Novel/Audio")
+    internal val audioRoot = File("/storage/emulated/0/Novel/Audio")
 
     // "Fetch new chapters" and "Delete chapters": the Python scripts in assets/scripts, run in
     // Termux in the background (see ChapterTools.kt and the page's reader.js).
@@ -291,35 +253,6 @@ class MainActivity : ComponentActivity() {
         activity = this,
         onState = { json -> callPage("onUpdateState", JSONObject.quote(json)) },
     )
-    private val audioExtensions = setOf("mp3", "m4a", "aac", "flac", "ogg", "opus", "wav")
-
-    /**
-     * The only way a path coming from the page (the JavaScript bridge) may
-     * turn into a File. The page is not trusted: it must not be able to make
-     * the app read, decode or play arbitrary files, and this app holds
-     * all-files access. A path is accepted only when it is a file:// URI (or
-     * a plain absolute path), the real file after resolving "..", symlinks and
-     * percent-encoding lies inside the Audio folder, it exists, and it has a
-     * recognised audio extension. Returns the resolved File, or null.
-     */
-    private fun resolveAudioFile(path: String?): File? {
-        return try {
-            if (path.isNullOrBlank()) return null
-            val uri = Uri.parse(path)
-            val scheme = uri.scheme
-            if (scheme != null && !scheme.equals("file", ignoreCase = true)) return null
-            val raw = (if (scheme == null) path else uri.path) ?: return null
-            val file = File(raw).canonicalFile
-            val root = audioRoot.canonicalFile
-            if (!file.path.startsWith(root.path + File.separator)) return null
-            if (!file.isFile) return null
-            if (!audioExtensions.contains(file.extension.lowercase())) return null
-            file
-        } catch (e: Exception) {
-            null
-        }
-    }
-
     /**
      * The crash log lives in this app's own folder,
      * /storage/emulated/0/Android/data/<package>/files/crash_log.txt, not in the
@@ -365,7 +298,7 @@ class MainActivity : ComponentActivity() {
     // The page is served from this https origin (not file://), so the WebView
     // needs no file access at all. The app's own files come from assets/ via
     // WebViewAssetLoader; local music is served by serveAudio() below.
-    private val appHost = "appassets.androidplatform.net"
+    internal val appHost = "appassets.androidplatform.net"
     private val appUrl = "https://$appHost/assets/index.html"
     private val assetLoader by lazy {
         WebViewAssetLoader.Builder()
@@ -404,8 +337,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         installCrashLogger()
-        registerVolumeReceiver()
-        if (BuildConfig.HAS_AUDIO) songDownloader.warmUp()   // unpacks yt-dlp / ffmpeg: not needed without the player
+        if (BuildConfig.HAS_AUDIO) registerVolumeReceiver()   // it only pauses the music on mute
+        audio.warmUp()   // unpacks yt-dlp / ffmpeg (nothing in the no-audio build)
         appUpdater.start()
         // A few seconds after launch, so the check does not compete with the splash and the library scan.
         screenHandler.postDelayed({ appUpdater.checkOnStart() }, 6000L)
@@ -415,7 +348,7 @@ class MainActivity : ComponentActivity() {
         // Start reading the music library right away, in parallel with the page
         // and the chapter loading. (Without storage access yet, it starts from
         // listNovels() once access is granted.)
-        if (hasStoragePermission()) runAudioScan()
+        if (hasStoragePermission()) audio.runScan()
 
         webView = WebView(this)
         webView.setBackgroundColor(android.graphics.Color.parseColor("#0b0d12"))
@@ -466,7 +399,7 @@ class MainActivity : ComponentActivity() {
                 if (request.method != "GET") return plainResponse(405)
                 val path = target.path ?: return plainResponse(404)
                 if (path.startsWith("/audio/")) {
-                    return serveAudio(path.removePrefix("/audio/"), request.requestHeaders)
+                    return audio.serveAudio(path.removePrefix("/audio/"), request.requestHeaders) ?: plainResponse(404)
                 }
                 if (!path.startsWith("/assets/")) return plainResponse(404)
                 val response = assetLoader.shouldInterceptRequest(target) ?: return plainResponse(404)
@@ -525,7 +458,7 @@ class MainActivity : ComponentActivity() {
                 // callback hit a page that had no handler yet and was
                 // silently dropped (leaving the player on the WebView
                 // fallback engine). Re-announce it now.
-                if (mediaController != null) callPage("onNativeAudioReady")
+                audio.onPageFinished()
             }
         }
         webView.addJavascriptInterface(AndroidBridge(), "AndroidBridge")
@@ -604,124 +537,7 @@ class MainActivity : ComponentActivity() {
 
         requestStartupPermissions()
 
-        connectNativePlayer()
-    }
-
-    /**
-     * Connects a MediaController to PlaybackService's MediaSession. This
-     * is the other half of NativeAudioEngine in audio-player.js: once
-     * this succeeds, window.onNativeAudioReady() fires and the web page
-     * switches from its WebView <audio> fallback to real background
-     * playback through this controller.
-     *
-     * Building a MediaController is asynchronous (it may need to start
-     * and bind to PlaybackService first) — the future's listener is what
-     * runs once that's done, on the main executor since everything here
-     * (mediaController itself, the listener, evaluateJavascript) must
-     * stay on the UI thread.
-     */
-    private fun connectNativePlayer() {
-        if (!BuildConfig.HAS_AUDIO) return   // the "noaudio" build has no PlaybackService to connect to
-        val sessionToken = SessionToken(this, ComponentName(this, PlaybackService::class.java))
-        val future = MediaController.Builder(this, sessionToken).buildAsync()
-        mediaControllerFuture = future
-        future.addListener({
-            try {
-                val controller = future.get()
-                mediaController = controller
-                controller.addListener(nativePlayerListener)
-
-                // MainActivity is how PlaybackService's QueueAwarePlayer
-                // reaches the JS queue for Next/Previous notification
-                // taps — see PlaybackService.kt. Set here (not in
-                // connectNativePlayer's caller) so it's only live once we
-                // actually have a working controller/session to react
-                // through.
-                PlaybackService.queueNavigationListener = object : PlaybackService.QueueNavigationListener {
-                    override fun onSkipToNext() {
-                        webView.post { callPage("onNativeAudioSkipNext") }
-                    }
-                    override fun onSkipToPrevious() {
-                        webView.post { callPage("onNativeAudioSkipPrevious") }
-                    }
-                }
-
-                callPage("onNativeAudioReady")
-            } catch (e: Exception) {
-                // Native engine unavailable (e.g. the service failed to
-                // bind) — audio-player.js's LocalAudioEngine keeps
-                // working as the fallback, so there's nothing further to
-                // do here; deliberately not surfaced as a user-facing
-                // error since local playback still works fine.
-            }
-        }, MoreExecutors.directExecutor())
-    }
-
-    /**
-     * Forwards ExoPlayer/MediaSession state to JS. Covers both state
-     * changes WE caused (a bridge play()/pause() call) and ones we
-     * didn't — the system notification's own buttons, a Bluetooth
-     * remote, or audio focus lost to another app all land here too,
-     * which is exactly why audio-player.js's NativeAudioEngine treats
-     * these callbacks as the source of truth rather than only trusting
-     * its own bridge calls.
-     */
-    private val nativePlayerListener = object : Player.Listener {
-        override fun onIsPlayingChanged(isPlaying: Boolean) {
-            reportPlaying(isPlaying)
-            if (isPlaying) startProgressUpdates() else stopProgressUpdates()
-        }
-
-        override fun onPlaybackStateChanged(playbackState: Int) {
-            when (playbackState) {
-                Player.STATE_READY -> {
-                    val durationMs = mediaController?.duration ?: C.TIME_UNSET
-                    val durationSec = if (durationMs != C.TIME_UNSET) durationMs / 1000.0 else 0.0
-                    callPage("onNativeAudioLoaded", durationSec.toString())
-                }
-                Player.STATE_ENDED -> callPage("onNativeAudioEnded")
-            }
-        }
-
-        override fun onPlayerError(error: PlaybackException) {
-            callPage("onNativeAudioError", JSONObject.quote(error.message ?: "Playback error"))
-        }
-    }
-
-    /** Polls playback position roughly twice a second while playing —
-     * MediaController has no push-based position-changed callback, so
-     * this is the standard Media3 pattern for a live seek bar. Stops
-     * itself the moment playback pauses, so it's not silently running
-     * (and evaluating JS) in the background doing nothing useful. */
-    private fun startProgressUpdates() {
-        stopProgressUpdates()
-        val runnable = object : Runnable {
-            override fun run() {
-                val controller = mediaController
-                if (controller != null) {
-                    val posSec = controller.currentPosition / 1000.0
-                    val durMs = controller.duration
-                    val durSec = if (durMs != C.TIME_UNSET && durMs > 0) durMs / 1000.0 else 0.0
-                    callPage("onNativeAudioProgress", "$posSec, $durSec")
-                }
-                // Screen visible: 500 ms keeps the seek bar smooth. App in the
-                // background / screen off: nobody sees the bar, so tick slowly
-                // mid-track and only go back to 500 ms near the end of a
-                // track, where crossfade (needs ~0.5 s precision) and the
-                // 20 s sleep-timer fade do their work.
-                val remainingSec = if (controller != null && controller.duration != C.TIME_UNSET && controller.duration > 0)
-                    (controller.duration - controller.currentPosition) / 1000.0 else 0.0
-                val delay = if (appInForeground || remainingSec <= 35.0) 500L else 2000L
-                progressHandler.postDelayed(this, delay)
-            }
-        }
-        progressRunnable = runnable
-        progressHandler.post(runnable)
-    }
-
-    private fun stopProgressUpdates() {
-        progressRunnable?.let { progressHandler.removeCallbacks(it) }
-        progressRunnable = null
+        audio.connect()
     }
 
     /**
@@ -845,8 +661,6 @@ class MainActivity : ComponentActivity() {
     // panel, the in-app slider) pauses the music; raising it again resumes
     // it. Only a pause caused by muting is undone. Handled here, natively, so
     // it also works with the screen off or the app in the background.
-    private var mutePaused = false
-
     private val volumeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val stream = intent?.getIntExtra("android.media.EXTRA_VOLUME_STREAM_TYPE", -1)
@@ -857,17 +671,7 @@ class MainActivity : ComponentActivity() {
     private fun handleMuteChange() {
         try {
             val am = getSystemService(AudioManager::class.java) ?: return
-            val controller = mediaController
-            val muted = am.getStreamVolume(AudioManager.STREAM_MUSIC) <= 0
-            if (muted) {
-                if (controller != null && controller.isPlaying) {
-                    mutePaused = true
-                    controller.pause()
-                }
-            } else if (mutePaused) {
-                mutePaused = false
-                controller?.play()
-            }
+            audio.onMuteChanged(am.getStreamVolume(AudioManager.STREAM_MUSIC) <= 0)
         } catch (e: Exception) {
             // Not permitted right now — ignore.
         }
@@ -975,18 +779,12 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         try { unregisterReceiver(volumeReceiver) } catch (e: Exception) { /* not registered */ }
-        songDownloader.release()
+        audio.release()
         chapterTools.release()
         appUpdater.release()
         screenHandler.removeCallbacks(releaseScreenRunnable)
         screenHandler.removeCallbacks(closeRunnable)
         nightLockHandler.removeCallbacks(nightLockCheck)
-        stopProgressUpdates()
-        mediaControllerFuture?.let { MediaController.releaseFuture(it) }
-        mediaController = null
-        if (PlaybackService.queueNavigationListener != null) {
-            PlaybackService.queueNavigationListener = null
-        }
     }
 
     override fun onPause() {
@@ -1005,11 +803,10 @@ class MainActivity : ComponentActivity() {
         appInForeground = true
         adaptiveBrightness.onResume()
         appUpdater.onResume()
-        // Push the current position right away (the poll may have been in slow mode).
-        if (mediaController?.isPlaying == true) startProgressUpdates()
+        audio.onResume()
         keepScreenAwake()
         nightLockHandler.removeCallbacks(nightLockCheck)
-        nightLockHandler.post(nightLockCheck)
+        if (BuildConfig.HAS_AUDIO) nightLockHandler.post(nightLockCheck)   // it only pauses the music
         if (::webView.isInitialized && !webViewGone) {
             webView.onResume()
         }
@@ -1105,26 +902,21 @@ class MainActivity : ComponentActivity() {
         // stageSong: downloads one link into Audio/.staging/ (invisible to the music scan). The
         // "done" message is the downloaded file's full path.
         @JavascriptInterface
-        fun stageSong(jobId: String, url: String): Boolean =
-            songDownloader.stage(jobId, url)
+        fun stageSong(jobId: String, url: String): Boolean = audio.stageSong(jobId, url)
 
         // placeSong: names a staged song [name] ("" = keep) and moves it into the playlist folder
         // [folder] ("" = Audio/ itself). The "done" message is the song's new full path.
         @JavascriptInterface
         fun placeSong(jobId: String, path: String, name: String, folder: String): Boolean =
-            songDownloader.place(jobId, path, name, folder)
+            audio.placeSong(jobId, path, name, folder)
 
         // Stops every running download/placement (the user left the tab).
         @JavascriptInterface
-        fun cancelSongDownload() {
-            songDownloader.cancel()
-        }
+        fun cancelSongDownload() { audio.cancelSongDownload() }
 
         // Deletes everything in the staging folder: songs that were downloaded but never placed.
         @JavascriptInterface
-        fun discardStagedSongs() {
-            try { File(SongDownloader.STAGING_DIR).deleteRecursively() } catch (e: Exception) { /* nothing to delete */ }
-        }
+        fun discardStagedSongs() { audio.discardStagedSongs() }
 
         // The text on the clipboard ("" if none), for the "Click to paste" button. Android only lets
         // an app read the clipboard while it is in the foreground, which it is when the button is tapped.
@@ -1207,22 +999,13 @@ class MainActivity : ComponentActivity() {
             runOnUiThread { applySystemBarsForMenuState(open) }
         }
 
-        // Rescan button / explicit scan: always walk the folder again and
-        // report the result to audio-player.js's MediaLibrary (see runAudioScan()).
+        // Rescan button / explicit scan: always walk the folder again (see AudioBackend).
         @JavascriptInterface
-        fun scanAudio() {
-            runOnUiThread {
-                jsWantsAudio = true
-                runAudioScan()
-            }
-        }
+        fun scanAudio() { runOnUiThread { audio.scanNow() } }
 
-        // Called once by the page at start-up: hands over the scan that was
-        // already started in onCreate instead of starting another.
+        // Called once by the page at start-up: hands over the scan already started in onCreate.
         @JavascriptInterface
-        fun scanAudioStartup() {
-            runOnUiThread { requestAudioListAtStartup() }
-        }
+        fun scanAudioStartup() { runOnUiThread { audio.scanAtStartup() } }
 
         // Novel cover for the library screen: an image inside that novel's
         // own folder (cover/folder/poster/... .jpg|.png|.webp, or failing
@@ -1235,126 +1018,34 @@ class MainActivity : ComponentActivity() {
 
         // Cover art as a data: URI for the in-app player, or "" if none.
         @JavascriptInterface
-        fun getArtwork(path: String): String {
-            val bytes = loadArtworkBytes(path) ?: return ""
-            return "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
-        }
+        fun getArtwork(path: String): String = audio.artworkDataUri(path)
 
-        /**
-         * Resolves [path] (it must be a real audio file inside Audio/), pulls its
-         * cover art, and builds the MediaItem. If the file can't be used, tells
-         * the page — the same way a decoder error does, so the player skips the
-         * track — and returns null. Runs on the bridge thread (not the UI
-         * thread) because extracting artwork can take a moment.
-         */
-        private fun buildAudioItem(path: String, title: String, artist: String, album: String): MediaItem? {
-            val audioFile = resolveAudioFile(path) ?: run {
-                runOnUiThread { callPage("onNativeAudioError", JSONObject.quote("That file can't be played.")) }
-                return null
-            }
-            // Cover art, so the notification and lock screen can show it.
-            val art = loadArtworkBytes(path)
-            val metadata = MediaMetadata.Builder()
-                .setTitle(title.ifBlank { null })
-                .setArtist(artist.ifBlank { null })
-                .setAlbumTitle(album.ifBlank { null })
-                .apply {
-                    if (art != null) setArtworkData(art, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
-                }
-                .build()
-            return MediaItem.Builder()
-                .setUri(Uri.fromFile(audioFile))
-                .setMediaId(path)
-                .setMediaMetadata(metadata)
-                .build()
-        }
-
-        // The nativeAudio* calls are what audio-player.js's NativeAudioEngine
-        // runs on: each forwards to the MediaController connected in
-        // connectNativePlayer(). They are no-ops until that connection has
-        // completed (mediaController is still null), which matches
-        // NativeAudioEngine only being reachable from JS after
-        // window.onNativeAudioReady has fired.
+        // The nativeAudio* calls are what audio-player.js's NativeAudioEngine runs on (see AudioBackend).
         @JavascriptInterface
-        fun nativeAudioLoad(path: String, title: String, artist: String, album: String) {
-            val item = buildAudioItem(path, title, artist, album) ?: return
-            runOnUiThread {
-                // Loading something else ends any crossfade still running.
-                PlaybackService.crossfade?.cancel()
-                mediaController?.setMediaItem(item)
-                mediaController?.prepare()
-            }
-        }
+        fun nativeAudioLoad(path: String, title: String, artist: String, album: String) =
+            audio.nativeAudioLoad(path, title, artist, album)
 
-        /**
-         * Starts [path] from its beginning, crossfading from the track that is
-         * playing over [seconds] (see NativeCrossfade.kt). [outGain] / [inGain]
-         * are the linear volume levels (0..1) of the old and the new track.
-         * Unlike nativeAudioLoad() this also starts playback — the page makes no
-         * separate play call — and it ALWAYS ends with the new track playing: if
-         * it can't overlap it simply switches. The page has already moved its
-         * queue on before calling this.
-         */
         @JavascriptInterface
         fun nativeAudioCrossfade(
             path: String, title: String, artist: String, album: String,
             seconds: Double, outGain: Double, inGain: Double
-        ) {
-            val item = buildAudioItem(path, title, artist, album) ?: return
-            runOnUiThread {
-                val xf = PlaybackService.crossfade
-                if (xf != null) {
-                    xf.start(item, seconds, outGain, inGain)
-                } else {
-                    // Service not reachable: play it the ordinary way.
-                    mediaController?.setMediaItem(item)
-                    mediaController?.prepare()
-                    mediaController?.play()
-                }
-            }
-        }
-
-        // Reports what the native player is really doing, so the web UI
-        // can correct itself if an earlier state callback was missed.
-        @JavascriptInterface
-        fun nativeAudioSyncState() {
-            runOnUiThread {
-                val c = mediaController
-                reportPlaying(
-                    c != null && c.playWhenReady &&
-                        (c.playbackState == Player.STATE_READY || c.playbackState == Player.STATE_BUFFERING)
-                )
-            }
-        }
+        ) = audio.nativeAudioCrossfade(path, title, artist, album, seconds, outGain, inGain)
 
         @JavascriptInterface
-        fun nativeAudioPlay() {
-            runOnUiThread { mediaController?.play() }
-        }
+        fun nativeAudioSyncState() = audio.nativeAudioSyncState()
 
         @JavascriptInterface
-        fun nativeAudioPause() {
-            runOnUiThread { mediaController?.pause() }
-        }
+        fun nativeAudioPlay() = audio.nativeAudioPlay()
 
         @JavascriptInterface
-        fun nativeAudioSeek(seconds: Double) {
-            runOnUiThread { mediaController?.seekTo((seconds * 1000).toLong()) }
-        }
+        fun nativeAudioPause() = audio.nativeAudioPause()
 
-        // The volume slider's real effect: sets the phone's media volume
-        // (the stream both ExoPlayer and the WebView play on).
         @JavascriptInterface
-        fun setSystemVolume(volume: Double) {
-            try {
-                val am = getSystemService(AudioManager::class.java) ?: return
-                val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                val level = Math.round(volume.coerceIn(0.0, 1.0) * max).toInt()
-                am.setStreamVolume(AudioManager.STREAM_MUSIC, level, 0)
-            } catch (e: Exception) {
-                // Not permitted in the current device state — ignore.
-            }
-        }
+        fun nativeAudioSeek(seconds: Double) = audio.nativeAudioSeek(seconds)
+
+        // The volume slider's real effect: sets the phone's media volume.
+        @JavascriptInterface
+        fun setSystemVolume(volume: Double) = audio.setSystemVolume(volume)
 
         // Separate from setMenuOpen() above (drawer-only, system bars):
         // this is true while ANY menu/panel is open, so the volume
@@ -1364,15 +1055,9 @@ class MainActivity : ComponentActivity() {
             menuOpen = open
         }
 
-        // True when a Bluetooth audio device (headphones, speaker, car, hearing
-        // aid) is connected as an output. audio-player.js asks once at start-up
-        // to decide whether the music should start by itself. Needs no
-        // permission: AudioManager only lists the devices.
+        // True when a Bluetooth audio device is connected as an output (audio-player.js asks once at start-up).
         @JavascriptInterface
-        fun isBluetoothAudioConnected(): Boolean {
-            val am = getSystemService(AudioManager::class.java) ?: return false
-            return am.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { isBluetoothMusicOutput(it.type) }
-        }
+        fun isBluetoothAudioConnected(): Boolean = audio.isBluetoothAudioConnected()
 
         // Mirrors the "Adaptive brightness" switch in the theme panel (see
         // AdaptiveBrightness.kt). Returns false when the phone has no light
@@ -1391,40 +1076,17 @@ class MainActivity : ComponentActivity() {
         }
 
         @JavascriptInterface
-        fun getSystemVolume(): Double {
-            return try {
-                val am = getSystemService(AudioManager::class.java) ?: return 0.8
-                val max = am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-                if (max <= 0) 0.8 else am.getStreamVolume(AudioManager.STREAM_MUSIC).toDouble() / max
-            } catch (e: Exception) {
-                0.8
-            }
-        }
+        fun getSystemVolume(): Double = audio.getSystemVolume()
 
         @JavascriptInterface
-        fun nativeAudioSetVolume(volume: Double) {
-            runOnUiThread {
-                // During a crossfade the ramp owns the players' volume; the new
-                // level is only the target the incoming track fades up to.
-                val xf = PlaybackService.crossfade
-                if (xf != null && xf.isActive()) {
-                    xf.setInGain(volume.toFloat())
-                } else {
-                    mediaController?.volume = volume.toFloat().coerceIn(0f, 1f)
-                }
-            }
-        }
+        fun nativeAudioSetVolume(volume: Double) = audio.nativeAudioSetVolume(volume)
 
         // Replay-gain boost for quiet tracks (see NativeAudioEffects.kt).
         @JavascriptInterface
-        fun nativeAudioSetBoostDb(db: Double) {
-            runOnUiThread {
-                PlaybackService.effects?.setBoostDb(db.toFloat())
-            }
-        }
+        fun nativeAudioSetBoostDb(db: Double) = audio.nativeAudioSetBoostDb(db)
     }
 
-    private fun hasStoragePermission(): Boolean {
+    internal fun hasStoragePermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             Environment.isExternalStorageManager()
         } else {
@@ -1450,7 +1112,7 @@ class MainActivity : ComponentActivity() {
     private fun ensureNovelFolders(): Boolean {
         return try {
             if (!novelRoot.exists()) novelRoot.mkdirs()
-            if (novelRoot.isDirectory && !audioRoot.exists()) audioRoot.mkdirs()
+            if (BuildConfig.HAS_AUDIO && novelRoot.isDirectory && !audioRoot.exists()) audioRoot.mkdirs()
             novelRoot.isDirectory
         } catch (e: Exception) {
             false
@@ -1511,7 +1173,7 @@ class MainActivity : ComponentActivity() {
                     return@Thread
                 }
 
-                // Audio/ is where the music scan (runAudioScan()) looks for
+                // Audio/ is where the music scan (audio.runScan()) looks for
                 // music and playlist subfolders, not a novel — it must never show up in the novel picker. Matched
                 // by name case-insensitively rather than by exact File equality
                 // so it's still excluded even if listFiles() returns a
@@ -1532,7 +1194,7 @@ class MainActivity : ComponentActivity() {
                 try { chapterTools.deployScripts() } catch (e: Exception) { /* tried again on every run */ }
 
                 // Permission is confirmed here: make sure the music scan is under way too.
-                runAudioScan()
+                audio.runScan()
 
                 runOnUiThread {
                     hasLoadedOnce = true
@@ -1595,232 +1257,6 @@ class MainActivity : ComponentActivity() {
         }.start()
     }
 
-    // ---- Audio library scan: starts at launch, runs in parallel, caches tags ----
-    // The scan used to start only when the page asked for it and read every
-    // file's tags one after another. Now it starts in onCreate (alongside the
-    // chapter loading), reads tags on several threads, and remembers each
-    // file's tags (keyed by path + size + modified time) so unchanged files
-    // are not parsed again on the next launch.
-    @Volatile private var audioScanRunning = false
-    @Volatile private var jsWantsAudio = false
-    @Volatile private var audioScanJson: String? = null
-    @Volatile private var audioScanAt = 0L
-
-    private fun deliverAudioList(tracksJson: String) {
-        callPage("onAudioListed", JSONObject.quote(tracksJson))
-    }
-
-    /** Page start-up request: reuse a fresh early scan, or wait for the one in flight. */
-    private fun requestAudioListAtStartup() {
-        jsWantsAudio = true
-        val ready = audioScanJson
-        if (ready != null && System.currentTimeMillis() - audioScanAt < 120_000L) {
-            deliverAudioList(ready)
-        } else if (!audioScanRunning) {
-            runAudioScan()
-        } // else: a scan is running and delivers to the page when it finishes
-    }
-
-    private fun tagCacheFile() = File(cacheDir, "audio_tags.json")
-
-    private fun loadTagCache(): java.util.concurrent.ConcurrentHashMap<String, JSONObject> {
-        val map = java.util.concurrent.ConcurrentHashMap<String, JSONObject>()
-        try {
-            val f = tagCacheFile()
-            if (f.exists()) {
-                val root = JSONObject(f.readText())
-                for (k in root.keys()) map[k] = root.getJSONObject(k)
-            }
-        } catch (e: Exception) {
-            // Unreadable cache: just rebuild it.
-        }
-        return map
-    }
-
-    private fun saveTagCache(cache: Map<String, JSONObject>, livePaths: Set<String>) {
-        try {
-            val root = JSONObject()
-            for ((k, v) in cache) if (livePaths.contains(k)) root.put(k, v)
-            tagCacheFile().writeText(root.toString())
-        } catch (e: Exception) {
-            // Cache is an optimisation only.
-        }
-    }
-
-    /**
-     * Recursively scans audioRoot for files with a recognised extension,
-     * reads title/artist/album/duration tags off each with
-     * MediaMetadataRetriever, and sends the result to
-     * window.onAudioListed() as a JSON array — the contract
-     * audio-player.js's MediaLibrary.onScanned() expects: each entry has
-     * id, path (a file:// URI), title, artist, album, durationSec, playlist.
-     *
-     * Runs on a background thread, same reasoning as listNovels()/
-     * loadNovelChapters(): MediaMetadataRetriever is slow enough per file
-     * (opening and parsing the container) that a few hundred tracks would
-     * visibly freeze the UI thread otherwise.
-     *
-     * Every retriever call is individually try/caught with its own
-     * fallback (filename as title, empty artist/album, zero duration) so
-     * that one malformed or DRM'd file can't abort the whole scan — this
-     * is the "VLC-style robustness" half of the brief: a library scan
-     * should degrade gracefully per file, never fail wholesale.
-     *
-     * PLAYLISTS: subfolders directly under Audio/ become playlists named
-     * after the folder, and everything inside them (however deep) belongs
-     * to that playlist; files sitting directly in Audio/ itself are
-     * reported with no playlist (audio-player.js's MediaLibrary treats
-     * that as "not in a playlist" rather than an error). Example:
-     *   Audio/
-     *     Lo-fi Focus/2AM.mp3       -> playlist "Lo-fi Focus"
-     *     Lo-fi Focus/Rain.mp3      -> playlist "Lo-fi Focus"
-     *     Podcasts/Ep1/part1.mp3    -> playlist "Podcasts" (nested folders
-     *                                  inside a playlist still count as
-     *                                  that same playlist — there's only
-     *                                  one level of grouping)
-     *     standalone-track.mp3      -> no playlist
-     */
-    private fun runAudioScan() {
-        if (!BuildConfig.HAS_AUDIO) return   // the "noaudio" build has no music library
-        if (audioScanRunning) return
-        audioScanRunning = true
-        Thread {
-            try {
-                if (!hasStoragePermission()) {
-                    audioScanRunning = false
-                    if (jsWantsAudio) runOnUiThread {
-                        notifyError("Storage permission is needed to read /storage/emulated/0/Novel/Audio.")
-                    }
-                    return@Thread
-                }
-
-                if (!audioRoot.exists()) {
-                    audioRoot.mkdirs()
-                }
-
-                // Sorted by path-relative-to-Audio/ (not just filename) so
-                // tracks in the same playlist folder stay grouped together.
-                // Folders starting with a dot are skipped: Audio/.staging/ holds songs of the Download
-                // tab that are not named or placed yet.
-                val audioFiles = audioRoot.walkTopDown()
-                    .filter { it.isFile && audioExtensions.contains(it.extension.lowercase()) }
-                    .filter { f -> f.toRelativeString(audioRoot).split(File.separatorChar).none { it.startsWith(".") } }
-                    .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) {
-                        it.toRelativeString(audioRoot)
-                    })
-                    .toList()
-
-                val cache = loadTagCache()
-                val results = arrayOfNulls<JSONObject>(audioFiles.size)
-                val pool = java.util.concurrent.Executors.newFixedThreadPool(4)
-                audioFiles.forEachIndexed { i, f ->
-                    pool.execute {
-                        results[i] = try { buildTrackJson(f, cache) } catch (e: Exception) { null }
-                    }
-                }
-                pool.shutdown()
-                pool.awaitTermination(15, java.util.concurrent.TimeUnit.MINUTES)
-
-                val tracksArray = JSONArray()
-                for (r in results) if (r != null) tracksArray.put(r)
-                saveTagCache(cache, audioFiles.map { it.absolutePath }.toSet())
-
-                val json = tracksArray.toString()
-                audioScanJson = json
-                audioScanAt = System.currentTimeMillis()
-                audioScanRunning = false
-
-                runOnUiThread { if (jsWantsAudio) deliverAudioList(json) }
-            } catch (e: Exception) {
-                audioScanRunning = false
-                if (jsWantsAudio) runOnUiThread { notifyError("Could not scan /storage/emulated/0/Novel/Audio: ${e.message}") }
-            }
-        }.start()
-    }
-
-    private fun buildTrackJson(f: File, cache: java.util.concurrent.ConcurrentHashMap<String, JSONObject>): JSONObject {
-        val obj = JSONObject()
-        obj.put("id", f.absolutePath)
-        obj.put("path", Uri.fromFile(f).toString()) // percent-encodes spaces etc. correctly
-        val relativePath = f.toRelativeString(audioRoot).replace(File.separatorChar, '/')
-        // Address the page's <audio> element uses (see serveAudio()).
-        obj.put("webUrl", "https://$appHost/audio/" + Uri.encode(relativePath, "/"))
-        // First path segment under Audio/ is the playlist; no '/' = no playlist.
-        val slashIndex = relativePath.indexOf('/')
-        if (slashIndex > 0) obj.put("playlist", relativePath.substring(0, slashIndex))
-        else obj.put("playlist", JSONObject.NULL)
-
-        val size = f.length()
-        val modified = f.lastModified()
-        val hit = cache[f.absolutePath]
-        val tags: JSONObject
-        if (hit != null && hit.optLong("s", -1L) == size && hit.optLong("m", -1L) == modified) {
-            tags = hit.getJSONObject("t")
-        } else {
-            tags = JSONObject()
-            readAudioTags(f, tags)
-            cache[f.absolutePath] = JSONObject().put("s", size).put("m", modified).put("t", tags)
-        }
-        for (k in tags.keys()) obj.put(k, tags.get(k))
-        return obj
-    }
-
-    /**
-     * Cover art for the track at `path` (a file:// URI), as a JPEG scaled
-     * to at most 512px so it is cheap to hand to the notification and the
-     * WebView. Looks for embedded art first, then a cover/folder image in
-     * the same folder. Results are cached in cacheDir/art so each file is
-     * only decoded once. Returns null when there is no art.
-     */
-    private fun loadArtworkBytes(path: String): ByteArray? {
-        return try {
-            val file = resolveAudioFile(path) ?: return null
-            val dir = File(cacheDir, "art").apply { mkdirs() }
-            val key = (file.absolutePath + file.lastModified()).hashCode().toString()
-            val cached = File(dir, "$key.jpg")
-            val none = File(dir, "$key.none")
-            if (cached.exists()) return cached.readBytes()
-            if (none.exists()) return null
-
-            var raw: ByteArray? = null
-            var tagsUnreadable = false   // reading the tags failed: could be passing (file busy), so don't remember "no art"
-            val retriever = MediaMetadataRetriever()
-            try {
-                retriever.setDataSource(file.absolutePath)
-                raw = retriever.embeddedPicture
-            } catch (e: Exception) {
-                tagsUnreadable = true
-                // fall through to folder images
-            } finally {
-                try { retriever.release() } catch (e: Exception) { }
-            }
-            if (raw == null) {
-                val names = listOf("cover", "folder", "front", "album", "albumart", "artwork")
-                val exts = listOf("jpg", "jpeg", "png", "webp")
-                val siblings = file.parentFile?.listFiles()
-                val match = siblings?.firstOrNull { f ->
-                    f.isFile && names.contains(f.nameWithoutExtension.lowercase()) &&
-                        exts.contains(f.extension.lowercase())
-                }
-                raw = match?.readBytes()
-            }
-            if (raw == null) {
-                // Only a song that was read fine and has no picture is remembered as having none.
-                if (!tagsUnreadable) none.createNewFile()
-                return null
-            }
-            val scaled = scaleToJpeg(raw, 512)
-            if (scaled == null) {
-                none.createNewFile()
-                return null
-            }
-            cached.writeBytes(scaled)
-            scaled
-        } catch (e: Exception) {
-            null
-        }
-    }
-
     private fun loadNovelCoverBytes(novelName: String): ByteArray? {
         return try {
             if (!hasStoragePermission()) return null
@@ -1847,7 +1283,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun scaleToJpeg(raw: ByteArray, maxSide: Int): ByteArray? {
+    internal fun scaleToJpeg(raw: ByteArray, maxSide: Int): ByteArray? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
@@ -1866,62 +1302,6 @@ class MainActivity : ComponentActivity() {
         return baos.toByteArray()
     }
 
-    /**
-     * Reads title/artist/album/duration off one file into `obj`, falling
-     * back to sensible defaults (filename as title, 0 duration) on any
-     * failure. Always releases the retriever, even on exception — a leaked
-     * MediaMetadataRetriever is a real native-memory leak, not just a
-     * dangling Java object, so this can't be left to the garbage collector.
-     */
-    private fun readAudioTags(f: File, obj: JSONObject) {
-        val retriever = MediaMetadataRetriever()
-        try {
-            retriever.setDataSource(f.absolutePath)
-            val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
-                ?.takeIf { it.isNotBlank() } ?: f.nameWithoutExtension
-            val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: ""
-            val album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: ""
-            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
-                ?.toLongOrNull() ?: 0L
-
-            obj.put("title", title)
-            obj.put("artist", artist)
-            obj.put("album", album)
-            obj.put("durationSec", durationMs / 1000.0)
-        } catch (e: Exception) {
-            // Malformed tags, unsupported codec for tag-reading, etc. —
-            // the file may still be playable even though we couldn't read
-            // its tags, so it stays in the list with filename-based
-            // fallbacks rather than being dropped.
-            obj.put("title", f.nameWithoutExtension)
-            obj.put("artist", "")
-            obj.put("album", "")
-            obj.put("durationSec", 0.0)
-        } finally {
-            try {
-                retriever.release()
-            } catch (e: Exception) {
-                // Nothing more we can do if release() itself fails.
-            }
-        }
-        addReplayGain(f, obj)
-    }
-
-    /**
-     * Adds the file's ReplayGain tags (read by ReplayGainReader, since
-     * MediaMetadataRetriever cannot) as replayGainTrackDb / replayGainAlbumDb /
-     * replayGainPeak / replayGainAlbumPeak. Tags that are missing are simply
-     * not added, so audio-player.js leaves that track's volume alone. Runs
-     * even when the retriever failed above - the file may still have tags.
-     */
-    private fun addReplayGain(f: File, obj: JSONObject) {
-        val rg = ReplayGainReader.read(f) ?: return
-        rg.trackDb?.let { obj.put("replayGainTrackDb", it) }
-        rg.albumDb?.let { obj.put("replayGainAlbumDb", it) }
-        rg.trackPeak?.let { obj.put("replayGainPeak", it) }
-        rg.albumPeak?.let { obj.put("replayGainAlbumPeak", it) }
-    }
-
     private fun isAppUrl(u: Uri): Boolean =
         u.scheme == "https" && u.host == appHost && (u.path ?: "").startsWith("/assets/")
 
@@ -1937,7 +1317,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun plainResponse(code: Int): WebResourceResponse {
+    internal fun plainResponse(code: Int): WebResourceResponse {
         val reason = when (code) {
             403 -> "Forbidden"
             404 -> "Not Found"
@@ -1950,71 +1330,7 @@ class MainActivity : ComponentActivity() {
         )
     }
 
-    private fun audioMimeType(ext: String): String = when (ext.lowercase()) {
-        "mp3" -> "audio/mpeg"
-        "m4a" -> "audio/mp4"
-        "aac" -> "audio/aac"
-        "flac" -> "audio/flac"
-        "ogg" -> "audio/ogg"
-        "opus" -> "audio/ogg"
-        "wav" -> "audio/wav"
-        else -> "application/octet-stream"
-    }
-
-    /**
-     * Serves one music file to the page's <audio> element from
-     * https://appassets.androidplatform.net/audio/<path relative to Audio/>.
-     * Goes through resolveAudioFile(), so only existing audio files that really
-     * lie inside Novel/Audio can be read. Supports HTTP Range requests, which
-     * the WebView's media player needs for seeking. Runs on a WebView
-     * background thread.
-     */
-    private fun serveAudio(relativePath: String, headers: Map<String, String>): WebResourceResponse {
-        val file = resolveAudioFile(File(audioRoot, relativePath).path) ?: return plainResponse(404)
-        return try {
-            val length = file.length()
-            var start = 0L
-            var end = length - 1
-            var status = 200
-            val rangeHeader = headers.entries.firstOrNull { it.key.equals("Range", ignoreCase = true) }?.value
-            val match = rangeHeader?.let { Regex("^bytes=(\\d*)-(\\d*)$").matchEntire(it.trim()) }
-            if (match != null && length > 0) {
-                val first = match.groupValues[1]
-                val last = match.groupValues[2]
-                if (first.isNotEmpty() || last.isNotEmpty()) {
-                    try {
-                        if (first.isEmpty()) {
-                            start = maxOf(0L, length - last.toLong())      // "last N bytes"
-                        } else {
-                            start = first.toLong()
-                            if (last.isNotEmpty()) end = minOf(last.toLong(), length - 1)
-                        }
-                    } catch (e: NumberFormatException) {
-                        return plainResponse(416)
-                    }
-                    if (start >= length || start > end) return plainResponse(416)
-                    status = 206
-                }
-            }
-            val count = if (length == 0L) 0L else end - start + 1
-            val input = FileInputStream(file)
-            input.channel.position(start)
-            val responseHeaders = mutableMapOf(
-                "Accept-Ranges" to "bytes",
-                "Content-Length" to count.toString()
-            )
-            if (status == 206) responseHeaders["Content-Range"] = "bytes $start-$end/$length"
-            WebResourceResponse(
-                audioMimeType(file.extension), null, status,
-                if (status == 206) "Partial Content" else "OK",
-                responseHeaders, LimitedInputStream(input, count)
-            )
-        } catch (e: Exception) {
-            plainResponse(404)
-        }
-    }
-
-    private fun notifyError(message: String) {
+    internal fun notifyError(message: String) {
         callPage("onFolderPickError", JSONObject.quote(message))
     }
 
@@ -2023,25 +1339,14 @@ class MainActivity : ComponentActivity() {
      * [args] must already be valid JavaScript: numbers as they are, strings
      * through JSONObject.quote().
      */
-    private fun callPage(fn: String, args: String = "") {
+    /** Runs [block] on the WebView's thread. */
+    internal fun postToPage(block: () -> Unit) {
+        if (::webView.isInitialized) webView.post { block() }
+    }
+
+    internal fun callPage(fn: String, args: String = "") {
         if (!::webView.isInitialized) return
         webView.evaluateJavascript("window.$fn && window.$fn($args);", null)
-    }
-
-    /**
-     * Bluetooth outputs that carry music. The phone-call link (SCO) is left out on purpose: it
-     * shows up for a headset during calls, not for listening.
-     */
-    private fun isBluetoothMusicOutput(type: Int): Boolean = when (type) {
-        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> true
-        AudioDeviceInfo.TYPE_HEARING_AID -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
-        AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER -> Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-        else -> false
-    }
-
-    /** Tells the page whether the native player is playing (window.onNativeAudioState). */
-    private fun reportPlaying(playing: Boolean) {
-        callPage("onNativeAudioState", JSONObject.quote(JSONObject().put("playing", playing).toString()))
     }
 
     /** Asks the audio panel to re-read the phone's media volume. */
@@ -2051,25 +1356,6 @@ class MainActivity : ComponentActivity() {
             "window.NovelAudio && window.NovelAudio.syncVolume && window.NovelAudio.syncVolume();", null
         )
     }
-}
-
-/** Reads at most [remaining] bytes of [source] (used for HTTP Range responses). */
-private class LimitedInputStream(source: InputStream, private var remaining: Long) : FilterInputStream(source) {
-    override fun read(): Int {
-        if (remaining <= 0) return -1
-        val b = super.read()
-        if (b >= 0) remaining--
-        return b
-    }
-
-    override fun read(b: ByteArray, off: Int, len: Int): Int {
-        if (remaining <= 0) return -1
-        val n = super.read(b, off, minOf(len.toLong(), remaining).toInt())
-        if (n > 0) remaining -= n
-        return n
-    }
-
-    override fun available(): Int = minOf(super.available().toLong(), remaining).toInt()
 }
 
 /** When a WebView renderer last died; survives recreate() so a crash loop can be stopped. */

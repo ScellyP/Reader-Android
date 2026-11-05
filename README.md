@@ -68,6 +68,7 @@ Every build now makes two versions of the app from the same source:
 | Actions artifact | `novel-reader-release-apk` / `-debug-apk` | `novel-reader-noaudio-release-apk` / `-debug-apk` |
 | Music button, music panel, Download songs, double-tap like, swipe-up to the player | yes | no |
 | Music permissions (notifications, background playback) | yes | no |
+| Music code and libraries inside the APK (media3, yt-dlp, Python, ffmpeg) | yes | no - this one is the small APK |
 
 Both versions are the same app on the phone (same app id, same signing key), so only one can be installed at a
 time. To switch, just install the other APK over the one you have: your chapters, bookmarks and settings stay. Each

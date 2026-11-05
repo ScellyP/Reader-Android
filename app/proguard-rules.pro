@@ -14,7 +14,8 @@
     @android.webkit.JavascriptInterface <methods>;
 }
 
-# youtubedl-android (the bundled yt-dlp used by "Download songs"). Its own rules file is not
+# youtubedl-android (the bundled yt-dlp used by "Download songs"; full flavor only - in the noaudio
+# build these classes are absent, so the rules below match nothing and do no harm). Its own rules file is not
 # applied to apps that use it, so the ones it asks for are repeated here.
 -keep class com.yausername.** { *; }
 -keep class org.apache.commons.compress.archivers.zip.** { *; }

@@ -20,7 +20,7 @@ if (probe.error || java.error) {
 }
 
 const root = path.join(__dirname, '..');
-const src = (f) => path.join(root, 'app/src/main/java/com/scell/novelreader/redesign', f);
+const src = (f) => path.join(root, 'app/src/full/java/com/scell/novelreader/redesign', f);
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'kt-jvm-'));
 const jar = path.join(tmp, 'checks.jar');
 
