@@ -181,6 +181,7 @@ removed file, a renamed class, a new bridge method, a moved responsibility, a ne
 between page and native), add a line here in the same change: **date, what changed, and why**. Newest first.
 Behaviour-only fixes do not need a line (the version number covers those).
 
+- **v1.16.03 — New app icon (IconKitchen export).** The launcher icon is now PNG-based: `res/mipmap-*/ic_launcher_background.png`, `_foreground.png`, `_monochrome.png` (themed icon, Android 13+) plus the legacy `ic_launcher.png` and a round copy `ic_launcher_round.png` (circle-cropped from it); `mipmap-anydpi-v26/ic_launcher.xml` and `ic_launcher_round.xml` point at those. Removed the old vector `drawable/ic_launcher_foreground.xml` and the `ic_launcher_background` colour in `values/`, which nothing uses any more. Reason: replace the old moon-and-book icon with the new design.
 - **v1.16.02 — Parallax stars replace the twinkling starfield.** `.sky` now holds three `.sk` layers (pure CSS, box-shadow stars, `mtStarMove`) instead of two gradient pseudo-elements; `setWelcome()` in `reader.js` creates them for the loading screen's sky. The Moonlit Lock's sky is excluded (its puzzle star needs fixed positions), so `tests/moon-puzzle.test.js` now reads the stars from `#night-lock-stage .sky::before/::after`. Reason: asked for the parallax look.
 - **v1.16.01 — The no-audio APK no longer contains the music code or libraries.**
   - MOVED `PlaybackService`, `NativeCrossfade`, `NativeAudioEffects`, `ReplayGainReader`, `SongDownloader`, `SongNames`,
