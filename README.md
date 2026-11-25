@@ -284,8 +284,8 @@ Open it with the ⏱ button in the sidebar header. Two modes:
 
 ### Moon and space theme
 
-The whole app is dressed for the night sky: a moonrise splash, twinkling
-stars (with an occasional shooting star) behind the library, loading screen,
+The whole app is dressed for the night sky: a moonrise splash, drifting
+parallax stars (with an occasional shooting star) behind the library, loading screen,
 break reminder, a crescent-and-star rule under each chapter
 title and above Previous / Next, an orbiting mark while the library loads, a
 planet for novels without a cover, and a small live moon-phase badge in the

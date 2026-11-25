@@ -22,7 +22,7 @@ check('the puzzle grant is shorter than the tap grant (in-memory path)', () => {
 check('the secret-star spots match the stars drawn by the .sky CSS', () => {
   const html = require('fs').readFileSync(__dirname + '/../app/src/main/assets/index.html', 'utf8');
   const spots = [];
-  for (const sel of ['.sky::before {', '.sky::after {']) {
+  for (const sel of ['#night-lock-stage .sky::before {', '#night-lock-stage .sky::after {']) {
     const line = html.split('\n').find(l => l.startsWith(sel) && l.includes('background-image'));
     assert.ok(line, sel);
     for (const mt of line.matchAll(/circle at ([\d.]+)% ([\d.]+)%/g)) spots.push([parseFloat(mt[1]), parseFloat(mt[2])]);

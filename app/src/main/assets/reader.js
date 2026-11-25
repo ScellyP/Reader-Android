@@ -249,6 +249,7 @@
     const welcomeSky = document.createElement('div');
     welcomeSky.className = 'sky sm';
     welcomeSky.setAttribute('aria-hidden', 'true');
+    welcomeSky.innerHTML = '<i class="sk sk1"></i><i class="sk sk2"></i><i class="sk sk3"></i>';
     welcomeEl.insertBefore(welcomeSky, welcomeEl.firstChild);
     welcomeEl.querySelector('.wl-mark').appendChild(svgIcon(iconId));
     if (detail && state !== 'error' && state !== 'empty') { /* detail unused for these states */ }
