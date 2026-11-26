@@ -388,10 +388,13 @@
 
   // The puzzle has no button. It opens when you tap one particular star in the lock
   // screen's sky, chosen at random each time the lock appears. Nothing marks it: no
-  // element, no highlight, no feedback for any other tap. These are the positions
+  // element, no highlight, no feedback for any other tap. (Only a little help: the hit area is
+  // generous, and after STAR_HINT_MS on the lock the secret star starts to breathe, very faintly.) These are the positions
   // (percent of the screen) of the stars drawn by the .sky CSS in index.html.
   const STAR_SPOTS = [[33.4,16.5],[9.8,53.4],[8.5,50.7],[43.8,8.7],[42.9,81.4],[24,62.2],[57.2,40.1],[7.4,84.4],[16.6,13.3],[79.7,19.3],[63.1,37.8],[8.9,7.7],[67,43],[58,45.5],[77.7,69.1],[57,52.4],[71.6,29.6],[14.1,42.1],[17.3,48.9],[65.8,75.4],[85.3,32.1],[58.9,57.7],[82,92.7],[65.4,7.8],[63.8,97.3],[29.8,39],[5.1,46.3],[14,7.7],[15.2,25.8],[84.9,9.7],[54.6,86.8],[84.2,28.7],[36.7,86.9],[17.2,18.9],[24.9,48.6],[27.7,2.4],[37.7,56.4]];
-  const STAR_HIT = 26; // px: how close a tap has to be to the star
+  const STAR_HIT = 34; // px: how close a tap has to be to the star
+  const STAR_HINT_MS = 20000; // after this long on the lock the secret star gets a faint, slow glow
+  let hintOn = false, hintTimer = 0;
   let secretStar = null;
   function randomIndex(n) {
     const a = new Uint32Array(1), crypt = window.crypto;
@@ -407,7 +410,7 @@
   // Picks the secret star, leaving out stars sitting under a button (a tap there
   // would hit the button instead of the star).
   function pickSecretStar() {
-    secretStar = null;
+    secretStar = null; hintOn = false; clearTimeout(hintTimer);
     if (!stage) return;
     const rect = stage.getBoundingClientRect();
     const avoid = [moonButton, $('night-lock-test-exit')].filter(Boolean)
@@ -418,6 +421,8 @@
     });
     const pool = free.length ? free : STAR_SPOTS;
     secretStar = pool[randomIndex(pool.length)];
+    hintTimer = setTimeout(() => { hintOn = true; updateStarMark(); }, STAR_HINT_MS);
+    if (hintTimer && hintTimer.unref) hintTimer.unref();
     updateStarMark();
   }
   // Hidden test run only (the moon in the Reading panel): a faint ring shows where the secret
@@ -425,38 +430,26 @@
   function updateStarMark() {
     if (!stage) return;
     let m = $('night-lock-star-mark');
-    const show = state && state.test && puzzleAvailable && secretStar && !(lockBox && lockBox.classList.contains('puzzle-open'));
-    if (!show) { if (m) m.remove(); return; }
+    const open = lockBox && lockBox.classList.contains('puzzle-open');
+    const test = !!(state && state.test && puzzleAvailable && secretStar && !open);
+    const hint = !!(state && !state.test && puzzleAvailable && secretStar && hintOn && !open);
+    const mode = test ? 'test' : (hint ? 'hint' : '');
+    if (!mode) { if (m) m.remove(); return; }
+    if (m && m.getAttribute('data-mode') !== mode) { m.remove(); m = null; }
     if (!m) {
-      m = document.createElement('div'); m.id = 'night-lock-star-mark'; m.setAttribute('aria-hidden', 'true');
-      m.style.cssText = 'position:absolute;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;border:1px solid var(--text);opacity:.45;pointer-events:none;z-index:0';
+      m = document.createElement('div'); m.id = 'night-lock-star-mark'; m.setAttribute('aria-hidden', 'true'); m.setAttribute('data-mode', mode);
+      if (mode === 'test') {
+        m.style.cssText = 'position:absolute;width:30px;height:30px;margin:-15px 0 0 -15px;border-radius:50%;border:1px solid var(--text);opacity:.45;pointer-events:none;z-index:0';
+      } else {
+        // The hint: no ring, just the star itself breathing slowly (a still, dim glow with reduced motion).
+        m.style.cssText = 'position:absolute;width:7px;height:7px;margin:-3.5px 0 0 -3.5px;border-radius:50%;background:var(--text);box-shadow:0 0 12px 2px var(--text);opacity:.3;pointer-events:none;z-index:0';
+        try { if (m.animate && !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches)) m.animate([{opacity:.08},{opacity:.5}],{duration:2600,iterations:Infinity,direction:'alternate',easing:'ease-in-out'}); } catch (_) { /* no animation */ }
+      }
       stage.appendChild(m);
     }
     m.style.left = secretStar[0] + '%'; m.style.top = secretStar[1] + '%';
   }
 
-  function renderPuzzle() {
-    const p = MP && MP.get(puzzleKind);
-    if (!puzzleGrid || !p || !puzzleState) return;
-    if (puzzleTitle) puzzleTitle.textContent = p.name;
-    if (puzzleMoves) puzzleMoves.textContent = p.status(puzzleState);
-    puzzleGrid.classList.toggle('pz-done', puzzleDone);
-    p.render(puzzleGrid, puzzleState, onPuzzleChange, puzzleDone);
-  }
-  // Called by a puzzle after every tap: redraw, then see whether it is now solved.
-  function onPuzzleChange() {
-    if (puzzleDone || !puzzleState) return;
-    renderPuzzle();
-    const p = MP && MP.get(puzzleKind);
-    if (p && p.solved(puzzleState)) onPuzzleSolved();
-  }
-  function newPuzzle() {
-    if (!MP) return;
-    puzzleKind = MP.pickType(null, puzzleKind);
-    puzzleState = MP.make(puzzleKind); puzzleDone = false;
-    if (puzzleMsg) puzzleMsg.textContent = MP.get(puzzleKind).rule;
-    renderPuzzle();
-  }
   function openPuzzle() {
     if (!puzzleAvailable || !puzzlePanel || !MP) return;
     puzzleKind = null; newPuzzle();
@@ -580,6 +573,7 @@
     try { clearCanvases(); if(sgInst)sgInst.reset(); } catch (_) { /* nothing to clear */ }
     shatterOn=false;
     state=null; tracker=null; system=null; shown=0; lastDrawQ=-1;
+    hintOn=false; clearTimeout(hintTimer);
     updateStarMark();
   }
   window.NovelMoonLock = { moonPhaseInfo, moonPhasePath, isUnlocked, canDismiss:() => unlockReady, startSession, stopSession, resetStar, onUnlocked:null, onTestFinished:null, isCheatDay, _secretStar:() => secretStar };

@@ -161,7 +161,7 @@ check('workflow: builds both versions, uploads four artifacts, publishes the ful
 });
 
 check('the version was bumped and documented', () => {
-  assert.ok(/APP_VERSION = 'v1\.16\.03'/.test(read(MAIN + 'assets/version.js')));
+  assert.ok(/APP_VERSION = 'v1\.16\.04'/.test(read(MAIN + 'assets/version.js')));
   assert.ok(read('Agent.md').includes('v1.16.00'));
   assert.ok(read('README.md').includes('## Two versions'));
 });
