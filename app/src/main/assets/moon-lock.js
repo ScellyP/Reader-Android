@@ -450,6 +450,29 @@
     m.style.left = secretStar[0] + '%'; m.style.top = secretStar[1] + '%';
   }
 
+  // A fresh random puzzle (never the same type twice in a row) drawn into the panel.
+  function newPuzzle() {
+    if (!MP) return;
+    puzzleKind = MP.pickType(null, puzzleKind);
+    puzzleState = MP.make(puzzleKind);
+    puzzleDone = false;
+    if (puzzleMsg) puzzleMsg.textContent = MP.get(puzzleKind).rule;
+    renderPuzzle();
+  }
+  function renderPuzzle() {
+    if (!MP || !puzzleKind || !puzzleState) return;
+    const def = MP.get(puzzleKind);
+    if (!def) return;
+    if (puzzleTitle) puzzleTitle.textContent = def.name;
+    if (puzzleMoves) puzzleMoves.textContent = def.status(puzzleState);
+    if (puzzleGrid) def.render(puzzleGrid, puzzleState, onPuzzleChange, puzzleDone);
+  }
+  // Called by the puzzle screens after every move.
+  function onPuzzleChange() {
+    if (puzzleDone || !puzzleKind || !puzzleState) return;
+    if (MP.get(puzzleKind).solved(puzzleState)) onPuzzleSolved(); else renderPuzzle();
+  }
+
   function openPuzzle() {
     if (!puzzleAvailable || !puzzlePanel || !MP) return;
     puzzleKind = null; newPuzzle();
